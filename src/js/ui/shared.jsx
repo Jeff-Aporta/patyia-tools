@@ -531,8 +531,11 @@ export function MetaDialog({
   const promptMarkdown = String(resolvedMeta?.prompt_markdown ?? "").trim();
   const userImagenes = filterDisplayableImages(resolvedMeta?.imagenes);
   const iinstruccion = bdInstructionKey(resolvedMeta) || String(resolvedMeta?.extra?.operativa_key ?? "").trim();
+  const isMcpOperativa = /^contapymeMcp(Login|Session|Unavailable)$/i.test(iinstruccion)
+    || String(resolvedMeta?.extra?.operativa_engine || "").toLowerCase() === "mcp"
+    || Boolean(resolvedMeta?.http_request?.session_id || resolvedMeta?.http_request?.login_url || resolvedMeta?.http_response?.tools);
   const hasPrompt = Boolean(promptMarkdown) || Boolean(iinstruccion) || userImagenes.length > 0;
-  const promptTabLabel = isUserMessage ? "Consulta" : "Prompt";
+  const promptTabLabel = isUserMessage ? "Consulta" : (isMcpOperativa ? "Payload MCP" : "Prompt");
 
   useEffect(() => {
     if (open) setTab(0);
@@ -544,6 +547,12 @@ export function MetaDialog({
 
   if (!resolvedMeta) return null;
   const tk = resolvedMeta.tokens?.total ? resolvedMeta.tokens : tokensFromUsage(resolvedMeta.usage);
+  const httpReq = resolvedMeta.http_request && typeof resolvedMeta.http_request === "object"
+    ? resolvedMeta.http_request
+    : null;
+  const httpRes = resolvedMeta.http_response && typeof resolvedMeta.http_response === "object"
+    ? resolvedMeta.http_response
+    : null;
 
   function renderMetaGrid() {
     return (
@@ -555,7 +564,25 @@ export function MetaDialog({
           <div className="meta-row"><span className="meta-k">itdconsulta</span><span className="meta-v"><span className="badge badge-itd">{resolvedMeta.itdconsulta}</span></span></div>
         )}
         {!isUserMessage && iinstruccion && (
-          <div className="meta-row"><span className="meta-k">iinstruccion</span><span className="meta-v"><code>{iinstruccion}</code></span></div>
+          <div className="meta-row"><span className="meta-k">{isMcpOperativa ? "operativa" : "iinstruccion"}</span><span className="meta-v"><code>{iinstruccion}</code></span></div>
+        )}
+        {isMcpOperativa && resolvedMeta.extra?.operativa_engine && (
+          <div className="meta-row"><span className="meta-k">engine</span><span className="meta-v"><code>{String(resolvedMeta.extra.operativa_engine)}</code></span></div>
+        )}
+        {isMcpOperativa && httpReq?.session_id && (
+          <div className="meta-row"><span className="meta-k">session_id</span><span className="meta-v"><code>{String(httpReq.session_id)}</code></span></div>
+        )}
+        {isMcpOperativa && httpReq?.transport && (
+          <div className="meta-row"><span className="meta-k">transport</span><span className="meta-v"><code>{String(httpReq.transport)}</code></span></div>
+        )}
+        {isMcpOperativa && httpRes?.kind && (
+          <div className="meta-row"><span className="meta-k">kind</span><span className="meta-v"><span className="badge badge-itd">{String(httpRes.kind)}</span></span></div>
+        )}
+        {isMcpOperativa && Array.isArray(httpRes?.tools) && httpRes.tools.length > 0 && (
+          <div className="meta-row"><span className="meta-k">tools</span><span className="meta-v">{httpRes.tools.map((t) => String(t?.name ?? "tool")).filter(Boolean).join(", ")}</span></div>
+        )}
+        {isMcpOperativa && resolvedMeta.login_url && (
+          <div className="meta-row"><span className="meta-k">login_url</span><span className="meta-v" style={{ wordBreak: "break-all" }}>{String(resolvedMeta.login_url)}</span></div>
         )}
         {resolvedMeta.premisas?.length ? (
           <div className="meta-row"><span className="meta-k">premisas</span><span className="meta-v">{resolvedMeta.premisas.join(", ")}</span></div>
@@ -570,6 +597,36 @@ export function MetaDialog({
                 json
                 minHeight="5rem"
                 maxHeight="18rem"
+                lineWrapping
+              />
+            </span>
+          </div>
+        )}
+        {isMcpOperativa && httpReq && (
+          <div className="meta-row meta-row--block">
+            <span className="meta-k">http_request</span>
+            <span className="meta-v meta-v--full">
+              <CodeMirrorPanel
+                value={JSON.stringify(httpReq, null, 2)}
+                readOnly
+                json
+                minHeight="6rem"
+                maxHeight="22rem"
+                lineWrapping
+              />
+            </span>
+          </div>
+        )}
+        {isMcpOperativa && httpRes && (
+          <div className="meta-row meta-row--block">
+            <span className="meta-k">http_response</span>
+            <span className="meta-v meta-v--full">
+              <CodeMirrorPanel
+                value={JSON.stringify(httpRes, null, 2)}
+                readOnly
+                json
+                minHeight="6rem"
+                maxHeight="22rem"
                 lineWrapping
               />
             </span>
@@ -620,7 +677,8 @@ export function MetaDialog({
                 userImagenes={userImagenes}
                 setLightboxSrc={setLightboxSrc}
                 iinstruccion={iinstruccion}
-                dialogTitle={title}
+                dialogTitle={headerMeta.subtitle || headerMeta.title}
+                isMcpOperativa={isMcpOperativa}
               />
             </Box>
           )}
@@ -635,17 +693,26 @@ export function MetaDialog({
 function PromptPanelBody({
   resolvedMeta, tk, usageStats, isUserMessage,
   promptMarkdown, userImagenes, setLightboxSrc, iinstruccion, dialogTitle,
+  isMcpOperativa = false,
 }) {
   const [fullPage, setFullPage] = useState(false);
+  const exactTitle = isUserMessage
+    ? "Consulta · texto exacto"
+    : (isMcpOperativa ? "Payload MCP · request / respuesta" : "Prompt · texto exacto");
+  const emptyCopy = isUserMessage
+    ? "Sin texto ni imágenes en el log de este mensaje."
+    : (isMcpOperativa
+      ? "Sin payload MCP (input / session_id / tools) en el log de este turno."
+      : "Sin texto de instrucciones en el log de este turno.");
   return (
     <div className="meta-prompt-panel custom-scrollbar">
       <PromptSummaryCard meta={resolvedMeta} tokens={tk} usageStats={usageStats} isUserMessage={isUserMessage} />
       {promptMarkdown ? (
         <Box className="meta-prompt-exact-wrap">
           <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 0.75 }}>
-            <iconify-icon icon="mdi:file-document-outline" width="18" height="18" />
+            <iconify-icon icon={isMcpOperativa ? "mdi:api" : "mdi:file-document-outline"} width="18" height="18" />
             <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 700 }}>
-              {isUserMessage ? "Consulta · texto exacto" : "Prompt · texto exacto"}
+              {exactTitle}
             </Typography>
             <Chip
               size="small"
@@ -675,10 +742,10 @@ function PromptPanelBody({
             open={fullPage}
             onClose={() => setFullPage(false)}
             source={promptMarkdown}
-            title={isUserMessage ? "Consulta · texto exacto" : "Prompt · texto exacto"}
+            title={exactTitle}
             subtitle={dialogTitle || (isUserMessage ? "Vista consulta full-page" : "Vista prompt full-page")}
-            icon={isUserMessage ? "mdi:message-text-outline" : "mdi:file-document-outline"}
-            accent={isUserMessage ? "#1e90ff" : "#22c55e"}
+            icon={isUserMessage ? "mdi:message-text-outline" : (isMcpOperativa ? "mdi:api" : "mdi:file-document-outline")}
+            accent={isUserMessage ? "#1e90ff" : (isMcpOperativa ? "#f59e0b" : "#22c55e")}
           />
         </Box>
       ) : null}
@@ -687,9 +754,7 @@ function PromptPanelBody({
       ) : null}
       {!promptMarkdown && !userImagenes.length ? (
         <Typography variant="body2" color="text.secondary">
-          {isUserMessage
-            ? "Sin texto ni imágenes en el log de este mensaje."
-            : "Sin texto de instrucciones en el log de este turno."}
+          {emptyCopy}
         </Typography>
       ) : null}
     </div>
