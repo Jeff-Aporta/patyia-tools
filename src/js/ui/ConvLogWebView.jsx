@@ -503,6 +503,18 @@ function buildUsageDialogCtxItems(meta) {
         icon: "mdi:api",
         wide: true,
       });
+      const tools = Array.isArray(meta?.http_response?.tools) ? meta.http_response.tools : [];
+      if (tools.length) {
+        const names = tools.map((t) => String(t?.name ?? "tool")).filter(Boolean);
+        items.push({
+          key: "tools",
+          label: "Tools MCP",
+          value: names.join(", ") || `${tools.length} llamada${tools.length === 1 ? "" : "s"}`,
+          icon: "mdi:hammer-wrench",
+          mono: false,
+          wide: true,
+        });
+      }
     } else if (/^contapymeMcpLogin$/i.test(opKey)) {
       items.push({
         key: "op",
@@ -1129,6 +1141,117 @@ function UsageDialogMetaPanel({ meta }) {
   );
 }
 
+function safeJsonPreview(value, maxLen = 600) {
+  if (value == null) return "";
+  let raw;
+  try {
+    raw = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  } catch {
+    raw = String(value);
+  }
+  raw = raw.replace(/\r\n/g, "\n").trim();
+  if (raw.length <= maxLen) return raw;
+  return `${raw.slice(0, maxLen)}… [truncado ${raw.length} chars]`;
+}
+
+function McpToolsSection({ tools, GlassSection, GlassInner }) {
+  const { Typography, Box, Chip, Stack } = getMaterialUI();
+  if (!Array.isArray(tools) || !tools.length) return null;
+
+  const body = (
+    <Box className="conv-usage-dialog__section-body">
+      <Stack spacing={1.5}>
+        {tools.map((tool, idx) => {
+          const name = String(tool?.name ?? `Tool ${idx + 1}`);
+          const status = String(tool?.status ?? "");
+          const error = tool?.error;
+          const args = safeJsonPreview(tool?.arguments);
+          const output = safeJsonPreview(tool?.output);
+          return (
+            <Box key={`${name}-${idx}`} className="conv-usage-dialog__mcp-tool">
+              <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 0.5 }}>
+                <iconify-icon icon="mdi:hammer-wrench" width="16" height="16" />
+                <Typography variant="body2" fontWeight={600} sx={{ flex: 1, minWidth: 0 }}>
+                  {name}
+                </Typography>
+                {status ? (
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={status}
+                    className={`conv-usage-dialog__mcp-tool-status${error ? " conv-usage-dialog__mcp-tool-status--error" : ""}`}
+                  />
+                ) : null}
+              </Stack>
+              {args ? (
+                <Box className="conv-usage-dialog__mcp-tool-block" sx={{ mb: 0.75 }}>
+                  <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.25 }}>
+                    Argumentos
+                  </Typography>
+                  <Typography variant="caption" component="pre" sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word", m: 0 }}>
+                    {args}
+                  </Typography>
+                </Box>
+              ) : null}
+              {output ? (
+                <Box className="conv-usage-dialog__mcp-tool-block">
+                  <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.25 }}>
+                    Resultado
+                  </Typography>
+                  <Typography variant="caption" component="pre" sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word", m: 0 }}>
+                    {output}
+                  </Typography>
+                </Box>
+              ) : null}
+              {error ? (
+                <Box className="conv-usage-dialog__mcp-tool-block conv-usage-dialog__mcp-tool-block--error">
+                  <Typography variant="caption" color="error" component="div" sx={{ mb: 0.25 }}>
+                    Error
+                  </Typography>
+                  <Typography variant="caption" component="pre" sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word", m: 0 }}>
+                    {safeJsonPreview(error)}
+                  </Typography>
+                </Box>
+              ) : null}
+            </Box>
+          );
+        })}
+      </Stack>
+    </Box>
+  );
+
+  if (GlassSection && GlassInner) {
+    return (
+      <GlassSection
+        sectionKey="conv-usage-mcp-tools"
+        className="conv-usage-dialog__mcp-tools-section"
+        title="Tools MCP"
+        subtitle={`${tools.length} llamada${tools.length === 1 ? "" : "s"} al servidor ContaPyme`}
+        accent="#f59e0b"
+        tone="warn"
+        headerSx={{ borderRadius: "0.75rem 0.75rem 0 0" }}
+        bodySx={{ pt: { xs: 1.25, sm: 1.5 } }}
+      >
+        <GlassInner>{body}</GlassInner>
+      </GlassSection>
+    );
+  }
+
+  return (
+    <Box className="conv-usage-dialog__section-card conv-usage-dialog__section-card--mcp-tools">
+      <div className="conv-usage-dialog__section-head">
+        <Typography component="h3" variant="subtitle2" className="conv-usage-dialog__section-title">
+          Tools MCP
+        </Typography>
+        <Typography variant="caption" color="text.secondary" className="conv-usage-dialog__section-sub">
+          {tools.length} llamada{tools.length === 1 ? "" : "s"} al servidor ContaPyme
+        </Typography>
+      </div>
+      {body}
+    </Box>
+  );
+}
+
 function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
   const { DialogContent, Typography, Box, Chip, Stack, Tooltip, IconButton } = getMaterialUI();
   const { useMemo, useState } = getReact();
@@ -1175,6 +1298,12 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
 
   const chunks = useMemo(() => chunksFromMeta(meta), [meta]);
   const archivos = useMemo(() => archivosCitadosFromMeta(meta), [meta]);
+  const mcpTools = useMemo(() => {
+    const opKey = String(meta?.extra?.operativa_key ?? "");
+    if (!/^contapymeMcpSession$/i.test(opKey)) return [];
+    const tools = meta?.http_response?.tools;
+    return Array.isArray(tools) ? tools : [];
+  }, [meta]);
   const [openChunk, setOpenChunk] = useState(null);
 
   const opKey = meta?.extra?.operativa_key;
@@ -1217,6 +1346,9 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
         >
           <Box className="conv-usage-dialog__stack">
             {showMetaPanel ? <UsageDialogMetaPanel meta={meta} /> : null}
+            {mcpTools.length ? (
+              <McpToolsSection tools={mcpTools} GlassSection={GlassSection} GlassInner={GlassInner} />
+            ) : null}
             {sections.map((section) => (
               <UsageDialogSection
                 key={section.key}
