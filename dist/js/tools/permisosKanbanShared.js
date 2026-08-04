@@ -1,4 +1,4 @@
-// js/tools/permisosForm.js
+// src/js/tools/permisosForm.js
 var FLAG_DEFS = [
   { key: "*", label: "Acceso total", hint: "Wildcard \u2014 anula el resto de restricciones de ruta." },
   { key: "impersonate", label: "Suplantar chat", hint: "Actuar como otro usuario en conversaciones." },
@@ -18,7 +18,7 @@ function userRoles(permisos) {
   return Array.isArray(r) ? r.map((x) => String(x).trim().toUpperCase()).filter(Boolean) : [];
 }
 
-// js/tools/roleCanonicalMeta.js
+// src/js/tools/roleCanonicalMeta.js
 var CANONICAL_ROLE_META = {
   AUDITOR: {
     namedisplay: "Auditor",
@@ -42,7 +42,7 @@ function canonicalRoleMeta(roleName) {
   return CANONICAL_ROLE_META[key] ?? null;
 }
 
-// js/tools/permisosKanbanShared.js
+// src/js/tools/permisosKanbanShared.js
 var USR_ROLE = "USR";
 var VISITANTE = USR_ROLE;
 var ROLE_ACCENTS = ["#1e90ff", "#10b981", "#a855f7", "#f59e0b", "#ec4899", "#06b6d4", "#8b5cf6"];
