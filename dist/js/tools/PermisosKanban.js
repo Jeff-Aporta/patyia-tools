@@ -8,7 +8,7 @@ var __esm = (fn, res, err) => function __init() {
   }
 };
 
-// js/core/patyia.ts
+// src/js/core/patyia.ts
 function isPatyiaApiPath(path) {
   const p = path.startsWith("/") ? path : `/${path}`;
   return p.startsWith("/patyia") || p.startsWith("/api/patyia");
@@ -60,7 +60,7 @@ function buildUserAvatarUrl(name, size = 72) {
 }
 var PATYIA_ISS_URL, PATYIA_ISS_PROD_URL, PATYIA_ISS_LOCAL, PATYIA_ISS_LOCAL_API, PATYIA_ISS_PROD_API, PATYIA_ISS_STAGING_API, PATYIA_ISS_TARGET_LS_KEY, AVATAR_BG_PALETTE;
 var init_patyia = __esm({
-  "js/core/patyia.ts"() {
+  "src/js/core/patyia.ts"() {
     window.ISAFront.migrateLegacyGatewayKeys?.({ "jeff:gateway-local": "", "patyia-apptools:gateway-local": "", "patyia-apptools:lab-local": "" });
     PATYIA_ISS_URL = "https://ayudascp-ia-staging.azurewebsites.net";
     PATYIA_ISS_PROD_URL = "https://ayudascp-ia.azurewebsites.net";
@@ -90,10 +90,10 @@ var init_patyia = __esm({
   }
 });
 
-// js/core/platform.ts
+// src/js/core/platform.ts
 var bridge, UI, Session, Config, getReact, getReactDOM, getMaterialUI;
 var init_platform = __esm({
-  "js/core/platform.ts"() {
+  "src/js/core/platform.ts"() {
     init_patyia();
     bridge = () => window.ISAFront.createPlatformBridge("ISA");
     UI = {
@@ -161,14 +161,14 @@ var init_platform = __esm({
   }
 });
 
-// js/tools/roleCanonicalMeta.js
+// src/js/tools/roleCanonicalMeta.js
 function canonicalRoleMeta(roleName) {
   const key = String(roleName ?? "").trim().toUpperCase();
   return CANONICAL_ROLE_META[key] ?? null;
 }
 var CANONICAL_ROLE_META;
 var init_roleCanonicalMeta = __esm({
-  "js/tools/roleCanonicalMeta.js"() {
+  "src/js/tools/roleCanonicalMeta.js"() {
     CANONICAL_ROLE_META = {
       AUDITOR: {
         namedisplay: "Auditor",
@@ -190,37 +190,37 @@ var init_roleCanonicalMeta = __esm({
   }
 });
 
-// js/api/portalJwtApi.ts
+// src/js/api/portalJwtApi.ts
 var init_portalJwtApi = __esm({
-  "js/api/portalJwtApi.ts"() {
+  "src/js/api/portalJwtApi.ts"() {
     init_platform();
     init_patyia();
   }
 });
 
-// js/api/issListFilter.ts
+// src/js/api/issListFilter.ts
 var init_issListFilter = __esm({
-  "js/api/issListFilter.ts"() {
+  "src/js/api/issListFilter.ts"() {
   }
 });
 
-// js/api/patyiaTokens.ts
+// src/js/api/patyiaTokens.ts
 var init_patyiaTokens = __esm({
-  "js/api/patyiaTokens.ts"() {
+  "src/js/api/patyiaTokens.ts"() {
     init_platform();
   }
 });
 
-// js/api/patyiaChatApi.ts
+// src/js/api/patyiaChatApi.ts
 var init_patyiaChatApi = __esm({
-  "js/api/patyiaChatApi.ts"() {
+  "src/js/api/patyiaChatApi.ts"() {
     init_issListFilter();
     init_patyiaTokens();
     init_patyia();
   }
 });
 
-// js/tools/permAccessFromMap.js
+// src/js/tools/permAccessFromMap.js
 function normalizePath(path) {
   let p = String(path ?? "").trim();
   try {
@@ -273,32 +273,32 @@ function capsFromPermisosEfectivos(perms) {
   return {
     canEditOpenAiConfig: hasAccess(p, "PUT", "/api/system/openai"),
     canEditSwagger: hasAccess(p, "PUT", "/api/system/swagger.json"),
-    canEditInstrucciones: hasAccess(p, "PUT", "/api/system/instrucciones") || hasAccess(p, "POST", "/api/patyia/instrucciones/publish"),
+    canEditInstrucciones: hasAccess(p, "PUT", "/api/system/instrucciones"),
     canEditPromptsOperativos: hasAccess(p, "PUT", "/api/system/prompts-operativos"),
     canEditConversacionConfig: hasAccess(p, "PUT", "/api/system/config/conversacion"),
     canOverrideSampling: canAccessOthers(p, "POST", "/api/conversacion"),
     canManagePermissions: manage,
     canAssignUserRoles: assign,
     canEditRoleDescriptions: manage,
-    canAccessOthers: canAccessOthers(p, "GET", "/api/conversaciones"),
+    canAccessOthers: canAccessOthers(p, "QUERY", "/api/conversaciones"),
     canViewKanban: hasAccess(p, "GET", "/api/permisos/usuarios") || hasAccess(p, "GET", API_PERMISOS),
     canEditKanbanCards: assign || hasAccess(p, "POST", "/api/system/permisos/usuarios"),
     canViewLogs: hasAccess(p, "GET", "/api/conversacion/logs/{id}") || hasAccess(p, "GET", "/api/conversacion/logs/*"),
     canViewPrompts: hasAccess(p, "GET", "/api/system/instrucciones"),
-    canViewChat: hasAccess(p, "POST", "/api/conversacion") || hasAccess(p, "POST", "/api/mensaje") || hasAccess(p, "GET", "/api/conversaciones"),
+    canViewChat: hasAccess(p, "POST", "/api/conversacion") || hasAccess(p, "POST", "/api/mensaje") || hasAccess(p, "QUERY", "/api/conversaciones"),
     canViewConfig: hasAccess(p, "GET", "/api/system/openai") || hasAccess(p, "GET", "/api/system/prompts-operativos") || hasAccess(p, "GET", "/api/system/instrucciones") || hasAccess(p, "GET", "/api/system/config/conversacion") || hasAccess(p, "GET", "/api/system/swagger.json") || hasAccess(p, "GET", API_PERMISOS),
     canSendChat: hasAccess(p, "POST", "/api/conversacion") && hasAccess(p, "POST", "/api/mensaje")
   };
 }
 var API_PERMISOS, API_ROLES;
 var init_permAccessFromMap = __esm({
-  "js/tools/permAccessFromMap.js"() {
+  "src/js/tools/permAccessFromMap.js"() {
     API_PERMISOS = "/api/system/permisos";
     API_ROLES = "/api/system/permisos/usuarios/*/roles";
   }
 });
 
-// js/core/viewAsRole.ts
+// src/js/core/viewAsRole.ts
 function roleKey(name) {
   return String(name ?? "").trim().toUpperCase();
 }
@@ -339,7 +339,7 @@ function realRolesAllowViewAs(roles) {
 }
 var VIEW_AS_ROLE_LS_KEY, VIEW_AS_ROLE_EVENT, NONE, ROLE_CAPS_PRESETS;
 var init_viewAsRole = __esm({
-  "js/core/viewAsRole.ts"() {
+  "src/js/core/viewAsRole.ts"() {
     init_roleCanonicalMeta();
     VIEW_AS_ROLE_LS_KEY = "isa-patyia:view-as-role";
     VIEW_AS_ROLE_EVENT = "patyia-apptools:view-as-role";
@@ -404,7 +404,7 @@ var init_viewAsRole = __esm({
   }
 });
 
-// js/api/sessionApi.ts
+// src/js/api/sessionApi.ts
 function formatRoleTitle(roleName) {
   const key = String(roleName ?? "").trim().toUpperCase();
   if (!key) return "";
@@ -586,7 +586,7 @@ function getSession() {
 }
 var ROLE_PRIORITY, OPEN_ME_CAPS, ME_CAP_KEYS, ME_CAPS, ME_CAPS_KEY, ME_ISS_ROLES, ME_LOGIN_ROLE, ME_CAPS_BOOTSTRAP_TS, ME_CAPS_INFLIGHT, ME_CAPS_RETRY_TIMER, ME_SERVER_INSTRUCCIONES_EDIT, ME_CAPS_FETCH_GUARD_MS, ME_CAPS_REENTRY_GUARD_MS, isLoggedIn, can, blockReason, clearSession;
 var init_sessionApi = __esm({
-  "js/api/sessionApi.ts"() {
+  "src/js/api/sessionApi.ts"() {
     init_platform();
     init_platform();
     init_patyia();
@@ -651,10 +651,10 @@ var init_sessionApi = __esm({
   }
 });
 
-// js/api/apiClient.ts
+// src/js/api/apiClient.ts
 var bridgeHttp, capFetch, apiUrl, rowVal;
 var init_apiClient = __esm({
-  "js/api/apiClient.ts"() {
+  "src/js/api/apiClient.ts"() {
     init_platform();
     init_patyia();
     init_patyia_jwt();
@@ -679,7 +679,7 @@ var init_apiClient = __esm({
   }
 });
 
-// js/core/patyia-jwt.ts
+// src/js/core/patyia-jwt.ts
 function parseJwtExp(token) {
   try {
     const part = String(token || "").trim().split(".")[1];
@@ -725,7 +725,7 @@ function loadPatyJwt() {
 }
 var PATYIA_JWT_STORAGE_KEY;
 var init_patyia_jwt = __esm({
-  "js/core/patyia-jwt.ts"() {
+  "src/js/core/patyia-jwt.ts"() {
     init_portalJwtApi();
     init_apiClient();
     init_platform();
@@ -733,9 +733,18 @@ var init_patyia_jwt = __esm({
   }
 });
 
-// js/api/systemConfigApi.ts
+// src/js/api/systemConfigApi.ts
 function systemApiBase() {
   return resolveIssApiBase();
+}
+function isSegApiPath(path) {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return p.startsWith("/permissions/me") || p.startsWith("/patyia/admin/") || p.startsWith("/system/permisos");
+}
+function shouldRetrySegOnStaging(err) {
+  if (!isLocalMode()) return false;
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return /timeout|terminated|ECONN|ENOTFOUND|Failed to fetch|NetworkError|HTTP 5\d\d|Connection|sin METHOD:path/i.test(msg);
 }
 function humanizeIssAuthMessage(msg) {
   const m = String(msg ?? "").trim();
@@ -783,8 +792,8 @@ function unwrapBody(data) {
   }
   return inner;
 }
-async function jsonFetch(path, init) {
-  const res = await fetch(`${systemApiBase()}${path}`, init);
+async function jsonFetchAt(base, path, init) {
+  const res = await fetch(`${base.replace(/\/+$/, "")}${path.startsWith("/") ? path : `/${path}`}`, init);
   const ct = res.headers.get("content-type") || "";
   if (!res.ok) {
     let msg = res.statusText;
@@ -803,10 +812,41 @@ async function jsonFetch(path, init) {
     throw new Error(humanizeIssAuthMessage(msg) || `HTTP ${res.status}`);
   }
   if (!ct.includes("json")) {
-    throw new Error(`Respuesta no JSON (${res.status}) desde ${systemApiBase()}${path}`);
+    throw new Error(`Respuesta no JSON (${res.status}) desde ${base}${path}`);
   }
   const raw = await res.json();
   return unwrapBody(raw);
+}
+async function jsonFetch(path, init) {
+  try {
+    return await jsonFetchAt(systemApiBase(), path, init);
+  } catch (err) {
+    if (!isSegApiPath(path) || !shouldRetrySegOnStaging(err)) throw err;
+    console.warn(`[seg-front] local \u2192 staging ${path}:`, err instanceof Error ? err.message : err);
+    return jsonFetchAt(PATYIA_ISS_STAGING_API, path, init);
+  }
+}
+async function jsonFetchSegAdmin(path, init) {
+  let local = null;
+  let localErr = null;
+  try {
+    local = await jsonFetchAt(systemApiBase(), path, init);
+  } catch (err) {
+    localErr = err;
+  }
+  const thin = local != null && Array.isArray(local.contactos) && local.contactos.length === 0 && Array.isArray(local.acciones) && local.acciones.length < 10;
+  if (isLocalMode() && (localErr || thin)) {
+    try {
+      const stg = await jsonFetchAt(PATYIA_ISS_STAGING_API, path, init);
+      console.warn(`[seg-front] admin ${path} v\xEDa staging (${localErr ? "error local" : "local vac\xEDo"})`);
+      return stg;
+    } catch (stgErr) {
+      if (local) return local;
+      throw localErr || stgErr;
+    }
+  }
+  if (local) return local;
+  throw localErr instanceof Error ? localErr : new Error(String(localErr ?? "SEG admin fall\xF3"));
 }
 function permEntityKey(entry) {
   return String(entry?.ientity ?? entry?.iusuario ?? "").trim();
@@ -846,23 +886,39 @@ async function fetchPermissionsMe(opts) {
   if (!opts?.force && PERMISSIONS_ME_INFLIGHT) return PERMISSIONS_ME_INFLIGHT;
   const f = opts?.fetchImpl ?? fetch;
   const req = (async () => {
-    const res = await f(`${systemApiBase()}/permissions/me`, {
-      method: "GET",
-      headers: { ...headers, Accept: "application/json" },
-      credentials: "omit"
-    });
-    if (res.status === 401) {
+    const hit = async (base) => {
+      const res = await f(`${base.replace(/\/+$/, "")}/permissions/me`, {
+        method: "GET",
+        headers: { ...headers, Accept: "application/json" },
+        credentials: "omit"
+      });
+      if (res.status === 401) return { status: 401, data: null };
+      if (!res.ok) return { status: res.status, data: null };
+      const data = unwrapBody(await res.json());
+      if (!data || data.kind !== "insoft.permissions-me") return { status: res.status, data: null };
+      return { status: res.status, data };
+    };
+    let got = await hit(systemApiBase());
+    if (isLocalMode()) {
+      try {
+        const stg = await hit(PATYIA_ISS_STAGING_API);
+        if (stg.data) {
+          console.warn("[seg-front] permissions/me v\xEDa staging");
+          got = stg;
+        }
+      } catch {
+      }
+    }
+    if (got.status === 401) {
       PERMISSIONS_ME_CACHE.value = null;
       return null;
     }
-    if (!res.ok) return PERMISSIONS_ME_CACHE.value;
-    const data = unwrapBody(await res.json());
-    if (!data || data.kind !== "insoft.permissions-me") return PERMISSIONS_ME_CACHE.value;
-    PERMISSIONS_ME_CACHE.value = data;
-    PERMISSIONS_ME_CACHE.iat = data.iat || Date.now();
-    PERMISSIONS_ME_CACHE.ttlMs = data.ttlMs || 8 * 60 * 60 * 1e3;
+    if (!got.data) return PERMISSIONS_ME_CACHE.value;
+    PERMISSIONS_ME_CACHE.value = got.data;
+    PERMISSIONS_ME_CACHE.iat = got.data.iat || Date.now();
+    PERMISSIONS_ME_CACHE.ttlMs = got.data.ttlMs || 8 * 60 * 60 * 1e3;
     PERMISSIONS_ME_CACHE.key = sessionKey;
-    return data;
+    return got.data;
   })().finally(() => {
     if (PERMISSIONS_ME_INFLIGHT === req) PERMISSIONS_ME_INFLIGHT = null;
   });
@@ -887,17 +943,68 @@ function applyPermissionsMeToKanban(data, me) {
     _permissionsMe: me
   };
 }
+async function fetchPatyiaAdminRoles() {
+  return jsonFetchSegAdmin(`/patyia/admin/roles`, {
+    method: "GET",
+    headers: systemApiHeaders()
+  });
+}
 function invalidatePermisosCache() {
   PERMISOS_LIST_CACHE.clear();
   PERMISOS_LIST_INFLIGHT.clear();
   clearPermissionsMeCache();
+}
+function permissionsFromAdminRoles(admin) {
+  const roleRows = Array.isArray(admin?.roles) ? admin.roles : [];
+  const roles = roleRows.map((r) => ({
+    iusuario: `ROLE:${String(r.irol ?? "").trim().toUpperCase()}`,
+    itipo: "role",
+    permisos: {},
+    bactivo: true
+  })).filter((r) => r.iusuario !== "ROLE:");
+  if (!roles.some((r) => r.iusuario === "ROLE:DEVISS")) {
+    roles.unshift({ iusuario: "ROLE:DEVISS", itipo: "role", permisos: {}, bactivo: true });
+  }
+  if (!roles.some((r) => r.iusuario === "ROLE:USR")) {
+    roles.push({ iusuario: "ROLE:USR", itipo: "role", permisos: {}, bactivo: true });
+  }
+  const byUser = /* @__PURE__ */ new Map();
+  for (const c of Array.isArray(admin?.contactos) ? admin.contactos : []) {
+    const uname = String(c.username ?? "").trim().toUpperCase() || (c.icontacto != null ? String(c.icontacto) : "");
+    if (!uname) continue;
+    const irol = String(c.irol ?? "").trim().toUpperCase();
+    const cur = byUser.get(uname) ?? { roles: /* @__PURE__ */ new Set(), nombre: c.nombre ?? null, icontacto: c.icontacto };
+    if (irol) cur.roles.add(irol);
+    if (c.nombre) cur.nombre = c.nombre;
+    if (c.icontacto != null) cur.icontacto = c.icontacto;
+    byUser.set(uname, cur);
+  }
+  const users = [...byUser.entries()].map(([username, meta]) => ({
+    iusuario: username,
+    itipo: "user",
+    permisos: {
+      roles: [...meta.roles],
+      ...meta.nombre ? { nombre: meta.nombre } : {}
+    },
+    bactivo: true
+  }));
+  const contactos = {};
+  for (const [username, meta] of byUser) {
+    if (meta.icontacto == null) continue;
+    contactos[username] = { itercero: "", icontacto: meta.icontacto, nombre: meta.nombre ?? null };
+  }
+  return { roles, users, contactos, usersTotal: users.length, usersTruncated: false };
 }
 function fetchPermisosListRaw(q) {
   const cached = PERMISOS_LIST_CACHE.get(q);
   if (cached && Date.now() - cached.iat < PERMISOS_LIST_TTL_MS) return Promise.resolve(cached.raw);
   const inflight = PERMISOS_LIST_INFLIGHT.get(q);
   if (inflight) return inflight;
-  const req = jsonFetch(`/system/permisos${q ? `?${q}` : ""}`, { method: "GET", headers: systemApiHeaders() }).then((raw) => {
+  const req = jsonFetch(`/system/permisos${q ? `?${q}` : ""}`, { method: "GET", headers: systemApiHeaders() }).catch(async (err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/not found|404|no (existe|encontr)|HTTP 404/i.test(msg)) throw err;
+    return permissionsFromAdminRoles(await fetchPatyiaAdminRoles());
+  }).then((raw) => {
     PERMISOS_LIST_CACHE.set(q, { raw, iat: Date.now() });
     return raw;
   }).finally(() => {
@@ -940,7 +1047,7 @@ async function searchPermisosUsers(query = "", opts) {
 }
 var CONTAPYME_NOAUTH_RX, PERMISSIONS_ME_CACHE, PERMISSIONS_ME_INFLIGHT, PERMISOS_LIST_TTL_MS, PERMISOS_LIST_CACHE, PERMISOS_LIST_INFLIGHT;
 var init_systemConfigApi = __esm({
-  "js/api/systemConfigApi.ts"() {
+  "src/js/api/systemConfigApi.ts"() {
     init_platform();
     init_patyia();
     init_patyia_jwt();
@@ -954,16 +1061,16 @@ var init_systemConfigApi = __esm({
   }
 });
 
-// js/tools/PermisosKanban.jsx
+// src/js/tools/PermisosKanban.jsx
 init_platform();
 
-// js/tools/permFilter.js
+// src/js/tools/permFilter.js
 var SESSION_OWNER_FILTER = {
   itercero: "{{itercero}}",
   icontacto: "{{icontacto}}"
 };
 
-// js/tools/permisosForm.js
+// src/js/tools/permisosForm.js
 var FLAG_DEFS = [
   { key: "*", label: "Acceso total", hint: "Wildcard \u2014 anula el resto de restricciones de ruta." },
   { key: "impersonate", label: "Suplantar chat", hint: "Actuar como otro usuario en conversaciones." },
@@ -976,7 +1083,7 @@ var ACCESS_MODES = [
 ];
 var FLAG_KEYS = new Set(FLAG_DEFS.map((f) => f.key));
 
-// js/tools/permisosKanbanShared.js
+// src/js/tools/permisosKanbanShared.js
 init_roleCanonicalMeta();
 function userCardLabels(username, displayName, contact) {
   const user = String(username ?? "").trim().toUpperCase();
@@ -1008,20 +1115,20 @@ function pointInRef(ref, clientX, clientY) {
   return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
 }
 
-// js/tools/permisosRoleConfig.jsx
+// src/js/tools/permisosRoleConfig.jsx
 init_platform();
 
-// js/ui/shared.jsx
+// src/js/ui/shared.jsx
 init_platform();
 init_platform();
 
-// js/ui/ImageLightboxDialog.jsx
+// src/js/ui/ImageLightboxDialog.jsx
 init_platform();
 init_platform();
 import { jsx } from "react/jsx-runtime";
 var { useEffect, useState } = getReact();
 
-// js/ui/GlassDialog.jsx
+// src/js/ui/GlassDialog.jsx
 init_platform();
 import { jsx as jsx2, jsxs } from "react/jsx-runtime";
 function isaLoginSurface() {
@@ -1183,7 +1290,7 @@ function GlassDialog({ children, header = null, maxWidth, fullWidth, fullScreen,
   ] });
 }
 
-// js/ui/shared.jsx
+// src/js/ui/shared.jsx
 import { Fragment, jsx as jsx3, jsxs as jsxs2 } from "react/jsx-runtime";
 var { useState: useState2, useEffect: useEffect2, useMemo } = getReact();
 var { createTheme, Tabs, Tab, Box, Typography, DialogContent, Stack, Chip } = getMaterialUI();
@@ -1209,17 +1316,17 @@ var theme = createTheme({
   }
 });
 
-// js/editors/jsonEditor.jsx
+// src/js/editors/jsonEditor.jsx
 init_platform();
 import { jsx as jsx4 } from "react/jsx-runtime";
 
-// js/tools/permisosRouteCatalog.js
+// src/js/tools/permisosRouteCatalog.js
 var ROUTE_GROUPS = [
   {
     id: "conversaciones",
     title: "Conversaciones",
     routes: [
-      { key: "GET:/api/conversaciones", label: "Listar conversaciones", scoped: true },
+      { key: "QUERY:/api/conversaciones", label: "Listar conversaciones", scoped: true },
       { key: "GET:/api/conversacion/*", label: "Ver conversaci\xF3n", scoped: true },
       { key: "GET:/api/conversacion/logs/*", label: "Logs de conversaci\xF3n" },
       { key: "POST:/api/conversacion", label: "Crear conversaci\xF3n", scoped: true },
@@ -1249,12 +1356,12 @@ var ROUTE_GROUPS = [
   },
   {
     id: "patyia",
-    title: "PatyIA / instrucciones",
+    title: "PatyIA",
     routes: [
-      { key: "POST:/api/patyia/instrucciones/publish", label: "Publicar instrucciones" },
-      { key: "POST:/api/patyia/instrucciones/upsert", label: "Upsert instrucciones" },
-      { key: "POST:/api/patyia/prompts/upsert-sql", label: "Upsert SQL prompts" },
-      { key: "POST:/api/instrucciones/*", label: "POST instrucciones (wildcard)" }
+      { key: "GET:/api/patyia/admin/roles", label: "Admin roles PatyIA" },
+      { key: "PUT:/api/patyia/admin/roles/*", label: "Asignar rol contacto" },
+      { key: "GET:/api/patyia/admin/acciones", label: "Admin acciones x rol" },
+      { key: "PUT:/api/patyia/admin/acciones", label: "Upsert acci\xF3n x rol" }
     ]
   },
   {
@@ -1267,7 +1374,7 @@ var ROUTE_GROUPS = [
 ];
 var CATALOG_KEYS = new Set(ROUTE_GROUPS.flatMap((g) => g.routes.map((r) => r.key)));
 
-// js/tools/permisosRoleTransfer.js
+// src/js/tools/permisosRoleTransfer.js
 function isTopDevLeadRole(roleName) {
   return String(roleName ?? "").trim().toUpperCase() === "DEVISS";
 }
@@ -1317,7 +1424,7 @@ function canAddUserToRole({ username } = {}) {
   return { ok: true };
 }
 
-// js/tools/PermisosUserAutocomplete.jsx
+// src/js/tools/PermisosUserAutocomplete.jsx
 init_platform();
 init_systemConfigApi();
 import { jsx as jsx5 } from "react/jsx-runtime";
@@ -1482,11 +1589,11 @@ function PermisosUserAutocomplete({
   );
 }
 
-// js/tools/permisosVisitante.js
+// src/js/tools/permisosVisitante.js
 var VISITANTE_DEFAULT_PERMISOS = {
   namedisplay: "Usuario",
   descripcion: "Usuario \u2014 solo sus propias conversaciones; logs abiertos; resto lectura",
-  "GET:/api/conversaciones": { filter: { ...SESSION_OWNER_FILTER } },
+  "QUERY:/api/conversaciones": { filter: { ...SESSION_OWNER_FILTER } },
   "GET:/api/conversacion/*": { filter: { ...SESSION_OWNER_FILTER } },
   "GET:/api/conversacion/logs/*": true,
   "POST:/api/conversacion": { filter: { ...SESSION_OWNER_FILTER } },
@@ -1494,7 +1601,7 @@ var VISITANTE_DEFAULT_PERMISOS = {
   "DELETE:/api/conversacion/*": { filter: { ...SESSION_OWNER_FILTER } }
 };
 
-// js/tools/permisosRoleConfig.jsx
+// src/js/tools/permisosRoleConfig.jsx
 import { Fragment as Fragment2, jsx as jsx6, jsxs as jsxs3 } from "react/jsx-runtime";
 var { useState: useState4, useEffect: useEffect4, useMemo: useMemo2 } = getReact();
 var {
@@ -1691,7 +1798,7 @@ function RoleRemoveDialog({ open, pending, busy, sessionUsername, onClose, onCon
   );
 }
 
-// js/tools/PermisosKanban.jsx
+// src/js/tools/PermisosKanban.jsx
 import { Fragment as Fragment3, jsx as jsx7, jsxs as jsxs4 } from "react/jsx-runtime";
 var { useState: useState5, useMemo: useMemo3, useRef: useRef2, useEffect: useEffect5, memo } = getReact();
 var { createPortal } = getReactDOM();
