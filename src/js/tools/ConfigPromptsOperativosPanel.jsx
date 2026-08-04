@@ -380,8 +380,9 @@ export function ConfigPromptsOperativosPanel({ onNeedLogin, ConfigFormSection, o
     setExpandState((prev) => ({ ...prev, [key]: on }));
   }
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // soft: revalida en segundo plano sin skeleton (auth / refresh). Skeleton solo en la 1ª carga.
+  const load = useCallback(async ({ soft = false } = {}) => {
+    if (!soft) setLoading(true);
     try {
       const { config: cfg, canEdit: ce } = await fetchPromptsOperativosConfig();
       const data = stripLegacyMetaKeys(cfg ?? {});
@@ -400,17 +401,15 @@ export function ConfigPromptsOperativosPanel({ onNeedLogin, ConfigFormSection, o
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    const onAuth = () => { load(); };
-    const onOpenAi = () => { load(); };
+    // Modelos OpenAI llegan por props (operativeModel); no refetch ni skeleton al guardar openai.
+    const onAuth = () => { void load({ soft: true }); };
     window.addEventListener(Session.EVENT, onAuth);
     window.addEventListener("patyia-apptools:caps-changed", onAuth);
-    window.addEventListener("isa-patyia:openai-config", onOpenAi);
     return () => {
       window.removeEventListener(Session.EVENT, onAuth);
       window.removeEventListener("patyia-apptools:caps-changed", onAuth);
-      window.removeEventListener("isa-patyia:openai-config", onOpenAi);
     };
   }, [load]);
 
@@ -455,7 +454,7 @@ export function ConfigPromptsOperativosPanel({ onNeedLogin, ConfigFormSection, o
       actions={(
         <>
           <ButtonIconify icon="mdi:code-json" title="JSON" onClick={() => setJsonOpen(true)} />
-          <ButtonIconify icon="mdi:refresh" title="Recargar" onClick={load} busy={loading} />
+          <ButtonIconify icon="mdi:refresh" title="Recargar" onClick={() => void load({ soft: true })} busy={loading} />
         </>
       )}
     >

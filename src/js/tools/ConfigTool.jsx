@@ -175,8 +175,9 @@ function OpenAiSection({ onNeedLogin, onModelsChange }) {
 
   const modelOptions = useMemo(() => modelSelectOptions(config.modeloOperativo, config.modeloConversacion), [config]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // soft: auth/refresh sin vaciar el formulario (evita flash al cambiar un campo hermano).
+  const load = useCallback(async ({ soft = false } = {}) => {
+    if (!soft) setLoading(true);
     try {
       const cfg = await fetchOpenAiSystemConfig();
       const next = { ...buildDefaults(), ...cfg };
@@ -193,9 +194,9 @@ function OpenAiSection({ onNeedLogin, onModelsChange }) {
     }
   }, [onModelsChange]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    const onAuth = () => { load(); };
+    const onAuth = () => { void load({ soft: true }); };
     window.addEventListener(Session.EVENT, onAuth);
     window.addEventListener("patyia-apptools:caps-changed", onAuth);
     return () => {
@@ -247,7 +248,7 @@ function OpenAiSection({ onNeedLogin, onModelsChange }) {
       actions={(
         <>
           <ButtonIconify icon="mdi:code-json" title="JSON" onClick={() => setJsonOpen(true)} />
-          <ButtonIconify icon="mdi:refresh" title="Recargar" onClick={load} busy={loading} />
+          <ButtonIconify icon="mdi:refresh" title="Recargar" onClick={() => void load({ soft: true })} busy={loading} />
         </>
       )}
     >
