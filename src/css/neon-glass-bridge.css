@@ -1487,7 +1487,7 @@ html[data-mui-color-scheme="light"] .paty-todos-card.paty-permisos-user-card.pat
   pointer-events: none;
 }
 
-/* Plano (_dist): tarjetas permisos compactas + ghost alineado al puntero (no heredar 96px DevFlow) */
+/* Plano (dist): tarjetas permisos compactas + ghost alineado al puntero (no heredar 96px DevFlow) */
 .paty-permisos-kanban .paty-todos-card.paty-permisos-user-card,
 .paty-todos-card.paty-permisos-user-card.paty-permisos-drag-ghost {
   min-height: 0 !important;
@@ -1786,7 +1786,7 @@ html[data-mui-color-scheme="light"] .isa-glass-dialog--fullscreen .permisos-role
   }
 }
 
-/* Chat gate logged-out ? reglas planas (compat _dist sin nesting expandido) */
+/* Chat gate logged-out ? reglas planas (compat dist sin nesting expandido) */
 .paty-chat-gate__inner.isa-glass-card {
   max-width: 520px;
   width: 100%;
