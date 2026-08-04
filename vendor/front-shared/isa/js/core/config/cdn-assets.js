@@ -1,5 +1,5 @@
 /**
- * Resolución de URLs CDN — fuente (dev) vs _dist minificado (producción jsDelivr).
+ * Resolución de URLs CDN — fuente (dev) vs dist minificado (producción jsDelivr).
  * @module cdn-assets
  */
 import { FRONT_SHARED_REF } from "./constants.js";
@@ -21,14 +21,14 @@ export function resolveCdnRoot() {
   return JSDELIVR_CDN;
 }
 
-/** `true` → artefactos en cdn/_dist/ (minificados). Fuente solo con `__ISA_CDN_SRC__`. */
+/** `true` → artefactos en cdn/dist/ (minificados). Fuente solo con `__ISA_CDN_SRC__`. */
 export function useCdnDist() {
   if (typeof globalThis !== "undefined" && globalThis.__ISA_CDN_SRC__) return false;
   return true;
 }
 
 export const CDN_ROOT = resolveCdnRoot();
-export const CDN_DIST_ROOT = CDN_ROOT + "/_dist";
+export const CDN_DIST_ROOT = CDN_ROOT + "/dist";
 export const CDN_ISA_ROOT = CDN_ROOT + "/isa";
 export const CDN_DIST_ISA = CDN_DIST_ROOT + "/isa";
 
@@ -66,7 +66,7 @@ export function kitCssUrl(kitId) {
   return isaCssUrl("kits/" + kitId + "/neon-glass.css");
 }
 
-/** Chunk JS lazy del kit (solo en _dist). */
+/** Chunk JS lazy del kit (solo en dist). */
 export function kitJsUrl(kitId) {
   if (useCdnDist()) return distJs("kits/" + kitId);
   return CDN_ISA_ROOT + "/js/ui/kits/" + kitId + "/lazy-entry.js";

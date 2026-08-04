@@ -20,7 +20,7 @@ export function ensureKitCss(kitId) {
   return p;
 }
 
-/** Import dinámico del chunk JS del kit (_dist) o lazy-entry (dev). */
+/** Import dinámico del chunk JS del kit (dist) o lazy-entry (dev). */
 export function loadKitModule(kitId) {
   const id = String(kitId || "").trim();
   if (!id) return Promise.reject(new Error("kitId requerido"));

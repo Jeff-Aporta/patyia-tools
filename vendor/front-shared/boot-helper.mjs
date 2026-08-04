@@ -21,6 +21,9 @@ function resolveCdnBase() {
 
 const CDN = resolveCdnBase();
 const useDist = useCdnDist();
+// El paquete publicado en jsDelivr conserva el nombre histórico `_dist/`; el vendor local ya migró a `dist/`.
+// Sin esta distinción, el fallback remoto (cuando `import.meta.url` no resuelve) pide rutas que dan 404.
+const DIST_DIR = CDN.includes("cdn.jsdelivr.net") ? "_dist" : "dist";
 initModuleGraph(CDN);
 
 export { babelPresets, importAppEntry, importAppModules };
@@ -50,12 +53,12 @@ export function assertStack() {
 
 export async function loadIsaFront() {
   ensureFeedbackCss();
-  const entry = useDist ? "_dist/isa/js/index.min.js" : "isa/js/index.js";
+  const entry = useDist ? DIST_DIR + "/isa/js/index.min.js" : "isa/js/index.js";
   try {
     await import(CDN + entry);
   } catch (err) {
     if (useDist) throw err;
-    await import(CDN + "_dist/isa/js/index.min.js");
+    await import(CDN + DIST_DIR + "/isa/js/index.min.js");
   }
 }
 
@@ -63,7 +66,7 @@ export function ensureFeedbackCss() {
   if (document.querySelector("link[data-isa-feedback-css]")) return;
   const link = document.createElement("link");
   link.rel = "stylesheet";
-  link.href = useDist ? CDN + "_dist/isa/css/feedback.min.css" : CDN + "isa/css/feedback.css";
+  link.href = useDist ? CDN + DIST_DIR + "/isa/css/feedback.min.css" : CDN + "isa/css/feedback.css";
   link.setAttribute("data-isa-feedback-css", "1");
   document.head.appendChild(link);
 }

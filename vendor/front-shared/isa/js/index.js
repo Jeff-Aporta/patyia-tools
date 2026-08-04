@@ -1,6 +1,6 @@
 /**
  * ISA Front — punto de entrada ESM (runtime, sin build).
- * jsDelivr prod: …/cdn/_dist/isa/js/index.min.js (boot-helper)
+ * jsDelivr prod: …/cdn/dist/isa/js/index.min.js (boot-helper)
  */
 import { CDN_BASE, UI_CDN_BASE, MAIN_ORCHESTRATOR_URL_LOCAL, MAIN_ORCHESTRATOR_URL_PROD, GATEWAY_URL_LOCAL, GATEWAY_URL_PROD } from "./core/config/constants.js";
 import { isaCssUrl, isaIndexUrl, useCdnDist, CDN_DIST_ISA } from "./core/config/cdn-assets.js";

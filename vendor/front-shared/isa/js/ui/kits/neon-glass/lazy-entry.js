@@ -1,3 +1,3 @@
-/** Entrada lazy del kit — import dinámico desde kit-assets (dev / chunk _dist). */
+/** Entrada lazy del kit — import dinámico desde kit-assets (dev / chunk dist). */
 export { registerNeonGlass } from "./index.js";
 export { attachNeonGlassToISAFront } from "./register.js";
