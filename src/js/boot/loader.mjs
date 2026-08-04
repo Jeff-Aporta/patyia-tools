@@ -19,7 +19,7 @@ function vendorFrontSharedBase() {
 function isaFrontBundleUrls() {
   const vendor = `${vendorFrontSharedBase()}dist/isa/js/index.min.js?v=${VENDOR_BUNDLE_V}`;
   const primary = `${CDN}dist/isa/js/index.min.js?v=${VENDOR_BUNDLE_V}`;
-  const remote = `${JSDELIVR_CDN}dist/isa/js/index.min.js?v=${PIN}`;
+  const remote = `${JSDELIVR_CDN}_dist/isa/js/index.min.js?v=${PIN}`;
   // En localhost: vendor → CDN configurado → jsDelivr (monorepo vacío no tumba el boot).
   if (isDevHost) return [vendor, primary, remote];
   return [primary, vendor, remote];

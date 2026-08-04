@@ -6,10 +6,24 @@ import { FRONT_SHARED_REF } from "./constants.js";
 
 const JSDELIVR_CDN = "https://cdn.jsdelivr.net/gh/Jeff-Aporta/front-shared@" + FRONT_SHARED_REF + "/cdn";
 
-/** Raíz `cdn/` sin barra final (local Live Server). */
+/**
+ * Raíz `cdn/` sin barra final.
+ * - Vendor same-origin (`…/vendor/front-shared/dist/isa/js/…`) → sube a `…/vendor/front-shared`
+ * - file: + localhost → Live Server relativo
+ * - else → jsDelivr (pin FRONT_SHARED_REF)
+ */
 export function resolveCdnRoot() {
   try {
     const meta = new URL(import.meta.url);
+    if (typeof location !== "undefined" && meta.origin === location.origin) {
+      const href = meta.href;
+      const distIsa = href.indexOf("/dist/isa/");
+      if (distIsa >= 0) return href.slice(0, distIsa).replace(/\/?$/, "");
+      const underDistIsa = href.indexOf("/_dist/isa/");
+      if (underDistIsa >= 0) return href.slice(0, underDistIsa).replace(/\/?$/, "");
+      const isaJs = href.indexOf("/isa/js/");
+      if (isaJs >= 0) return href.slice(0, isaJs).replace(/\/?$/, "");
+    }
     if (
       meta.protocol === "file:"
       && typeof location !== "undefined"
@@ -21,14 +35,16 @@ export function resolveCdnRoot() {
   return JSDELIVR_CDN;
 }
 
-/** `true` → artefactos en cdn/dist/ (minificados). Fuente solo con `__ISA_CDN_SRC__`. */
+/** `true` → artefactos en cdn/dist|/_dist (minificados). Fuente solo con `__ISA_CDN_SRC__`. */
 export function useCdnDist() {
   if (typeof globalThis !== "undefined" && globalThis.__ISA_CDN_SRC__) return false;
   return true;
 }
 
 export const CDN_ROOT = resolveCdnRoot();
-export const CDN_DIST_ROOT = CDN_ROOT + "/dist";
+/** jsDelivr publica `_dist/`; el vendor local usa `dist/`. */
+const DIST_SEG = CDN_ROOT.includes("cdn.jsdelivr.net") ? "/_dist" : "/dist";
+export const CDN_DIST_ROOT = CDN_ROOT + DIST_SEG;
 export const CDN_ISA_ROOT = CDN_ROOT + "/isa";
 export const CDN_DIST_ISA = CDN_DIST_ROOT + "/isa";
 

@@ -493,12 +493,35 @@ function fetchPermisosListRaw(q: string): Promise<PermissionsData> {
   if (cached && Date.now() - cached.iat < PERMISOS_LIST_TTL_MS) return Promise.resolve(cached.raw);
   const inflight = PERMISOS_LIST_INFLIGHT.get(q);
   if (inflight) return inflight;
-  const req = jsonFetch<PermissionsData>(`/system/permisos${q ? `?${q}` : ""}`, { method: "GET", headers: systemApiHeaders() })
-    .catch(async (err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      // ISS retiró el CRUD local GET /system/permisos — kanban se arma desde SEG admin.
-      if (!/not found|404|no (existe|encontr)|HTTP 404/i.test(msg)) throw err;
-      return permissionsFromAdminRoles(await fetchPatyiaAdminRoles());
+  // ISS retiró GET /system/permisos — kanban directo desde SEG admin (evita 404 en consola).
+  const req = fetchPatyiaAdminRoles()
+    .then((admin) => permissionsFromAdminRoles(admin))
+    .then((raw) => {
+      // Filtro search/limit client-side (el admin lista completo).
+      const qs = new URLSearchParams(q);
+      const search = String(qs.get("search") ?? "").trim().toUpperCase();
+      const role = String(qs.get("role") ?? "").trim().toUpperCase();
+      const limitRaw = qs.get("limit");
+      const limit = limitRaw != null && Number.isFinite(Number(limitRaw))
+        ? Math.min(500, Math.max(1, Math.floor(Number(limitRaw))))
+        : undefined;
+      let users = Array.isArray(raw.users) ? [...raw.users] : [];
+      if (search) {
+        users = users.filter((u) => {
+          const name = String(u.iusuario ?? "").toUpperCase();
+          const nombre = String((u.permisos as { nombre?: string } | undefined)?.nombre ?? "").toUpperCase();
+          return name.includes(search) || nombre.includes(search);
+        });
+      }
+      if (role) {
+        users = users.filter((u) => {
+          const roles = (u.permisos as { roles?: string[] } | undefined)?.roles;
+          return Array.isArray(roles) && roles.some((r) => String(r).toUpperCase() === role);
+        });
+      }
+      const truncated = limit != null && users.length > limit;
+      if (limit != null) users = users.slice(0, limit);
+      return { ...raw, users, usersTotal: users.length, usersTruncated: truncated };
     })
     .then((raw) => {
       PERMISOS_LIST_CACHE.set(q, { raw, iat: Date.now() });

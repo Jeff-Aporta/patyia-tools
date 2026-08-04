@@ -67,22 +67,15 @@ export async function getContactoActual(): Promise<Contacto | null> {
   };
 
   try {
-    const r = await fetch("/api/system/permisos", {
+    // Preferir /permissions/me (vivo); GET /system/permisos ya no existe en ISS.
+    const r = await fetch("/api/permissions/me", {
       headers: { Authorization: `Bearer ${jwt.token}`, Accept: "application/json" },
     });
     if (r.ok) {
       const j = await r.json();
-      const roles = (j?.respuesta?.roles ?? j?.roles ?? [])
-        .map((x: { ientity?: string }) => x?.ientity)
-        .filter(Boolean) as string[];
+      const body = j?.respuesta ?? j;
+      const roles = Array.isArray(body?.roles) ? body.roles.map(String) : [];
       contacto.roles = roles;
-      const map = j?.respuesta?.contactos ?? j?.contactos;
-      if (map && typeof map === "object" && map[username]) {
-        const e = map[username];
-        if (e?.nombre) contacto.nombreCompleto = String(e.nombre);
-        if (e?.icontacto != null) contacto.icontacto = String(e.icontacto);
-        if (e?.itercero) contacto.itercero = String(e.itercero);
-      }
     }
   } catch {
     /* contacto sin roles */
