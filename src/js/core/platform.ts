@@ -77,7 +77,7 @@ export const Assets = {
   ensureChatStagingCss: () => {
     const api = frontSharedLazy();
     if (!api) return;
-    const prefix = typeof window !== "undefined" && (window as Window & { __ISA_DIST__?: boolean }).__ISA_DIST__ ? "_dist/" : "";
+    const prefix = typeof window !== "undefined" && (window as Window & { __ISA_DIST__?: boolean }).__ISA_DIST__ ? "dist/" : "";
     api.ensureLazyStylesheet!(`${prefix}css/chat-staging.css`).catch((err) => {
       console.warn("chat-staging.css:", err);
     });
@@ -85,7 +85,7 @@ export const Assets = {
   ensureTodosCss: () => {
     const api = frontSharedLazy();
     if (!api) return;
-    const prefix = typeof window !== "undefined" && (window as Window & { __ISA_DIST__?: boolean }).__ISA_DIST__ ? "_dist/" : "";
+    const prefix = typeof window !== "undefined" && (window as Window & { __ISA_DIST__?: boolean }).__ISA_DIST__ ? "dist/" : "";
     api.ensureLazyStylesheet!(`${prefix}css/todos-staging.css`).catch((err) => {
       console.warn("todos-staging.css:", err);
     });
@@ -93,7 +93,7 @@ export const Assets = {
   ensureWelcomeCss: () => {
     const api = frontSharedLazy();
     if (!api) return;
-    const prefix = typeof window !== "undefined" && (window as Window & { __ISA_DIST__?: boolean }).__ISA_DIST__ ? "_dist/" : "";
+    const prefix = typeof window !== "undefined" && (window as Window & { __ISA_DIST__?: boolean }).__ISA_DIST__ ? "dist/" : "";
     api.ensureLazyStylesheet!(`${prefix}css/welcome-home.css`).catch((err) => {
       console.warn("welcome-home.css:", err);
     });
