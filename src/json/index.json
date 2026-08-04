@@ -1,0 +1,63 @@
+{
+  "meta": {
+    "title": "ISA PatyIA",
+    "applicationName": "ISA PatyIA",
+    "description": "Chat con PatyIA, editor de instrucciones Prompts→SQL, logs de conversación y herramientas staging para asesores InSoft.",
+    "keywords": "PatyIA, ISA, InSoft, chat, instrucciones, staging, Jeff-Aporta",
+    "themeColor": "#1e90ff",
+    "themeLsKey": "isa-patyia:theme",
+    "icon": "mdi:robot-happy-outline",
+    "canonical": "https://isa-patyia-dev.pages.dev/",
+    "ogSiteName": "ISA PatyIA (dev) — Jeff-Aporta",
+    "ogTitle": "ISA PatyIA",
+    "imageAlt": "ISA PatyIA — asistente PatyIA staging"
+  },
+  "frontSharedPin": "a13fc29",
+  "frontSharedVendor": false,
+  "cdnVendor": false,
+  "useDist": true,
+  "headIndent": "  ",
+  "viewport": "width=device-width, initial-scale=1.0",
+  "fonts": false,
+  "loader": "mjs-module",
+  "themeInit": true,
+  "appMeta": true,
+  "styles": [
+    "shared-base",
+    "shared-feedback",
+    "local:css/boot-loading.css",
+    "local:css/theme.css",
+    "local:css/neon-glass-bridge.css",
+    "local:css/app.css",
+    "local:css/welcome-home.css"
+  ],
+  "preconnect": [],
+  "libs": [
+    "iconify",
+    "loader-mjs"
+  ],
+  "readme": {
+    "repoName": "isa-patyia",
+    "tagline": "Chat con PatyIA, instrucciones Prompts→SQL, logs y DevFlow.",
+    "prodUrl": "https://jeff-aporta.github.io/isa-patyia/",
+    "prodUnderTitle": true,
+    "badges": ["cloudflare-pages", "github-pages-prod", "github-repo", "react", "mui", "typescript"],
+    "mergeHistory": [
+      { "date": "2026-07-21", "url": "https://c4b5d22.isa-patyia-dev.pages.dev" },
+      { "date": "2026-07-17", "url": "https://db09d2b7.isa-patyia-dev.pages.dev" },
+      { "date": "2026-07-15", "url": "https://121cc5cc.isa-patyia-dev.pages.dev" },
+      { "date": "2026-07-06", "url": "https://8dc93bfd.isa-patyia-dev.pages.dev" },
+      { "date": "2026-07-02", "url": "https://8ce645b1.isa-patyia-dev.pages.dev" },
+      { "date": "2026-06-30", "url": "https://9555f121.isa-patyia-dev.pages.dev" },
+      { "date": "2026-06-26", "url": "https://9aaf4abc.isa-patyia-dev.pages.dev" },
+      { "date": "2026-06-22", "url": "https://269181a.isa-patyia-dev.pages.dev" },
+      { "date": "2026-06-19", "url": "https://93de6468.isa-patyia-dev.pages.dev" }
+    ],
+    "features": [
+      "**Visor de log**: trazas y mensajes de conversaciones PatyIA",
+      "**Prompts → SQL**: edición e importación de instrucciones staging",
+      "**Chat**: conversaciones con PatyIA",
+      "**DevFlow**: tablero kanban SCRUM"
+    ]
+  }
+}
