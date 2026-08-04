@@ -1,5 +1,5 @@
 // Build script para los bundles de isa-patyia modificados.
-// Genera los .js en _dist/ a partir de los .jsx/.ts/.tsx originales.
+// Genera los .js en dist/ a partir de los .jsx/.ts/.tsx originales.
 
 import { build } from "esbuild";
 import fs from "node:fs/promises";
@@ -7,7 +7,7 @@ import path from "node:path";
 
 const root = "C:\\ContaPyme\\PatyIA\\temp\\paty_out";  // Base no importa, uso absoluto
 const FRONTEND = "C:\\ContaPyme\\Personal\\apps\\isa-patyia\\frontend";
-const DIST = path.join(FRONTEND, "_dist");
+const DIST = path.join(FRONTEND, "dist");
 
 async function compileOne(srcRel, distRel) {
   const src = path.join(FRONTEND, srcRel);
@@ -56,29 +56,30 @@ async function compileOne(srcRel, distRel) {
 }
 
 const jobs = [
-  ["js/api/todosApi.ts", "js/api/todosApi.js"],
-  ["js/api/sessionApi.ts", "js/api/sessionApi.js"],
-  ["js/core/patyia.ts", "js/core/patyia.js"],
-  ["js/core/patyia-jwt.ts", "js/core/patyia-jwt.js"],
-  ["js/core/platform.ts", "js/core/platform.js"],
-  ["js/core/theme.ts", "js/core/theme.js"],
-  ["js/api/apiClient.ts", "js/api/apiClient.js"],
-  ["js/api/patyiaChatApi.ts", "js/api/patyiaChatApi.js"],
-  ["js/api/systemConfigApi.ts", "js/api/systemConfigApi.js"],
-  ["js/app/App.jsx", "js/app/App.js"],
-  ["js/tools/PermisosKanban.jsx", "js/tools/PermisosKanban.js"],
-  ["js/tools/permisosKanbanShared.js", "js/tools/permisosKanbanShared.js"],
-  ["js/tools/permAccessFromMap.js", "js/tools/permAccessFromMap.js"],
-  ["js/tools/PermisosPanel.jsx", "js/tools/PermisosPanel.js"],
-  ["js/tools/UserPermissionsSummaryDialog.jsx", "js/tools/UserPermissionsSummaryDialog.js"],
-  ["js/tools/promptsSql/usePromptsSqlTool.ts", "js/tools/promptsSql/usePromptsSqlTool.js"],
-  ["js/components/IssTargetSwitch.jsx", "js/components/IssTargetSwitch.js"],
-  ["js/components/CopySysValuesModal.jsx", "js/components/CopySysValuesModal.js"],
-  ["js/api/sysValuesCopy.ts", "js/api/sysValuesCopy.js"],
-  ["js/api/portalJwtApi.ts", "js/api/portalJwtApi.js"],
-  ["js/api/openaiStatusApi.ts", "js/api/openaiStatusApi.js"],
-  ["js/core/urlState.ts", "js/core/urlState.js"],
-  ["js/core/viewAsRole.ts", "js/core/viewAsRole.js"],
+  ["src/js/api/todosApi.ts", "js/api/todosApi.js"],
+  ["src/js/api/sessionApi.ts", "js/api/sessionApi.js"],
+  ["src/js/core/patyia.ts", "js/core/patyia.js"],
+  ["src/js/core/patyia-jwt.ts", "js/core/patyia-jwt.js"],
+  ["src/js/core/platform.ts", "js/core/platform.js"],
+  ["src/js/core/theme.ts", "js/core/theme.js"],
+  ["src/js/api/apiClient.ts", "js/api/apiClient.js"],
+  ["src/js/api/patyiaChatApi.ts", "js/api/patyiaChatApi.js"],
+  ["src/js/api/systemConfigApi.ts", "js/api/systemConfigApi.js"],
+  ["src/js/app/App.jsx", "js/app/App.js"],
+  ["src/js/tools/PermisosKanban.jsx", "js/tools/PermisosKanban.js"],
+  ["src/js/tools/permisosKanbanShared.js", "js/tools/permisosKanbanShared.js"],
+  ["src/js/tools/permAccessFromMap.js", "js/tools/permAccessFromMap.js"],
+  ["src/js/tools/PermisosPanel.jsx", "js/tools/PermisosPanel.js"],
+  ["src/js/tools/UserPermissionsSummaryDialog.jsx", "js/tools/UserPermissionsSummaryDialog.js"],
+  ["src/js/tools/promptsSql/usePromptsSqlTool.ts", "js/tools/promptsSql/usePromptsSqlTool.js"],
+  ["src/js/components/IssTargetSwitch.jsx", "js/components/IssTargetSwitch.js"],
+  ["src/js/components/CopySysValuesModal.jsx", "js/components/CopySysValuesModal.js"],
+  ["src/js/api/sysValuesCopy.ts", "js/api/sysValuesCopy.js"],
+  ["src/js/api/portalJwtApi.ts", "js/api/portalJwtApi.js"],
+  ["src/js/api/openaiStatusApi.ts", "js/api/openaiStatusApi.js"],
+  ["src/js/core/urlState.ts", "js/core/urlState.js"],
+  ["src/js/core/viewAsRole.ts", "js/core/viewAsRole.js"],
+  ["src/js/ui/ConvLogWebView.jsx", "js/ui/ConvLogWebView.js"],
 ];
 
 for (const [src, dist] of jobs) {
