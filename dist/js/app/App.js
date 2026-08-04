@@ -13,7 +13,7 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// js/core/patyia.ts
+// src/js/core/patyia.ts
 function isPatyiaApiPath(path) {
   const p = path.startsWith("/") ? path : `/${path}`;
   return p.startsWith("/patyia") || p.startsWith("/api/patyia");
@@ -127,7 +127,7 @@ async function readPatyiaSseStream(response, onEvent) {
 }
 var ORCH_ONLINE, PATYIA_ISS_URL, PATYIA_ISS_PROD_URL, PATYIA_ISS_LOCAL, ORCH_LOCAL, SCRUM_LOCAL, TREE_MSGS_LOCAL, PATYIA_ISS_LOCAL_API, PATYIA_ISS_PROD_API, PATYIA_ISS_STAGING_API, PATYIA_ISS_TARGET_LS_KEY, AVATAR_BG_PALETTE;
 var init_patyia = __esm({
-  "js/core/patyia.ts"() {
+  "src/js/core/patyia.ts"() {
     window.ISAFront.migrateLegacyGatewayKeys?.({ "jeff:gateway-local": "", "patyia-apptools:gateway-local": "", "patyia-apptools:lab-local": "" });
     ORCH_ONLINE = "https://main-orchestrator.jeffaporta.workers.dev";
     PATYIA_ISS_URL = "https://ayudascp-ia-staging.azurewebsites.net";
@@ -161,7 +161,7 @@ var init_patyia = __esm({
   }
 });
 
-// js/core/platform.ts
+// src/js/core/platform.ts
 function frontSharedLazy() {
   const api = window.ISAFront;
   return api?.ensureCodeMirrorLoaded ? api : null;
@@ -214,7 +214,7 @@ function requestConfirm(opts) {
 }
 var bridge, UI, Session, Config, Assets, Tokens, getReact, getReactDOM, getMaterialUI, Lightbox, fb;
 var init_platform = __esm({
-  "js/core/platform.ts"() {
+  "src/js/core/platform.ts"() {
     init_patyia();
     bridge = () => window.ISAFront.createPlatformBridge("ISA");
     UI = {
@@ -292,7 +292,7 @@ var init_platform = __esm({
       ensureChatStagingCss: () => {
         const api = frontSharedLazy();
         if (!api) return;
-        const prefix = typeof window !== "undefined" && window.__ISA_DIST__ ? "_dist/" : "";
+        const prefix = typeof window !== "undefined" && window.__ISA_DIST__ ? "dist/" : "";
         api.ensureLazyStylesheet(`${prefix}css/chat-staging.css`).catch((err) => {
           console.warn("chat-staging.css:", err);
         });
@@ -300,7 +300,7 @@ var init_platform = __esm({
       ensureTodosCss: () => {
         const api = frontSharedLazy();
         if (!api) return;
-        const prefix = typeof window !== "undefined" && window.__ISA_DIST__ ? "_dist/" : "";
+        const prefix = typeof window !== "undefined" && window.__ISA_DIST__ ? "dist/" : "";
         api.ensureLazyStylesheet(`${prefix}css/todos-staging.css`).catch((err) => {
           console.warn("todos-staging.css:", err);
         });
@@ -308,7 +308,7 @@ var init_platform = __esm({
       ensureWelcomeCss: () => {
         const api = frontSharedLazy();
         if (!api) return;
-        const prefix = typeof window !== "undefined" && window.__ISA_DIST__ ? "_dist/" : "";
+        const prefix = typeof window !== "undefined" && window.__ISA_DIST__ ? "dist/" : "";
         api.ensureLazyStylesheet(`${prefix}css/welcome-home.css`).catch((err) => {
           console.warn("welcome-home.css:", err);
         });
@@ -340,7 +340,7 @@ var init_platform = __esm({
   }
 });
 
-// js/boot/cdn.mjs
+// src/js/boot/cdn.mjs
 var cdn_exports = {};
 __export(cdn_exports, {
   CDN: () => CDN,
@@ -476,7 +476,7 @@ async function ensureSwaggerViewer(base = swaggerViewerBase()) {
 }
 var PIN, isDevHost2, JSDELIVR_CDN, CDN, asset, LIGHTBOX_ZOOM_REF, SWAGGER_VIEWER_REF;
 var init_cdn = __esm({
-  "js/boot/cdn.mjs"() {
+  "src/js/boot/cdn.mjs"() {
     PIN = "f8ce806";
     isDevHost2 = typeof location !== "undefined" && /localhost|127\.0\.0\.1|\[::1\]/.test(location.hostname);
     JSDELIVR_CDN = `https://cdn.jsdelivr.net/gh/Jeff-Aporta/front-shared@${PIN}/cdn/`;
@@ -487,7 +487,7 @@ var init_cdn = __esm({
   }
 });
 
-// js/api/portalJwtApi.ts
+// src/js/api/portalJwtApi.ts
 function orchBase() {
   return ORCH_ONLINE.replace(/\/$/, "");
 }
@@ -524,14 +524,14 @@ async function savePortalJwt(token, portal = PATYIA_PORTAL_ID) {
 }
 var PATYIA_PORTAL_ID;
 var init_portalJwtApi = __esm({
-  "js/api/portalJwtApi.ts"() {
+  "src/js/api/portalJwtApi.ts"() {
     init_platform();
     init_patyia();
     PATYIA_PORTAL_ID = "soporte-staging";
   }
 });
 
-// js/core/patyia-jwt.ts
+// src/js/core/patyia-jwt.ts
 function samePatyUser(a, b) {
   const na = String(a ?? "").trim().toUpperCase();
   const nb = String(b ?? "").trim().toUpperCase();
@@ -716,7 +716,7 @@ function browseScopeKey(scope) {
 }
 var PATYIA_JWT_STORAGE_KEY, PATYIA_API_BASE;
 var init_patyia_jwt = __esm({
-  "js/core/patyia-jwt.ts"() {
+  "src/js/core/patyia-jwt.ts"() {
     init_portalJwtApi();
     init_apiClient();
     init_platform();
@@ -725,51 +725,62 @@ var init_patyia_jwt = __esm({
   }
 });
 
-// js/api/issListFilter.ts
-function encodeIssListFilterB64(filter) {
-  const json = JSON.stringify(filter);
-  return btoa(unescape(encodeURIComponent(json)));
-}
+// src/js/api/issListFilter.ts
 function buildConversacionesListFilter(input = {}) {
   const limit = Math.min(100, Math.max(1, Math.floor(Number(input.limit) || 10)));
   const offset = Math.max(0, Math.floor(Number(input.offset) || 0));
   const sort = String(input.sort || CONVERSACIONES_LIST_SORT_DEFAULT).trim() || CONVERSACIONES_LIST_SORT_DEFAULT;
   const search = String(input.search ?? "").trim().slice(0, 200);
+  const itercero = String(input.itercero ?? "").trim();
+  const icontacto = String(input.icontacto ?? "").trim();
   return {
     limit,
     offset,
     sort,
-    ...search ? { search } : {}
+    ...search ? { search } : {},
+    ...itercero && icontacto ? { itercero, icontacto } : {}
   };
 }
-function conversacionesListQueryParams(input = {}) {
+function conversacionesListBody(input = {}) {
   const limit = Math.min(100, Math.max(1, Math.floor(Number(input.limit) || 10)));
   const page = Math.max(1, Math.floor(Number(input.page) || 1));
-  const offset = (page - 1) * limit;
-  const qs3 = new URLSearchParams();
-  qs3.set(ISS_LIST_FILTER_QUERY_PARAM, encodeIssListFilterB64(buildConversacionesListFilter({
+  return buildConversacionesListFilter({
     search: input.search,
     limit,
-    offset,
-    sort: input.sort
-  })));
-  const itercero = String(input.itercero ?? "").trim();
-  const icontacto = String(input.icontacto ?? "").trim();
-  if (itercero && icontacto) {
-    qs3.set("itercero", itercero);
-    qs3.set("icontacto", icontacto);
-  }
-  return qs3;
+    offset: (page - 1) * limit,
+    sort: input.sort,
+    itercero: input.itercero,
+    icontacto: input.icontacto
+  });
 }
-var ISS_LIST_FILTER_QUERY_PARAM, CONVERSACIONES_LIST_SORT_DEFAULT;
+function tercerosAuditListBody(input = {}) {
+  const limit = Math.min(100, Math.max(1, Math.floor(Number(input.limit) || 20)));
+  const page = Math.max(1, Math.floor(Number(input.page) || 1));
+  const search = String(input.search ?? input.q ?? "").trim().slice(0, 200);
+  const jwtTercero = String(input.jwtTercero ?? "").trim();
+  const jwtContacto = String(input.jwtContacto ?? "").trim();
+  const jwtNombre = String(input.jwtNombre ?? "").trim();
+  const body = {
+    limit,
+    offset: (page - 1) * limit
+  };
+  if (search) body.search = search;
+  if (input.eq && typeof input.eq === "object" && !Array.isArray(input.eq) && Object.keys(input.eq).length) {
+    body.eq = input.eq;
+  }
+  if (jwtTercero) body.jwtTercero = jwtTercero;
+  if (jwtContacto) body.jwtContacto = jwtContacto;
+  if (jwtNombre) body.jwtNombre = jwtNombre;
+  return body;
+}
+var CONVERSACIONES_LIST_SORT_DEFAULT;
 var init_issListFilter = __esm({
-  "js/api/issListFilter.ts"() {
-    ISS_LIST_FILTER_QUERY_PARAM = "f";
+  "src/js/api/issListFilter.ts"() {
     CONVERSACIONES_LIST_SORT_DEFAULT = "-iconversacion";
   }
 });
 
-// js/api/patyiaTokens.ts
+// src/js/api/patyiaTokens.ts
 function patyAuthHeaders(jwt, extra = {}) {
   return {
     Authorization: `Bearer ${jwt.token}`,
@@ -778,12 +789,12 @@ function patyAuthHeaders(jwt, extra = {}) {
   };
 }
 var init_patyiaTokens = __esm({
-  "js/api/patyiaTokens.ts"() {
+  "src/js/api/patyiaTokens.ts"() {
     init_platform();
   }
 });
 
-// js/api/patyiaChatApi.ts
+// src/js/api/patyiaChatApi.ts
 function authHeaders2(jwt, extra = {}) {
   return patyAuthHeaders(jwt, extra);
 }
@@ -828,21 +839,13 @@ async function jsonFetch(path, jwt, init) {
   }
   return {};
 }
-function buildConversacionesListPath(input = {}) {
-  const qs3 = conversacionesListQueryParams({
-    page: input.page,
-    limit: input.limit,
-    search: input.search,
-    sort: input.sort,
-    itercero: input.itercero,
-    icontacto: input.icontacto
-  });
-  return `/conversaciones?${qs3.toString()}`;
-}
 async function listConversaciones(jwt, input = {}) {
   const page = Math.max(1, Math.floor(Number(input.page) || 1));
   const limit = Math.min(100, Math.max(1, Math.floor(Number(input.limit) || 10)));
-  const body = await jsonFetch(buildConversacionesListPath(input), jwt);
+  const body = await jsonFetch("/conversaciones", jwt, {
+    method: "QUERY",
+    body: JSON.stringify(conversacionesListBody(input))
+  });
   const conversaciones = Array.isArray(body.conversaciones) ? body.conversaciones : [];
   const total = Number(body.total ?? 0) || 0;
   const resLimit = Number(body.limit ?? limit) || limit;
@@ -855,6 +858,10 @@ async function getConversacion(jwt, id) {
 }
 async function getConversacionLogs(jwt, id) {
   return jsonFetch(`/conversacion/logs/${id}`, jwt);
+}
+async function getConversacionMcpSession(jwt, id, sessionId) {
+  const q = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
+  return jsonFetch(`/conversacion/${id}/mcp-session${q}`, jwt);
 }
 function convLogFromDetalle(detail, id) {
   const raw = detail?.convLog;
@@ -975,14 +982,14 @@ async function sendConversacionStream(jwt, input, onDelta) {
   };
 }
 var init_patyiaChatApi = __esm({
-  "js/api/patyiaChatApi.ts"() {
+  "src/js/api/patyiaChatApi.ts"() {
     init_issListFilter();
     init_patyiaTokens();
     init_patyia();
   }
 });
 
-// js/tools/permAccessFromMap.js
+// src/js/tools/permAccessFromMap.js
 function normalizePath(path) {
   let p = String(path ?? "").trim();
   try {
@@ -1035,34 +1042,43 @@ function capsFromPermisosEfectivos(perms) {
   return {
     canEditOpenAiConfig: hasAccess(p, "PUT", "/api/system/openai"),
     canEditSwagger: hasAccess(p, "PUT", "/api/system/swagger.json"),
-    canEditInstrucciones: hasAccess(p, "PUT", "/api/system/instrucciones") || hasAccess(p, "POST", "/api/patyia/instrucciones/publish"),
+    canEditInstrucciones: hasAccess(p, "PUT", "/api/system/instrucciones"),
     canEditPromptsOperativos: hasAccess(p, "PUT", "/api/system/prompts-operativos"),
     canEditConversacionConfig: hasAccess(p, "PUT", "/api/system/config/conversacion"),
     canOverrideSampling: canAccessOthers(p, "POST", "/api/conversacion"),
     canManagePermissions: manage,
     canAssignUserRoles: assign,
     canEditRoleDescriptions: manage,
-    canAccessOthers: canAccessOthers(p, "GET", "/api/conversaciones"),
+    canAccessOthers: canAccessOthers(p, "QUERY", "/api/conversaciones"),
     canViewKanban: hasAccess(p, "GET", "/api/permisos/usuarios") || hasAccess(p, "GET", API_PERMISOS),
     canEditKanbanCards: assign || hasAccess(p, "POST", "/api/system/permisos/usuarios"),
     canViewLogs: hasAccess(p, "GET", "/api/conversacion/logs/{id}") || hasAccess(p, "GET", "/api/conversacion/logs/*"),
     canViewPrompts: hasAccess(p, "GET", "/api/system/instrucciones"),
-    canViewChat: hasAccess(p, "POST", "/api/conversacion") || hasAccess(p, "POST", "/api/mensaje") || hasAccess(p, "GET", "/api/conversaciones"),
+    canViewChat: hasAccess(p, "POST", "/api/conversacion") || hasAccess(p, "POST", "/api/mensaje") || hasAccess(p, "QUERY", "/api/conversaciones"),
     canViewConfig: hasAccess(p, "GET", "/api/system/openai") || hasAccess(p, "GET", "/api/system/prompts-operativos") || hasAccess(p, "GET", "/api/system/instrucciones") || hasAccess(p, "GET", "/api/system/config/conversacion") || hasAccess(p, "GET", "/api/system/swagger.json") || hasAccess(p, "GET", API_PERMISOS),
     canSendChat: hasAccess(p, "POST", "/api/conversacion") && hasAccess(p, "POST", "/api/mensaje")
   };
 }
 var API_PERMISOS, API_ROLES;
 var init_permAccessFromMap = __esm({
-  "js/tools/permAccessFromMap.js"() {
+  "src/js/tools/permAccessFromMap.js"() {
     API_PERMISOS = "/api/system/permisos";
     API_ROLES = "/api/system/permisos/usuarios/*/roles";
   }
 });
 
-// js/api/systemConfigApi.ts
+// src/js/api/systemConfigApi.ts
 function systemApiBase() {
   return resolveIssApiBase();
+}
+function isSegApiPath(path) {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return p.startsWith("/permissions/me") || p.startsWith("/patyia/admin/") || p.startsWith("/system/permisos");
+}
+function shouldRetrySegOnStaging(err) {
+  if (!isLocalMode()) return false;
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return /timeout|terminated|ECONN|ENOTFOUND|Failed to fetch|NetworkError|HTTP 5\d\d|Connection|sin METHOD:path/i.test(msg);
 }
 function humanizeIssAuthMessage(msg) {
   const m = String(msg ?? "").trim();
@@ -1110,8 +1126,8 @@ function unwrapBody2(data) {
   }
   return inner;
 }
-async function jsonFetch2(path, init) {
-  const res = await fetch(`${systemApiBase()}${path}`, init);
+async function jsonFetchAt(base, path, init) {
+  const res = await fetch(`${base.replace(/\/+$/, "")}${path.startsWith("/") ? path : `/${path}`}`, init);
   const ct = res.headers.get("content-type") || "";
   if (!res.ok) {
     let msg = res.statusText;
@@ -1130,10 +1146,41 @@ async function jsonFetch2(path, init) {
     throw new Error(humanizeIssAuthMessage(msg) || `HTTP ${res.status}`);
   }
   if (!ct.includes("json")) {
-    throw new Error(`Respuesta no JSON (${res.status}) desde ${systemApiBase()}${path}`);
+    throw new Error(`Respuesta no JSON (${res.status}) desde ${base}${path}`);
   }
   const raw = await res.json();
   return unwrapBody2(raw);
+}
+async function jsonFetch2(path, init) {
+  try {
+    return await jsonFetchAt(systemApiBase(), path, init);
+  } catch (err) {
+    if (!isSegApiPath(path) || !shouldRetrySegOnStaging(err)) throw err;
+    console.warn(`[seg-front] local \u2192 staging ${path}:`, err instanceof Error ? err.message : err);
+    return jsonFetchAt(PATYIA_ISS_STAGING_API, path, init);
+  }
+}
+async function jsonFetchSegAdmin(path, init) {
+  let local = null;
+  let localErr = null;
+  try {
+    local = await jsonFetchAt(systemApiBase(), path, init);
+  } catch (err) {
+    localErr = err;
+  }
+  const thin = local != null && Array.isArray(local.contactos) && local.contactos.length === 0 && Array.isArray(local.acciones) && local.acciones.length < 10;
+  if (isLocalMode() && (localErr || thin)) {
+    try {
+      const stg = await jsonFetchAt(PATYIA_ISS_STAGING_API, path, init);
+      console.warn(`[seg-front] admin ${path} v\xEDa staging (${localErr ? "error local" : "local vac\xEDo"})`);
+      return stg;
+    } catch (stgErr) {
+      if (local) return local;
+      throw localErr || stgErr;
+    }
+  }
+  if (local) return local;
+  throw localErr instanceof Error ? localErr : new Error(String(localErr ?? "SEG admin fall\xF3"));
 }
 function permEntityKey(entry) {
   return String(entry?.ientity ?? entry?.iusuario ?? "").trim();
@@ -1225,23 +1272,39 @@ async function fetchPermissionsMe(opts) {
   if (!opts?.force && PERMISSIONS_ME_INFLIGHT) return PERMISSIONS_ME_INFLIGHT;
   const f = opts?.fetchImpl ?? fetch;
   const req = (async () => {
-    const res = await f(`${systemApiBase()}/permissions/me`, {
-      method: "GET",
-      headers: { ...headers, Accept: "application/json" },
-      credentials: "omit"
-    });
-    if (res.status === 401) {
+    const hit = async (base) => {
+      const res = await f(`${base.replace(/\/+$/, "")}/permissions/me`, {
+        method: "GET",
+        headers: { ...headers, Accept: "application/json" },
+        credentials: "omit"
+      });
+      if (res.status === 401) return { status: 401, data: null };
+      if (!res.ok) return { status: res.status, data: null };
+      const data = unwrapBody2(await res.json());
+      if (!data || data.kind !== "insoft.permissions-me") return { status: res.status, data: null };
+      return { status: res.status, data };
+    };
+    let got = await hit(systemApiBase());
+    if (isLocalMode()) {
+      try {
+        const stg = await hit(PATYIA_ISS_STAGING_API);
+        if (stg.data) {
+          console.warn("[seg-front] permissions/me v\xEDa staging");
+          got = stg;
+        }
+      } catch {
+      }
+    }
+    if (got.status === 401) {
       PERMISSIONS_ME_CACHE.value = null;
       return null;
     }
-    if (!res.ok) return PERMISSIONS_ME_CACHE.value;
-    const data = unwrapBody2(await res.json());
-    if (!data || data.kind !== "insoft.permissions-me") return PERMISSIONS_ME_CACHE.value;
-    PERMISSIONS_ME_CACHE.value = data;
-    PERMISSIONS_ME_CACHE.iat = data.iat || Date.now();
-    PERMISSIONS_ME_CACHE.ttlMs = data.ttlMs || 8 * 60 * 60 * 1e3;
+    if (!got.data) return PERMISSIONS_ME_CACHE.value;
+    PERMISSIONS_ME_CACHE.value = got.data;
+    PERMISSIONS_ME_CACHE.iat = got.data.iat || Date.now();
+    PERMISSIONS_ME_CACHE.ttlMs = got.data.ttlMs || 8 * 60 * 60 * 1e3;
     PERMISSIONS_ME_CACHE.key = sessionKey;
-    return data;
+    return got.data;
   })().finally(() => {
     if (PERMISSIONS_ME_INFLIGHT === req) PERMISSIONS_ME_INFLIGHT = null;
   });
@@ -1267,7 +1330,7 @@ function applyPermissionsMeToKanban(data, me) {
   };
 }
 async function fetchPatyiaAdminRoles() {
-  return jsonFetch2(`/patyia/admin/roles`, {
+  return jsonFetchSegAdmin(`/patyia/admin/roles`, {
     method: "GET",
     headers: systemApiHeaders()
   });
@@ -1297,12 +1360,57 @@ async function permisosMutation(p) {
   clearPermissionsMeCache();
   return data;
 }
+function permissionsFromAdminRoles(admin) {
+  const roleRows = Array.isArray(admin?.roles) ? admin.roles : [];
+  const roles = roleRows.map((r) => ({
+    iusuario: `ROLE:${String(r.irol ?? "").trim().toUpperCase()}`,
+    itipo: "role",
+    permisos: {},
+    bactivo: true
+  })).filter((r) => r.iusuario !== "ROLE:");
+  if (!roles.some((r) => r.iusuario === "ROLE:DEVISS")) {
+    roles.unshift({ iusuario: "ROLE:DEVISS", itipo: "role", permisos: {}, bactivo: true });
+  }
+  if (!roles.some((r) => r.iusuario === "ROLE:USR")) {
+    roles.push({ iusuario: "ROLE:USR", itipo: "role", permisos: {}, bactivo: true });
+  }
+  const byUser = /* @__PURE__ */ new Map();
+  for (const c of Array.isArray(admin?.contactos) ? admin.contactos : []) {
+    const uname = String(c.username ?? "").trim().toUpperCase() || (c.icontacto != null ? String(c.icontacto) : "");
+    if (!uname) continue;
+    const irol = String(c.irol ?? "").trim().toUpperCase();
+    const cur = byUser.get(uname) ?? { roles: /* @__PURE__ */ new Set(), nombre: c.nombre ?? null, icontacto: c.icontacto };
+    if (irol) cur.roles.add(irol);
+    if (c.nombre) cur.nombre = c.nombre;
+    if (c.icontacto != null) cur.icontacto = c.icontacto;
+    byUser.set(uname, cur);
+  }
+  const users = [...byUser.entries()].map(([username, meta]) => ({
+    iusuario: username,
+    itipo: "user",
+    permisos: {
+      roles: [...meta.roles],
+      ...meta.nombre ? { nombre: meta.nombre } : {}
+    },
+    bactivo: true
+  }));
+  const contactos = {};
+  for (const [username, meta] of byUser) {
+    if (meta.icontacto == null) continue;
+    contactos[username] = { itercero: "", icontacto: meta.icontacto, nombre: meta.nombre ?? null };
+  }
+  return { roles, users, contactos, usersTotal: users.length, usersTruncated: false };
+}
 function fetchPermisosListRaw(q) {
   const cached = PERMISOS_LIST_CACHE.get(q);
   if (cached && Date.now() - cached.iat < PERMISOS_LIST_TTL_MS) return Promise.resolve(cached.raw);
   const inflight = PERMISOS_LIST_INFLIGHT.get(q);
   if (inflight) return inflight;
-  const req = jsonFetch2(`/system/permisos${q ? `?${q}` : ""}`, { method: "GET", headers: systemApiHeaders() }).then((raw) => {
+  const req = jsonFetch2(`/system/permisos${q ? `?${q}` : ""}`, { method: "GET", headers: systemApiHeaders() }).catch(async (err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/not found|404|no (existe|encontr)|HTTP 404/i.test(msg)) throw err;
+    return permissionsFromAdminRoles(await fetchPatyiaAdminRoles());
+  }).then((raw) => {
     PERMISOS_LIST_CACHE.set(q, { raw, iat: Date.now() });
     return raw;
   }).finally(() => {
@@ -1389,7 +1497,7 @@ function requireAppSession(onNeedLogin) {
 }
 var OPENAI_DEFAULTS, CONTAPYME_NOAUTH_RX, PERMISSIONS_ME_CACHE, PERMISSIONS_ME_INFLIGHT, PERMISOS_LIST_TTL_MS, PERMISOS_LIST_CACHE, PERMISOS_LIST_INFLIGHT;
 var init_systemConfigApi = __esm({
-  "js/api/systemConfigApi.ts"() {
+  "src/js/api/systemConfigApi.ts"() {
     init_platform();
     init_patyia();
     init_patyia_jwt();
@@ -1408,14 +1516,14 @@ var init_systemConfigApi = __esm({
   }
 });
 
-// js/tools/roleCanonicalMeta.js
+// src/js/tools/roleCanonicalMeta.js
 function canonicalRoleMeta(roleName) {
   const key = String(roleName ?? "").trim().toUpperCase();
   return CANONICAL_ROLE_META[key] ?? null;
 }
 var CANONICAL_ROLE_META;
 var init_roleCanonicalMeta = __esm({
-  "js/tools/roleCanonicalMeta.js"() {
+  "src/js/tools/roleCanonicalMeta.js"() {
     CANONICAL_ROLE_META = {
       AUDITOR: {
         namedisplay: "Auditor",
@@ -1437,7 +1545,7 @@ var init_roleCanonicalMeta = __esm({
   }
 });
 
-// js/core/viewAsRole.ts
+// src/js/core/viewAsRole.ts
 function roleKey2(name) {
   return String(name ?? "").trim().toUpperCase();
 }
@@ -1501,7 +1609,7 @@ function clampViewAsCapsToReal(preset, realCaps) {
 }
 var VIEW_AS_ROLE_LS_KEY, VIEW_AS_ROLE_EVENT, VIEW_AS_ROLE_OPTIONS, NONE, ROLE_CAPS_PRESETS;
 var init_viewAsRole = __esm({
-  "js/core/viewAsRole.ts"() {
+  "src/js/core/viewAsRole.ts"() {
     init_roleCanonicalMeta();
     VIEW_AS_ROLE_LS_KEY = "isa-patyia:view-as-role";
     VIEW_AS_ROLE_EVENT = "patyia-apptools:view-as-role";
@@ -1572,7 +1680,7 @@ var init_viewAsRole = __esm({
   }
 });
 
-// js/api/sessionApi.ts
+// src/js/api/sessionApi.ts
 function formatRoleTitle(roleName) {
   const key = String(roleName ?? "").trim().toUpperCase();
   if (!key) return "";
@@ -1833,7 +1941,7 @@ function handleApiError(err, cap) {
 }
 var ROLE_PRIORITY, INSTRUCCIONES_WRITE_CAP, OPEN_ME_CAPS, ME_CAP_KEYS, ME_CAPS, ME_CAPS_KEY, ME_ISS_ROLES, ME_LOGIN_ROLE, ME_CAPS_BOOTSTRAP_TS, ME_CAPS_INFLIGHT, ME_CAPS_RETRY_TIMER, ME_SERVER_INSTRUCCIONES_EDIT, ME_CAPS_FETCH_GUARD_MS, ME_CAPS_REENTRY_GUARD_MS, isLoggedIn, can, blockReason, clearSession;
 var init_sessionApi = __esm({
-  "js/api/sessionApi.ts"() {
+  "src/js/api/sessionApi.ts"() {
     init_platform();
     init_platform();
     init_patyia();
@@ -1899,7 +2007,7 @@ var init_sessionApi = __esm({
   }
 });
 
-// js/api/apiClient.ts
+// src/js/api/apiClient.ts
 function unwrapIssEnvelope(raw) {
   const d = raw;
   const enc = d?.encabezado;
@@ -2047,17 +2155,21 @@ function formatIssClientError(err, fallback = "Error del servidor") {
   return msg;
 }
 async function fetchTercerosAudit(input = {}) {
-  const params = new URLSearchParams();
-  params.set("page", String(input.page ?? 1));
-  params.set("limit", String(input.limit ?? 20));
-  if (input.q?.trim()) params.set("q", input.q.trim());
-  if (input.jwtTercero?.trim()) params.set("jwtTercero", input.jwtTercero.trim());
-  if (input.jwtContacto?.trim()) params.set("jwtContacto", input.jwtContacto.trim());
-  if (input.jwtNombre?.trim()) params.set("jwtNombre", input.jwtNombre.trim());
-  if (input.appUser?.trim()) params.set("appUser", input.appUser.trim());
+  const body = tercerosAuditListBody({
+    page: input.page,
+    limit: input.limit ?? 20,
+    q: input.q,
+    jwtTercero: input.jwtTercero,
+    jwtContacto: input.jwtContacto,
+    jwtNombre: input.jwtNombre
+  });
   let raw;
   try {
-    raw = await capFetch(`${patyiaIssPath("/auditoria/terceros")}?${params.toString()}`, { method: "GET" });
+    raw = await capFetch(patyiaIssPath("/auditoria/terceros"), {
+      method: "QUERY",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
   } catch (err) {
     if (isLocalMode() && input.jwtToken) {
       try {
@@ -2087,9 +2199,10 @@ async function fetchTercerosAuditFromLocalConversaciones(input) {
   const limit = input.limit ?? 20;
   const groups = /* @__PURE__ */ new Map();
   for (let page2 = 1; page2 <= 5; page2 += 1) {
-    const params = conversacionesListQueryParams({ page: page2, limit: 100, sort: "-iconversacion" });
-    const res = await fetch(`${PATYIA_ISS_LOCAL_API.replace(/\/$/, "")}/conversaciones?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${input.jwtToken}` }
+    const res = await fetch(`${PATYIA_ISS_LOCAL_API.replace(/\/$/, "")}/conversaciones`, {
+      method: "QUERY",
+      headers: { Authorization: `Bearer ${input.jwtToken}`, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(conversacionesListBody({ page: page2, limit: 100, sort: "-iconversacion" }))
     });
     if (!res.ok) throw new Error(`No se pudo cargar auditor\xEDa local (${res.status})`);
     const raw = await res.json();
@@ -2131,7 +2244,7 @@ async function fetchTercerosAuditFromLocalConversaciones(input) {
 }
 var bridgeHttp, capFetch, apiUrl, rowVal;
 var init_apiClient = __esm({
-  "js/api/apiClient.ts"() {
+  "src/js/api/apiClient.ts"() {
     init_platform();
     init_patyia();
     init_patyia_jwt();
@@ -2156,26 +2269,26 @@ var init_apiClient = __esm({
   }
 });
 
-// js/api/sysValuesCopy.ts
+// src/js/api/sysValuesCopy.ts
 var init_sysValuesCopy = __esm({
-  "js/api/sysValuesCopy.ts"() {
+  "src/js/api/sysValuesCopy.ts"() {
     init_apiClient();
     init_platform();
     init_patyia();
   }
 });
 
-// js/components/CopySysValuesModal.jsx
+// src/js/components/CopySysValuesModal.jsx
 var MUI, React, Icon23;
 var init_CopySysValuesModal = __esm({
-  "js/components/CopySysValuesModal.jsx"() {
+  "src/js/components/CopySysValuesModal.jsx"() {
     MUI = window.MaterialUI;
     React = window.React;
     Icon23 = window.ISA?.UI?.Icon;
   }
 });
 
-// js/components/IssTargetSwitch.jsx
+// src/js/components/IssTargetSwitch.jsx
 function issUrlForTarget(id) {
   if (id === "local") return PATYIA_ISS_LOCAL.replace(/\/$/, "");
   if (id === "production") return PATYIA_ISS_PROD_URL.replace(/\/$/, "");
@@ -2279,7 +2392,7 @@ function IssTargetChip() {
 }
 var MUI2, React2, Icon24, TARGETS_DEV, TARGETS_WEB;
 var init_IssTargetSwitch = __esm({
-  "js/components/IssTargetSwitch.jsx"() {
+  "src/js/components/IssTargetSwitch.jsx"() {
     init_patyia();
     init_sysValuesCopy();
     init_CopySysValuesModal();
@@ -2298,10 +2411,10 @@ var init_IssTargetSwitch = __esm({
   }
 });
 
-// js/app/App.jsx
+// src/js/app/App.jsx
 init_platform();
 
-// js/core/urlState.ts
+// src/js/core/urlState.ts
 init_patyia();
 var STATE_VERSION = 1;
 function normalizeLog(raw) {
@@ -2588,14 +2701,14 @@ function persistPermisosHideEmpty(hide) {
   return mergePartial({ tool: "config", config: { permisos: { hideEmpty: !!hide } } });
 }
 
-// js/tools/LogViewer.jsx
+// src/js/tools/LogViewer.jsx
 init_platform();
 init_platform();
 
-// js/ui/shared.jsx
+// src/js/ui/shared.jsx
 init_platform();
 
-// js/core/msgDateFormat.ts
+// src/js/core/msgDateFormat.ts
 function parseMsgDate(v) {
   if (v == null || v === "") return null;
   if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v;
@@ -2644,7 +2757,7 @@ function formatTs(v) {
   return formatMsgFecha(v).label;
 }
 
-// js/core/convLog.ts
+// src/js/core/convLog.ts
 var STREAM_ERROR_LABELS = {
   stream_incomplete_or_error: "La respuesta del modelo no se complet\xF3. Vuelve a intentar o reduce el tama\xF1o de las im\xE1genes.",
   stream_failed: "El stream de respuesta fall\xF3. Vuelve a intentar.",
@@ -2837,7 +2950,69 @@ function extractOperativaPromptMarkdown(send) {
   if (Array.isArray(input) && input.length) {
     return formatOpenAiMessagesMarkdown(input);
   }
-  return "";
+  const lines = [];
+  if (typeof input === "string" && input.trim()) {
+    lines.push(`**Consulta (input)**
+
+${input.trim()}`);
+  }
+  const sessionId = typeof rec.session_id === "string" ? rec.session_id.trim() : "";
+  if (sessionId) lines.push(`**session_id**
+
+\`${sessionId}\``);
+  const loginUrl = typeof rec.login_url === "string" ? rec.login_url.trim() : "";
+  if (loginUrl) lines.push(`**login_url**
+
+${loginUrl}`);
+  const transport = typeof rec.transport === "string" ? rec.transport.trim() : "";
+  if (transport) lines.push(`**transport**
+
+\`${transport}\``);
+  const model = typeof rec.model === "string" ? rec.model.trim() : "";
+  if (model) lines.push(`**model**
+
+\`${model}\``);
+  const serverUrl = typeof rec.server_url === "string" ? rec.server_url.trim() : "";
+  if (serverUrl) lines.push(`**server_url**
+
+\`${serverUrl}\``);
+  if (rec.tools_count != null && String(rec.tools_count).trim() !== "") {
+    lines.push(`**tools_count**
+
+${Number(rec.tools_count)}`);
+  }
+  return lines.join("\n\n---\n\n");
+}
+function isContapymeMcpOperativaKey(key) {
+  return /^contapymeMcp(Login|Session|Unavailable)$/i.test(String(key || "").trim());
+}
+function extractMcpResponseMarkdown(httpResponse) {
+  if (!httpResponse || typeof httpResponse !== "object") return "";
+  const rec = httpResponse;
+  const lines = [];
+  const kind = typeof rec.kind === "string" ? rec.kind.trim() : "";
+  if (kind) lines.push(`**kind**
+
+\`${kind}\``);
+  if (rec.ok === true) lines.push("**ok**\n\n`true`");
+  if (rec.ok === false) lines.push("**ok**\n\n`false`");
+  const text = typeof rec.text === "string" ? rec.text.trim() : "";
+  if (text) lines.push(`**Respuesta MCP**
+
+${text}`);
+  const tools = Array.isArray(rec.tools) ? rec.tools : [];
+  if (tools.length) {
+    const rows = tools.map((t, i) => {
+      if (!t || typeof t !== "object") return `${i + 1}. tool`;
+      const name = String(t.name ?? "tool");
+      const status = String(t.status ?? "").trim();
+      return status ? `${i + 1}. \`${name}\` \xB7 ${status}` : `${i + 1}. \`${name}\``;
+    });
+    lines.push(`**Tools MCP (${tools.length})**
+
+${rows.join("\n")}`);
+  }
+  return lines.join("\n\n---\n\n");
 }
 function extractUserTextFromConvSend(send) {
   if (!send || typeof send !== "object") return "";
@@ -2962,6 +3137,8 @@ function flattenConvLogMensaje(m) {
     if (typeof r?.model === "string") flat.model = r.model;
     const loginUrl = typeof r?.login_url === "string" ? r.login_url : typeof s?.login_url === "string" ? s.login_url : void 0;
     if (loginUrl) flat.login_url = loginUrl;
+    if (s && typeof s === "object") flat.http_request = s;
+    if (r && typeof r === "object") flat.http_response = r;
   } else if (m.role === "assistant") {
     const txt = resolveAssistantLogContenido(o, r);
     if (txt) {
@@ -3171,7 +3348,18 @@ function normalizeMeta(raw, options = {}) {
   const isUser = options.isUser === true;
   const operativaKey = typeof raw.operativa_key === "string" ? raw.operativa_key.trim() : "";
   const userPromptText = isUser ? String(raw.prompt_text ?? raw.text ?? extractUserTextFromConvSend(raw.send) ?? "").trim() : "";
-  const assistantPromptMarkdown = !isUser ? (extractInstructionsMarkdown(raw.send) || extractOperativaPromptMarkdown(raw.send)).trim() : "";
+  const assistantPromptMarkdown = !isUser ? (() => {
+    const sendBag = raw.send && typeof raw.send === "object" ? raw.send : raw.http_request;
+    const fromSend = (extractInstructionsMarkdown(sendBag) || extractOperativaPromptMarkdown(sendBag)).trim();
+    const opKey = operativaKey || String(raw.prompt_id ?? "").trim();
+    const fromRes = isContapymeMcpOperativaKey(opKey) ? extractMcpResponseMarkdown(raw.http_response || raw.receive).trim() : "";
+    if (fromSend && fromRes) return `${fromSend}
+
+---
+
+${fromRes}`;
+    return fromSend || fromRes;
+  })() : "";
   const promptMarkdown = isUser ? userPromptText : assistantPromptMarkdown;
   const userImagenes = isUser && Array.isArray(raw.imagenes) ? raw.imagenes.filter(isDisplayableImageRef) : [];
   const userAudios = isUser && Array.isArray(raw.audios) ? raw.audios.filter(isDisplayableAudioRef) : [];
@@ -3217,7 +3405,9 @@ function normalizeMeta(raw, options = {}) {
     chunks: Array.isArray(raw.chunks) && raw.chunks.length ? raw.chunks : void 0,
     chunks_total: typeof raw.chunks_total === "number" ? raw.chunks_total : void 0,
     clasificador_vector_usado: Array.isArray(raw.clasificador_vector_usado) && raw.clasificador_vector_usado.length ? raw.clasificador_vector_usado.map(String) : void 0,
-    login_url: typeof raw.login_url === "string" && raw.login_url.trim() ? raw.login_url.trim() : void 0
+    login_url: typeof raw.login_url === "string" && raw.login_url.trim() ? raw.login_url.trim() : void 0,
+    http_request: raw.http_request && typeof raw.http_request === "object" ? raw.http_request : void 0,
+    http_response: raw.http_response && typeof raw.http_response === "object" ? raw.http_response : void 0
   };
 }
 function convLogToMsgVista(m, i, userSendForTurn, userVectorStoreIds) {
@@ -3327,14 +3517,14 @@ function convLogSurfaceSx(extra = {}) {
   return { flex: 1, minHeight: 0, overflow: "auto", bgcolor: "transparent", ...CONV_LOG_PAD, ...extra };
 }
 
-// js/ui/shared.jsx
+// src/js/ui/shared.jsx
 init_platform();
 
-// js/ui/ImageLightboxDialog.jsx
+// src/js/ui/ImageLightboxDialog.jsx
 init_platform();
 init_platform();
 
-// js/core/lightboxBoot.ts
+// src/js/core/lightboxBoot.ts
 function isLightboxZoomReady() {
   return Boolean(globalThis.ISAComponents?.LightboxZoom?.LightboxZoomDialog);
 }
@@ -3352,7 +3542,7 @@ function ensureLightboxReady() {
   return loadPromise;
 }
 
-// js/ui/ImageLightboxDialog.jsx
+// src/js/ui/ImageLightboxDialog.jsx
 import { jsx } from "react/jsx-runtime";
 var { useEffect, useState } = getReact();
 function ImageLightboxDialog(props) {
@@ -3381,7 +3571,7 @@ function ImageLightboxDialog(props) {
   return /* @__PURE__ */ jsx(Comp, { ns: "ISA", ...props, onClose });
 }
 
-// js/ui/GlassDialog.jsx
+// src/js/ui/GlassDialog.jsx
 init_platform();
 import { jsx as jsx2, jsxs } from "react/jsx-runtime";
 function isaLoginSurface() {
@@ -3592,7 +3782,7 @@ function resolveMetaDialogHeader(title, isUserMessage = false) {
   return { title: "Trazabilidad", subtitle: rol, icon: "mdi:robot-outline", accent: "#1e90ff" };
 }
 
-// js/core/fileSearchTrace.js
+// src/js/core/fileSearchTrace.js
 function archivosCitadosFromTrace(trace) {
   const seen = /* @__PURE__ */ new Set();
   const out = [];
@@ -3748,7 +3938,7 @@ function compactFileChipLabel(filename, maxLen = 28) {
   return `${base.slice(0, maxLen - 1)}\u2026`;
 }
 
-// js/ui/shared.jsx
+// src/js/ui/shared.jsx
 import { Fragment, jsx as jsx3, jsxs as jsxs2 } from "react/jsx-runtime";
 function ButtonIconify({ icon, title = "", label = "", onClick, disabled = false, busy = false, color = "", variant = "", className = "", type = "button" }) {
   const shown = busy ? "mdi:loading" : icon;
@@ -4190,8 +4380,9 @@ function MetaDialog({
   const promptMarkdown = String(resolvedMeta?.prompt_markdown ?? "").trim();
   const userImagenes = filterDisplayableImages(resolvedMeta?.imagenes);
   const iinstruccion = bdInstructionKey(resolvedMeta) || String(resolvedMeta?.extra?.operativa_key ?? "").trim();
+  const isMcpOperativa = /^contapymeMcp(Login|Session|Unavailable)$/i.test(iinstruccion) || String(resolvedMeta?.extra?.operativa_engine || "").toLowerCase() === "mcp" || Boolean(resolvedMeta?.http_request?.session_id || resolvedMeta?.http_request?.login_url || resolvedMeta?.http_response?.tools);
   const hasPrompt = Boolean(promptMarkdown) || Boolean(iinstruccion) || userImagenes.length > 0;
-  const promptTabLabel = isUserMessage ? "Consulta" : "Prompt";
+  const promptTabLabel = isUserMessage ? "Consulta" : isMcpOperativa ? "Payload MCP" : "Prompt";
   useEffect2(() => {
     if (open) setTab(0);
   }, [open, resolvedMeta?.ts, resolvedMeta?.prompt_id, promptMarkdown, userImagenes.length]);
@@ -4200,6 +4391,8 @@ function MetaDialog({
   }, [open]);
   if (!resolvedMeta) return null;
   const tk = resolvedMeta.tokens?.total ? resolvedMeta.tokens : tokensFromUsage(resolvedMeta.usage);
+  const httpReq = resolvedMeta.http_request && typeof resolvedMeta.http_request === "object" ? resolvedMeta.http_request : null;
+  const httpRes = resolvedMeta.http_response && typeof resolvedMeta.http_response === "object" ? resolvedMeta.http_response : null;
   function renderMetaGrid() {
     return /* @__PURE__ */ jsxs2("div", { className: "meta-grid meta-dialog-panel", children: [
       resolvedMeta.nombre_usuario && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
@@ -4211,8 +4404,32 @@ function MetaDialog({
         /* @__PURE__ */ jsx3("span", { className: "meta-v", children: /* @__PURE__ */ jsx3("span", { className: "badge badge-itd", children: resolvedMeta.itdconsulta }) })
       ] }),
       !isUserMessage && iinstruccion && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
-        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "iinstruccion" }),
+        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: isMcpOperativa ? "operativa" : "iinstruccion" }),
         /* @__PURE__ */ jsx3("span", { className: "meta-v", children: /* @__PURE__ */ jsx3("code", { children: iinstruccion }) })
+      ] }),
+      isMcpOperativa && resolvedMeta.extra?.operativa_engine && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
+        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "engine" }),
+        /* @__PURE__ */ jsx3("span", { className: "meta-v", children: /* @__PURE__ */ jsx3("code", { children: String(resolvedMeta.extra.operativa_engine) }) })
+      ] }),
+      isMcpOperativa && httpReq?.session_id && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
+        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "session_id" }),
+        /* @__PURE__ */ jsx3("span", { className: "meta-v", children: /* @__PURE__ */ jsx3("code", { children: String(httpReq.session_id) }) })
+      ] }),
+      isMcpOperativa && httpReq?.transport && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
+        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "transport" }),
+        /* @__PURE__ */ jsx3("span", { className: "meta-v", children: /* @__PURE__ */ jsx3("code", { children: String(httpReq.transport) }) })
+      ] }),
+      isMcpOperativa && httpRes?.kind && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
+        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "kind" }),
+        /* @__PURE__ */ jsx3("span", { className: "meta-v", children: /* @__PURE__ */ jsx3("span", { className: "badge badge-itd", children: String(httpRes.kind) }) })
+      ] }),
+      isMcpOperativa && Array.isArray(httpRes?.tools) && httpRes.tools.length > 0 && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
+        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "tools" }),
+        /* @__PURE__ */ jsx3("span", { className: "meta-v", children: httpRes.tools.map((t) => String(t?.name ?? "tool")).filter(Boolean).join(", ") })
+      ] }),
+      isMcpOperativa && resolvedMeta.login_url && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
+        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "login_url" }),
+        /* @__PURE__ */ jsx3("span", { className: "meta-v", style: { wordBreak: "break-all" }, children: String(resolvedMeta.login_url) })
       ] }),
       resolvedMeta.premisas?.length ? /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
         /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "premisas" }),
@@ -4228,6 +4445,34 @@ function MetaDialog({
             json: true,
             minHeight: "5rem",
             maxHeight: "18rem",
+            lineWrapping: true
+          }
+        ) })
+      ] }),
+      isMcpOperativa && httpReq && /* @__PURE__ */ jsxs2("div", { className: "meta-row meta-row--block", children: [
+        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "http_request" }),
+        /* @__PURE__ */ jsx3("span", { className: "meta-v meta-v--full", children: /* @__PURE__ */ jsx3(
+          CodeMirrorPanel,
+          {
+            value: JSON.stringify(httpReq, null, 2),
+            readOnly: true,
+            json: true,
+            minHeight: "6rem",
+            maxHeight: "22rem",
+            lineWrapping: true
+          }
+        ) })
+      ] }),
+      isMcpOperativa && httpRes && /* @__PURE__ */ jsxs2("div", { className: "meta-row meta-row--block", children: [
+        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "http_response" }),
+        /* @__PURE__ */ jsx3("span", { className: "meta-v meta-v--full", children: /* @__PURE__ */ jsx3(
+          CodeMirrorPanel,
+          {
+            value: JSON.stringify(httpRes, null, 2),
+            readOnly: true,
+            json: true,
+            minHeight: "6rem",
+            maxHeight: "22rem",
             lineWrapping: true
           }
         ) })
@@ -4272,7 +4517,8 @@ function MetaDialog({
                 userImagenes,
                 setLightboxSrc,
                 iinstruccion,
-                dialogTitle: title
+                dialogTitle: headerMeta.subtitle || headerMeta.title,
+                isMcpOperativa
               }
             ) })
           ] }),
@@ -4292,15 +4538,18 @@ function PromptPanelBody({
   userImagenes,
   setLightboxSrc,
   iinstruccion,
-  dialogTitle
+  dialogTitle,
+  isMcpOperativa = false
 }) {
   const [fullPage, setFullPage] = useState2(false);
+  const exactTitle = isUserMessage ? "Consulta \xB7 texto exacto" : isMcpOperativa ? "Payload MCP \xB7 request / respuesta" : "Prompt \xB7 texto exacto";
+  const emptyCopy = isUserMessage ? "Sin texto ni im\xE1genes en el log de este mensaje." : isMcpOperativa ? "Sin payload MCP (input / session_id / tools) en el log de este turno." : "Sin texto de instrucciones en el log de este turno.";
   return /* @__PURE__ */ jsxs2("div", { className: "meta-prompt-panel custom-scrollbar", children: [
     /* @__PURE__ */ jsx3(PromptSummaryCard, { meta: resolvedMeta, tokens: tk, usageStats, isUserMessage }),
     promptMarkdown ? /* @__PURE__ */ jsxs2(Box, { className: "meta-prompt-exact-wrap", children: [
       /* @__PURE__ */ jsxs2(Stack, { direction: "row", alignItems: "center", spacing: 0.75, sx: { mb: 0.75 }, children: [
-        /* @__PURE__ */ jsx3("iconify-icon", { icon: "mdi:file-document-outline", width: "18", height: "18" }),
-        /* @__PURE__ */ jsx3(Typography, { variant: "subtitle1", sx: { flex: 1, fontWeight: 700 }, children: isUserMessage ? "Consulta \xB7 texto exacto" : "Prompt \xB7 texto exacto" }),
+        /* @__PURE__ */ jsx3("iconify-icon", { icon: isMcpOperativa ? "mdi:api" : "mdi:file-document-outline", width: "18", height: "18" }),
+        /* @__PURE__ */ jsx3(Typography, { variant: "subtitle1", sx: { flex: 1, fontWeight: 700 }, children: exactTitle }),
         /* @__PURE__ */ jsx3(
           Chip,
           {
@@ -4336,15 +4585,15 @@ function PromptPanelBody({
           open: fullPage,
           onClose: () => setFullPage(false),
           source: promptMarkdown,
-          title: isUserMessage ? "Consulta \xB7 texto exacto" : "Prompt \xB7 texto exacto",
+          title: exactTitle,
           subtitle: dialogTitle || (isUserMessage ? "Vista consulta full-page" : "Vista prompt full-page"),
-          icon: isUserMessage ? "mdi:message-text-outline" : "mdi:file-document-outline",
-          accent: isUserMessage ? "#1e90ff" : "#22c55e"
+          icon: isUserMessage ? "mdi:message-text-outline" : isMcpOperativa ? "mdi:api" : "mdi:file-document-outline",
+          accent: isUserMessage ? "#1e90ff" : isMcpOperativa ? "#f59e0b" : "#22c55e"
         }
       )
     ] }) : null,
     userImagenes.length ? /* @__PURE__ */ jsx3(MetaDialogImages, { items: userImagenes, onImageClick: setLightboxSrc, topGap: promptMarkdown ? 1.25 : 0 }) : null,
-    !promptMarkdown && !userImagenes.length ? /* @__PURE__ */ jsx3(Typography, { variant: "body2", color: "text.secondary", children: isUserMessage ? "Sin texto ni im\xE1genes en el log de este mensaje." : "Sin texto de instrucciones en el log de este turno." }) : null
+    !promptMarkdown && !userImagenes.length ? /* @__PURE__ */ jsx3(Typography, { variant: "body2", color: "text.secondary", children: emptyCopy }) : null
   ] });
 }
 function MdRenderer({ source, className = "" }) {
@@ -4449,7 +4698,7 @@ function MdFullPageDialog({
   );
 }
 
-// js/editors/jsonEditor.jsx
+// src/js/editors/jsonEditor.jsx
 init_platform();
 import { jsx as jsx4 } from "react/jsx-runtime";
 function JsonCodeEditor({ value = "", onChange, placeholder = "", toolbarExtra = null, readOnly = false }) {
@@ -4470,10 +4719,10 @@ function JsonCodeEditor({ value = "", onChange, placeholder = "", toolbarExtra =
   );
 }
 
-// js/ui/ConvLogThread.jsx
+// src/js/ui/ConvLogThread.jsx
 init_platform();
 
-// js/ui/ConvLogWebView.jsx
+// src/js/ui/ConvLogWebView.jsx
 init_platform();
 init_platform();
 init_platform();
@@ -4933,6 +5182,18 @@ function buildUsageDialogCtxItems(meta) {
         icon: "mdi:api",
         wide: true
       });
+      const tools = Array.isArray(meta?.http_response?.tools) ? meta.http_response.tools : [];
+      if (tools.length) {
+        const names = tools.map((t) => String(t?.name ?? "tool")).filter(Boolean);
+        items.push({
+          key: "tools",
+          label: "Tools MCP",
+          value: names.join(", ") || `${tools.length} llamada${tools.length === 1 ? "" : "s"}`,
+          icon: "mdi:hammer-wrench",
+          mono: false,
+          wide: true
+        });
+      }
     } else if (/^contapymeMcpLogin$/i.test(opKey)) {
       items.push({
         key: "op",
@@ -5522,6 +5783,84 @@ function UsageDialogMetaPanel({ meta }) {
     )) })
   ] });
 }
+function safeJsonPreview(value, maxLen = 600) {
+  if (value == null) return "";
+  let raw;
+  try {
+    raw = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  } catch {
+    raw = String(value);
+  }
+  raw = raw.replace(/\r\n/g, "\n").trim();
+  if (raw.length <= maxLen) return raw;
+  return `${raw.slice(0, maxLen)}\u2026 [truncado ${raw.length} chars]`;
+}
+function McpToolsSection({ tools, GlassSection, GlassInner }) {
+  const { Typography: Typography28, Box: Box33, Chip: Chip19, Stack: Stack26 } = getMaterialUI();
+  if (!Array.isArray(tools) || !tools.length) return null;
+  const body = /* @__PURE__ */ jsx5(Box33, { className: "conv-usage-dialog__section-body", children: /* @__PURE__ */ jsx5(Stack26, { spacing: 1.5, children: tools.map((tool, idx) => {
+    const name = String(tool?.name ?? `Tool ${idx + 1}`);
+    const status = String(tool?.status ?? "");
+    const error = tool?.error;
+    const args = safeJsonPreview(tool?.arguments);
+    const output = safeJsonPreview(tool?.output);
+    return /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__mcp-tool", children: [
+      /* @__PURE__ */ jsxs3(Stack26, { direction: "row", spacing: 0.75, alignItems: "center", sx: { mb: 0.5 }, children: [
+        /* @__PURE__ */ jsx5("iconify-icon", { icon: "mdi:hammer-wrench", width: "16", height: "16" }),
+        /* @__PURE__ */ jsx5(Typography28, { variant: "body2", fontWeight: 600, sx: { flex: 1, minWidth: 0 }, children: name }),
+        status ? /* @__PURE__ */ jsx5(
+          Chip19,
+          {
+            size: "small",
+            variant: "outlined",
+            label: status,
+            className: `conv-usage-dialog__mcp-tool-status${error ? " conv-usage-dialog__mcp-tool-status--error" : ""}`
+          }
+        ) : null
+      ] }),
+      args ? /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__mcp-tool-block", sx: { mb: 0.75 }, children: [
+        /* @__PURE__ */ jsx5(Typography28, { variant: "caption", color: "text.secondary", component: "div", sx: { mb: 0.25 }, children: "Argumentos" }),
+        /* @__PURE__ */ jsx5(Typography28, { variant: "caption", component: "pre", sx: { whiteSpace: "pre-wrap", wordBreak: "break-word", m: 0 }, children: args })
+      ] }) : null,
+      output ? /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__mcp-tool-block", children: [
+        /* @__PURE__ */ jsx5(Typography28, { variant: "caption", color: "text.secondary", component: "div", sx: { mb: 0.25 }, children: "Resultado" }),
+        /* @__PURE__ */ jsx5(Typography28, { variant: "caption", component: "pre", sx: { whiteSpace: "pre-wrap", wordBreak: "break-word", m: 0 }, children: output })
+      ] }) : null,
+      error ? /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__mcp-tool-block conv-usage-dialog__mcp-tool-block--error", children: [
+        /* @__PURE__ */ jsx5(Typography28, { variant: "caption", color: "error", component: "div", sx: { mb: 0.25 }, children: "Error" }),
+        /* @__PURE__ */ jsx5(Typography28, { variant: "caption", component: "pre", sx: { whiteSpace: "pre-wrap", wordBreak: "break-word", m: 0 }, children: safeJsonPreview(error) })
+      ] }) : null
+    ] }, `${name}-${idx}`);
+  }) }) });
+  if (GlassSection && GlassInner) {
+    return /* @__PURE__ */ jsx5(
+      GlassSection,
+      {
+        sectionKey: "conv-usage-mcp-tools",
+        className: "conv-usage-dialog__mcp-tools-section",
+        title: "Tools MCP",
+        subtitle: `${tools.length} llamada${tools.length === 1 ? "" : "s"} al servidor ContaPyme`,
+        accent: "#f59e0b",
+        tone: "warn",
+        headerSx: { borderRadius: "0.75rem 0.75rem 0 0" },
+        bodySx: { pt: { xs: 1.25, sm: 1.5 } },
+        children: /* @__PURE__ */ jsx5(GlassInner, { children: body })
+      }
+    );
+  }
+  return /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__section-card conv-usage-dialog__section-card--mcp-tools", children: [
+    /* @__PURE__ */ jsxs3("div", { className: "conv-usage-dialog__section-head", children: [
+      /* @__PURE__ */ jsx5(Typography28, { component: "h3", variant: "subtitle2", className: "conv-usage-dialog__section-title", children: "Tools MCP" }),
+      /* @__PURE__ */ jsxs3(Typography28, { variant: "caption", color: "text.secondary", className: "conv-usage-dialog__section-sub", children: [
+        tools.length,
+        " llamada",
+        tools.length === 1 ? "" : "s",
+        " al servidor ContaPyme"
+      ] })
+    ] }),
+    body
+  ] });
+}
 function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
   const { DialogContent: DialogContent15, Typography: Typography28, Box: Box33, Chip: Chip19, Stack: Stack26, Tooltip: Tooltip15, IconButton: IconButton14 } = getMaterialUI();
   const { useMemo: useMemo21, useState: useState34 } = getReact();
@@ -5570,6 +5909,12 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
   ].filter((s) => s.show);
   const chunks = useMemo21(() => chunksFromMeta(meta), [meta]);
   const archivos = useMemo21(() => archivosCitadosFromMeta(meta), [meta]);
+  const mcpTools = useMemo21(() => {
+    const opKey2 = String(meta?.extra?.operativa_key ?? "");
+    if (!/^contapymeMcpSession$/i.test(opKey2)) return [];
+    const tools = meta?.http_response?.tools;
+    return Array.isArray(tools) ? tools : [];
+  }, [meta]);
   const [openChunk, setOpenChunk] = useState34(null);
   const opKey = meta?.extra?.operativa_key;
   const header = resolveUsageDialogHeader(msgLabel, fecha, opKey);
@@ -5609,6 +5954,7 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
               }),
               children: /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__stack", children: [
                 showMetaPanel ? /* @__PURE__ */ jsx5(UsageDialogMetaPanel, { meta }) : null,
+                mcpTools.length ? /* @__PURE__ */ jsx5(McpToolsSection, { tools: mcpTools, GlassSection, GlassInner }) : null,
                 sections.map((section) => /* @__PURE__ */ jsx5(
                   UsageDialogSection,
                   {
@@ -6367,7 +6713,7 @@ function convLogNavItems(mensajes) {
   });
 }
 
-// js/ui/ConvLogThread.jsx
+// src/js/ui/ConvLogThread.jsx
 import { jsx as jsx6, jsxs as jsxs4 } from "react/jsx-runtime";
 var { Box: Box2, Alert } = getMaterialUI();
 function ThreadLoading({ label = "Cargando conversaci\xF3n\u2026" }) {
@@ -6439,11 +6785,11 @@ function ConvLogThread({
   );
 }
 
-// js/tools/LogViewer.jsx
+// src/js/tools/LogViewer.jsx
 init_apiClient();
 init_platform();
 
-// js/ui/mobileDrawer.ts
+// src/js/ui/mobileDrawer.ts
 var MOBILE_DRAWER_PAPER_SX = {
   width: "min(300px, calc(100vw - 12px))",
   maxWidth: "100%",
@@ -6461,7 +6807,7 @@ function mobileDrawerPaperProps(className) {
   };
 }
 
-// js/tools/LogViewer.jsx
+// src/js/tools/LogViewer.jsx
 import { Fragment as Fragment3, jsx as jsx7, jsxs as jsxs5 } from "react/jsx-runtime";
 var LOG_SIDEBAR_DEFAULT_W = 400;
 function readLogSidebarWidthFromUrl() {
@@ -7072,14 +7418,14 @@ function LogViewer({ bootLog = {} }) {
   );
 }
 
-// js/tools/PromptsSqlTool.jsx
+// src/js/tools/PromptsSqlTool.jsx
 init_platform();
 init_platform();
 
-// js/tools/promptsSql/usePromptsSqlTool.ts
+// src/js/tools/promptsSql/usePromptsSqlTool.ts
 init_platform();
 
-// js/api/promptsSql.ts
+// src/js/api/promptsSql.ts
 var PATY_PROMPT_TIPOS = [
   "SALUDO_OTRO",
   "FUERA_DE_ALCANCE_TECNICO",
@@ -7492,14 +7838,14 @@ function emptyPromptState() {
   return out;
 }
 
-// js/api/labApi.ts
+// src/js/api/labApi.ts
 init_apiClient();
 
-// js/tools/promptsSql/usePromptsSqlTool.ts
+// src/js/tools/promptsSql/usePromptsSqlTool.ts
 init_sessionApi();
 init_platform();
 
-// js/tools/promptsSql/helpers.ts
+// src/js/tools/promptsSql/helpers.ts
 init_platform();
 init_platform();
 init_sessionApi();
@@ -7641,7 +7987,7 @@ function unitIntervalFieldProps(value, fallback, onValue) {
   };
 }
 
-// js/core/promptVariables.ts
+// src/js/core/promptVariables.ts
 var PROMPT_VAR_PATTERN = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
 var MALFORMED_PROMPT_VAR_PATTERN = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}(?!\})/g;
 var INSTRUCCION_TIPO_SLOT_RES = [/\{\{\s*instruccion_tipo\s*\}\}/i, /\{\{\s*instrucion_tipo\s*\}\}/i];
@@ -7708,7 +8054,7 @@ function preparePromptBodyForSave(text) {
   return repairPromptVarBraces(String(text ?? "").trim());
 }
 
-// js/tools/promptsSql/cloudRows.ts
+// src/js/tools/promptsSql/cloudRows.ts
 function buildInitialPromptState(bootPrompts, urlBodies) {
   const base = emptyPromptState();
   for (const [tipo, body] of Object.entries(urlBodies)) {
@@ -7769,7 +8115,7 @@ function mergeCloudRows(prev, rows, { onlyTipo = null, onlyTipos = null, ignoreU
   return { next, unknownKeys };
 }
 
-// js/tools/promptsSql/promptActions.ts
+// src/js/tools/promptsSql/promptActions.ts
 init_sessionApi();
 init_systemConfigApi();
 init_platform();
@@ -7983,7 +8329,7 @@ function resetPromptConfigToDefaults(tipo, setPrompts) {
   });
 }
 
-// js/tools/promptsSql/usePromptsSqlTool.ts
+// src/js/tools/promptsSql/usePromptsSqlTool.ts
 var { useState: useState5, useEffect: useEffect5, useCallback: useCallback2, useMemo: useMemo4, useRef: useRef2 } = getReact();
 var EMPTY_BODIES = Object.freeze({});
 function usePromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
@@ -8303,7 +8649,7 @@ function usePromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
   };
 }
 
-// js/tools/promptsSql/PromptsSqlActionBar.jsx
+// src/js/tools/promptsSql/PromptsSqlActionBar.jsx
 init_platform();
 import { jsx as jsx8, jsxs as jsxs6 } from "react/jsx-runtime";
 var { Stack: Stack3, Chip: Chip3, CircularProgress } = getMaterialUI();
@@ -8363,10 +8709,10 @@ function PromptsSqlActionBar({ filledCount, instruccionKeysLength, loadBusy, act
   ] }) });
 }
 
-// js/tools/promptsSql/PromptsSqlTree.jsx
+// src/js/tools/promptsSql/PromptsSqlTree.jsx
 init_platform();
 
-// js/tools/promptsSql/constants.ts
+// src/js/tools/promptsSql/constants.ts
 var ICON_BY_TIPO = {
   SALUDO_OTRO: "mdi:hand-wave",
   FUERA_DE_ALCANCE_TECNICO: "mdi:alert-circle-outline",
@@ -8387,7 +8733,7 @@ var ICON_BY_TIPO = {
   CLASIFICADOR_MODULO: "mdi:view-module-outline"
 };
 
-// js/tools/promptsSql/PromptInstructionDot.jsx
+// src/js/tools/promptsSql/PromptInstructionDot.jsx
 import { jsx as jsx9 } from "react/jsx-runtime";
 function PromptInstructionDot({ tipo, prompts, row, showWhenEmpty = "dot" }) {
   const p = prompts[tipo];
@@ -8420,7 +8766,7 @@ function MapeoRowDot(props) {
   return /* @__PURE__ */ jsx9(PromptInstructionDot, { ...props, showWhenEmpty: "dot" });
 }
 
-// js/tools/promptsSql/PromptsSqlTree.jsx
+// src/js/tools/promptsSql/PromptsSqlTree.jsx
 import { jsx as jsx10, jsxs as jsxs7 } from "react/jsx-runtime";
 var { Tabs: Tabs2, Tab: Tab2 } = getMaterialUI();
 function PromptsSqlTree({ instruccionKeys, prompts, activeTab, onActiveTabChange, dragOver, onDragEnter, onDragLeave, onDragOverZone, onDrop, children }) {
@@ -8490,13 +8836,13 @@ function PromptsSqlTree({ instruccionKeys, prompts, activeTab, onActiveTabChange
   );
 }
 
-// js/tools/promptsSql/PromptsSqlEditorPane.jsx
+// src/js/tools/promptsSql/PromptsSqlEditorPane.jsx
 init_platform();
 
-// js/ui/PromptBodyEditor.jsx
+// src/js/ui/PromptBodyEditor.jsx
 init_platform();
 
-// js/ui/promptMdEditorHtml.ts
+// src/js/ui/promptMdEditorHtml.ts
 init_platform();
 function escAttr(s) {
   return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -8707,7 +9053,7 @@ function surfaceHasRawVarTokens(root) {
   return false;
 }
 
-// js/ui/mdImagePaste.ts
+// src/js/ui/mdImagePaste.ts
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -8757,7 +9103,7 @@ function insertImageNodeAtSelection(dataUrl, alt = "imagen") {
   sel.addRange(range);
 }
 
-// js/ui/PromptBodyEditor.jsx
+// src/js/ui/PromptBodyEditor.jsx
 import { Fragment as Fragment5, jsx as jsx11, jsxs as jsxs8 } from "react/jsx-runtime";
 var { useState: useState6, useEffect: useEffect6, useLayoutEffect, useRef: useRef3, useCallback: useCallback3, useMemo: useMemo5 } = getReact();
 var {
@@ -9628,7 +9974,7 @@ function PromptBodyEditor({
   ] });
 }
 
-// js/tools/promptsSql/PromptsSqlEditorPane.jsx
+// src/js/tools/promptsSql/PromptsSqlEditorPane.jsx
 import { jsx as jsx12, jsxs as jsxs9 } from "react/jsx-runtime";
 var {
   Table,
@@ -9784,7 +10130,7 @@ function PromptsSqlMapeoTable({
   ] }) }) });
 }
 
-// js/tools/promptsSql/FileImportMapDialog.jsx
+// src/js/tools/promptsSql/FileImportMapDialog.jsx
 init_platform();
 import { jsx as jsx13, jsxs as jsxs10 } from "react/jsx-runtime";
 var {
@@ -9873,7 +10219,7 @@ function FileImportMapDialog({ open, onClose, rows, instructionKeys, onChangeRow
   ] });
 }
 
-// js/tools/promptsSql/JconfigDetailDialog.jsx
+// src/js/tools/promptsSql/JconfigDetailDialog.jsx
 init_platform();
 import { jsx as jsx14, jsxs as jsxs11 } from "react/jsx-runtime";
 var { useMemo: useMemo6 } = getReact();
@@ -9943,7 +10289,7 @@ function JconfigDetailDialog({ open, onClose, tipo, jc, body }) {
   ] });
 }
 
-// js/tools/PromptsSqlTool.jsx
+// src/js/tools/PromptsSqlTool.jsx
 import { jsx as jsx15, jsxs as jsxs12 } from "react/jsx-runtime";
 var { Paper, Alert: Alert5 } = getMaterialUI();
 var { useState: useState7, useCallback: useCallback4 } = getReact();
@@ -10049,15 +10395,15 @@ function PromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
   ] });
 }
 
-// js/tools/ChatTool.jsx
+// src/js/tools/ChatTool.jsx
 init_platform();
 
-// js/tools/chat/useChatTool.ts
+// src/js/tools/chat/useChatTool.ts
 init_platform();
 init_patyia_jwt();
 init_patyiaChatApi();
 
-// js/api/adjuntosApi.ts
+// src/js/api/adjuntosApi.ts
 init_patyia();
 init_patyiaTokens();
 var DEFAULT_CONCURRENCY = 3;
@@ -10119,13 +10465,13 @@ async function uploadImagenes(jwt, files, onProgress, signal) {
   return uploadFilesMultipart("/adjuntos/imagenes", jwt, { files, onProgress, signal });
 }
 
-// js/tools/chat/useChatTool.ts
+// src/js/tools/chat/useChatTool.ts
 init_issListFilter();
 init_apiClient();
 init_sessionApi();
 init_platform();
 
-// js/tools/chat/constants.ts
+// src/js/tools/chat/constants.ts
 var CHAT_SIDEBAR_W = 320;
 var MAX_CHAT_IMAGES = 10;
 var MAX_CHAT_AUDIOS = 5;
@@ -10171,17 +10517,7 @@ function parseChatLlmProvider(raw) {
 function isMinimaxChatProvider(provider) {
   return parseChatLlmProvider(provider) === CHAT_PROVIDER_MINIMAX;
 }
-function readChatLlmProvider(bootChat) {
-  if (bootChat?.provider != null && String(bootChat.provider).trim() !== "") {
-    return parseChatLlmProvider(bootChat.provider);
-  }
-  const chat = getSnapshot().chat;
-  return parseChatLlmProvider(chat?.provider);
-}
-function chatLlmProviderFromUrl(chat) {
-  if (!chat || chat.provider == null || String(chat.provider).trim() === "") return null;
-  return parseChatLlmProvider(chat.provider);
-}
+var CHAT_PROVIDER_DEFAULT = CHAT_PROVIDER_OPENAI;
 function parseChatMode(raw) {
   if (typeof raw === "string") {
     const m = raw.trim().toLowerCase();
@@ -10226,7 +10562,7 @@ function messageSourceFromUrl(chat) {
   return null;
 }
 
-// js/tools/chat/threadScroll.ts
+// src/js/tools/chat/threadScroll.ts
 init_platform();
 var { useEffect: useEffect7, useLayoutEffect: useLayoutEffect2, useCallback: useCallback5, useRef: useRef4, useMemo: useMemo7 } = getReact();
 var THREAD_SCROLL_NEAR_BOTTOM = 72;
@@ -10276,7 +10612,7 @@ function useThreadScrollAnchor(scrollRef, mensajes, { sending = false } = {}) {
   return onThreadScroll;
 }
 
-// js/tools/chat/auditScope.ts
+// src/js/tools/chat/auditScope.ts
 init_patyia_jwt();
 function auditScopeKey(scope) {
   if (!scope) return "";
@@ -10353,7 +10689,7 @@ function formatAuditTs(v) {
   return Number.isNaN(d.getTime()) ? String(v).slice(0, 16) : d.toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" });
 }
 
-// js/tools/chat/mensajesModel.ts
+// src/js/tools/chat/mensajesModel.ts
 function vistaFechas(raw) {
   const { label, iso } = formatMsgFecha(raw);
   return { fecha: label, fechaIso: iso || void 0 };
@@ -10682,7 +11018,7 @@ function buildOptimisticUserMsg({
   };
 }
 
-// js/tools/chat/images.ts
+// src/js/tools/chat/images.ts
 var IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif|bmp|heic|heif)$/i;
 var BACKEND_IMAGE_MIMES = /* @__PURE__ */ new Set(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"]);
 function mimeFromFileName(name) {
@@ -10767,7 +11103,7 @@ function hasHeicLikeFiles(files) {
   return false;
 }
 
-// js/tools/chat/audio.ts
+// src/js/tools/chat/audio.ts
 var AUDIO_EXT_RE = /\.(webm|mp3|m4a|wav|ogg|aac|mp4)$/i;
 var BACKEND_AUDIO_MIMES = /* @__PURE__ */ new Set([
   "audio/webm",
@@ -10888,7 +11224,7 @@ function isVoiceRecordingSupported() {
   return typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia) && typeof MediaRecorder !== "undefined";
 }
 
-// js/tools/chat/useChatTool.ts
+// src/js/tools/chat/useChatTool.ts
 var { useState: useState8, useEffect: useEffect8, useCallback: useCallback6, useRef: useRef5, useMemo: useMemo8 } = getReact();
 function readBootConvId(bootChat) {
   const fromBoot = Number(bootChat?.convId);
@@ -10966,7 +11302,7 @@ function useChatTool({ bootChat }) {
   const [convListMeta, setConvListMeta] = useState8(null);
   const [messageSource, setMessageSource] = useState8(() => readChatMessageSource(bootChat));
   const [chatMode, setChatMode] = useState8(() => readChatMode(bootChat));
-  const [llmProvider, setLlmProvider] = useState8(() => readChatLlmProvider(bootChat));
+  const [llmProvider, setLlmProvider] = useState8(CHAT_PROVIDER_DEFAULT);
   const inputRef = useRef5(null);
   const attachInputRef = useRef5(null);
   const voiceRecorderRef = useRef5(createVoiceRecorder());
@@ -10979,9 +11315,82 @@ function useChatTool({ bootChat }) {
   const pendingListConvRef = useRef5(null);
   const contapymeResumeLockRef = useRef5(false);
   const sendingRef = useRef5(false);
+  const jwtRef = useRef5(jwt);
+  jwtRef.current = jwt;
+  const onSendRef = useRef5(async () => {
+  });
+  const mcpPollRef = useRef5(null);
   const logMensajesRef = useRef5(logMensajes);
   logMensajesRef.current = logMensajes;
   sendingRef.current = sending;
+  const MCP_POLL_MS = 5e3;
+  const MCP_POLL_TIMEOUT_MS = 6e5;
+  const stopMcpSessionPoll = useCallback6(() => {
+    const s = mcpPollRef.current;
+    if (s?.timer) clearInterval(s.timer);
+    mcpPollRef.current = null;
+  }, []);
+  const resumeMcpAfterLogin = useCallback6((prompt) => {
+    if (sendingRef.current || contapymeResumeLockRef.current) return;
+    contapymeResumeLockRef.current = true;
+    toastInfo("Sesi\xF3n ContaPyme lista \u2014 consultando\u2026");
+    void Promise.resolve(onSendRef.current(String(prompt || "ya inici\xE9 sesi\xF3n").trim() || "ya inici\xE9 sesi\xF3n")).finally(() => {
+      window.setTimeout(() => {
+        contapymeResumeLockRef.current = false;
+      }, 8e3);
+    });
+  }, []);
+  const tickMcpSessionPoll = useCallback6(async () => {
+    const cur = mcpPollRef.current;
+    const tokenJwt = jwtRef.current;
+    if (!cur || cur.resumed || cur.inFlight || !tokenJwt?.token) return;
+    if (Date.now() - cur.startedAt > MCP_POLL_TIMEOUT_MS) {
+      stopMcpSessionPoll();
+      toastWarning("Tiempo de espera de sesi\xF3n ContaPyme agotado. Vuelve a preguntar.");
+      return;
+    }
+    cur.inFlight = true;
+    try {
+      const st = await getConversacionMcpSession(tokenJwt, cur.convId, cur.sessionId);
+      if (st.sessionId) cur.sessionId = st.sessionId;
+      if (st.ready) {
+        cur.resumed = true;
+        const prompt = String(st.pendingPrompt || cur.pendingPrompt || "ya inici\xE9 sesi\xF3n").trim();
+        stopMcpSessionPoll();
+        resumeMcpAfterLogin(prompt);
+        return;
+      }
+      if (st.kind === "gone") stopMcpSessionPoll();
+    } catch {
+    } finally {
+      if (mcpPollRef.current) mcpPollRef.current.inFlight = false;
+    }
+  }, [resumeMcpAfterLogin, stopMcpSessionPoll]);
+  const startMcpSessionPoll = useCallback6((opts) => {
+    const id = Number(opts.convId);
+    if (!Number.isInteger(id) || id <= 0) return;
+    stopMcpSessionPoll();
+    mcpPollRef.current = {
+      convId: id,
+      sessionId: opts.sessionId ? String(opts.sessionId) : void 0,
+      pendingPrompt: String(opts.pendingPrompt || "").trim() || "ya inici\xE9 sesi\xF3n",
+      startedAt: Date.now(),
+      timer: null,
+      inFlight: false,
+      resumed: false
+    };
+    mcpPollRef.current.timer = setInterval(() => {
+      void tickMcpSessionPoll();
+    }, MCP_POLL_MS);
+    void tickMcpSessionPoll();
+  }, [stopMcpSessionPoll, tickMcpSessionPoll]);
+  useEffect8(() => () => {
+    stopMcpSessionPoll();
+  }, [stopMcpSessionPoll]);
+  useEffect8(() => {
+    const cur = mcpPollRef.current;
+    if (cur && selectedId != null && cur.convId !== selectedId) stopMcpSessionPoll();
+  }, [selectedId, stopMcpSessionPoll]);
   const loggedIn = Session.isLoggedIn();
   const sessionUser = Session.username();
   const canAdminJwt = canAdminPortalJwt();
@@ -11453,9 +11862,8 @@ function useChatTool({ bootChat }) {
     setChatMode(mode);
   }, [chatMode]);
   const onLlmProviderChange = useCallback6((next) => {
-    const provider = String(next || "openai").trim().toLowerCase() === CHAT_PROVIDER_MINIMAX ? CHAT_PROVIDER_MINIMAX : "openai";
+    const provider = String(next || CHAT_PROVIDER_OPENAI).trim().toLowerCase() === CHAT_PROVIDER_MINIMAX ? CHAT_PROVIDER_MINIMAX : CHAT_PROVIDER_OPENAI;
     if (provider === llmProvider) return;
-    persistChatLlmProvider(provider);
     setLlmProvider(provider);
   }, [llmProvider]);
   const onConvListPageSizeChange = useCallback6((next) => {
@@ -11473,9 +11881,18 @@ function useChatTool({ bootChat }) {
     if (urlSource) setMessageSource((prev) => prev === urlSource ? prev : urlSource);
     const urlMode = chatModeFromUrl(chat);
     if (urlMode !== null) setChatMode((prev) => prev === urlMode ? prev : urlMode);
-    const urlProvider = chatLlmProviderFromUrl(chat);
-    if (urlProvider !== null) setLlmProvider((prev) => prev === urlProvider ? prev : urlProvider);
   }), []);
+  useEffect8(() => {
+    persistChatLlmProvider(CHAT_PROVIDER_OPENAI);
+  }, []);
+  const prevSelectedIdRef = useRef5(selectedId);
+  useEffect8(() => {
+    const prev = prevSelectedIdRef.current;
+    prevSelectedIdRef.current = selectedId;
+    if (prev === selectedId) return;
+    if (prev === null) return;
+    setLlmProvider((p) => p === CHAT_PROVIDER_OPENAI ? p : CHAT_PROVIDER_OPENAI);
+  }, [selectedId]);
   useEffect8(() => {
     if (jwtLoading) return;
     reloadList();
@@ -11516,11 +11933,13 @@ function useChatTool({ bootChat }) {
       toastWarning("Modo lectura.");
       return;
     }
+    stopMcpSessionPoll();
     setSelectedId(null);
     setDetail(null);
     setStreamText("");
     setLogMensajes([]);
     setLogError("");
+    setLlmProvider(CHAT_PROVIDER_OPENAI);
     persistChatConvId(null);
     inputRef.current?.focus();
   }
@@ -11561,6 +11980,7 @@ function useChatTool({ bootChat }) {
     }
     setSending(true);
     setStreamText("");
+    stopMcpSessionPoll();
     const imageEntries = [...images];
     const audioEntries = [...audios];
     const imagenesPlaceholder = imageEntries.map((_, i) => `__img_pending_${i}__`);
@@ -11595,16 +12015,50 @@ function useChatTool({ bootChat }) {
       }
       const imagenesUrls = uploadedImages.map((u) => u.url);
       const audiosUrls = uploadedAudios.map((u) => u.url);
+      const bindSidebarRow = (payload, opts) => {
+        const id = Number(payload.iconversacion);
+        if (!Number.isInteger(id) || id <= 0) return null;
+        const tituloEarly = String(payload.titulo || "").trim();
+        const rowPatch = {
+          iconversacion: id,
+          ...tituloEarly ? { titulo: tituloEarly } : {},
+          ...payload.qmensajes != null ? { qmensajes: payload.qmensajes } : {},
+          ...payload.fhcre ? { fhcre: payload.fhcre } : {},
+          ...payload.fhultact ? { fhultact: payload.fhultact } : {},
+          ...payload.itercero ? { itercero: payload.itercero } : jwt.claims?.itercero ? { itercero: jwt.claims.itercero } : {},
+          ...payload.icontacto ? { icontacto: payload.icontacto } : jwt.claims?.icontacto ? { icontacto: jwt.claims.icontacto } : {}
+        };
+        setRows((prev) => {
+          const exists = prev.some((r) => convIdsEqual(r.iconversacion, id));
+          if (exists) return prev.map((r) => convIdsEqual(r.iconversacion, id) ? { ...r, ...rowPatch } : r);
+          return [rowPatch, ...prev];
+        });
+        if (opts?.select !== false && id !== convIdBefore) {
+          pendingListConvRef.current = id;
+          skipThreadReloadRef.current = id;
+          setSelectedId(id);
+          persistChatConvId(id);
+        }
+        return rowPatch;
+      };
+      let boundEarly = false;
       const result = await sendConversacionStream(
         jwt,
         { prompt: text, iconversacion: selectedId || void 0, imagenes: imagenesUrls, audios: audiosUrls, mode: chatMode, provider: llmProvider },
-        (partial) => setStreamText(partial)
+        (partial, payload) => {
+          if (partial) setStreamText(partial);
+          if (!boundEarly && !convIdBefore && payload && Number(payload.iconversacion) > 0) {
+            boundEarly = true;
+            bindSidebarRow(payload);
+          }
+        }
       );
       const finalText = String(result.respuesta || "").trim();
       if (finalText) setStreamText(finalText);
       const streamMeta = result.meta;
-      const streamFailed = streamMeta?.stream_ok === false;
-      const streamError = formatStreamError(streamMeta?.stream_error);
+      const emptyStream = !finalText && streamMeta?.stream_ok !== true;
+      const streamFailed = streamMeta?.stream_ok === false || emptyStream;
+      const streamError = formatStreamError(streamMeta?.stream_error) || (emptyStream ? `El proveedor ${llmProvider === CHAT_PROVIDER_MINIMAX ? "MiniMax" : "OpenAI"} no devolvi\xF3 respuesta. Vuelve a intentar${llmProvider === CHAT_PROVIDER_MINIMAX ? " o cambia a OpenAI" : ""}.` : void 0);
       const newId = Number(result.iconversacion) || convIdBefore;
       const tituloStream = String(result.titulo || "").trim();
       setLogMensajes((prev) => enrichLogVista(
@@ -11617,7 +12071,7 @@ function useChatTool({ bootChat }) {
       setSending(false);
       setStreamText("");
       if (newId) {
-        const rowPatch = {
+        const rowPatch = bindSidebarRow({
           iconversacion: newId,
           ...tituloStream ? { titulo: tituloStream } : {},
           ...result.qmensajes != null ? { qmensajes: result.qmensajes } : {},
@@ -11625,19 +12079,11 @@ function useChatTool({ bootChat }) {
           ...result.fhultact ? { fhultact: result.fhultact } : {},
           ...result.itercero ? { itercero: result.itercero } : {},
           ...result.icontacto ? { icontacto: result.icontacto } : {}
+        }) || {
+          iconversacion: newId,
+          ...tituloStream ? { titulo: tituloStream } : {}
         };
-        setRows((prev) => {
-          const exists = prev.some((r) => convIdsEqual(r.iconversacion, newId));
-          if (exists) return prev.map((r) => convIdsEqual(r.iconversacion, newId) ? { ...r, ...rowPatch } : r);
-          return [rowPatch, ...prev];
-        });
         setDetail((d) => d && convIdsEqual(d.iconversacion, newId) ? { ...d, ...rowPatch } : d);
-        if (newId !== convIdBefore) {
-          pendingListConvRef.current = newId;
-          skipThreadReloadRef.current = newId;
-          setSelectedId(newId);
-          persistChatConvId(newId);
-        }
         void reloadList().then(() => {
           setRows((prev) => {
             const exists = prev.some((r) => convIdsEqual(r.iconversacion, newId));
@@ -11653,6 +12099,18 @@ function useChatTool({ bootChat }) {
           setDetail((d) => d && convIdsEqual(d.iconversacion, newId) && d.titulo !== tituloStream ? { ...d, titulo: tituloStream } : d);
           setRows((prev) => prev.map((r) => convIdsEqual(r.iconversacion, newId) && r.titulo !== tituloStream ? { ...r, titulo: tituloStream } : r));
         });
+        const meta = result.meta || {};
+        const loginUrl = String(meta.login_url || "").trim();
+        const needsMcpPoll = Boolean(
+          meta.mcp_await_front_poll || meta.contapyme_mcp_login || loginUrl || /ia\.contapyme\.com\/api\/login\/asw/i.test(String(result.respuesta || ""))
+        );
+        if (needsMcpPoll) {
+          startMcpSessionPoll({
+            convId: newId,
+            sessionId: String(meta.session_id || "").trim() || void 0,
+            pendingPrompt: String(meta.pending_prompt || text || "ya inici\xE9 sesi\xF3n").trim()
+          });
+        }
       } else if (result?.mensajesOpenAI?.length) {
         applyThreadFromDetail(result, null, userName);
       }
@@ -11787,19 +12245,34 @@ function useChatTool({ bootChat }) {
     setMetaMsg(msg);
     setMetaOpen(true);
   }, []);
-  const onSendRef = useRef5(onSend);
   onSendRef.current = onSend;
   const onContapymeLoginDone = useCallback6(() => {
     if (sendingRef.current || contapymeResumeLockRef.current || !canSend || !jwt) return;
+    if (mcpPollRef.current) {
+      void tickMcpSessionPoll();
+      return;
+    }
     const msgs = logMensajesRef.current || [];
     let pending = false;
+    let pendingPrompt = "ya inici\xE9 sesi\xF3n";
     for (let i = msgs.length - 1; i >= 0; i--) {
       const m = msgs[i];
       if (m.esUsuario || m.esOperativa) continue;
       const t = String(m.contenido || "");
-      if (/Sesión ContaPyme® activa/i.test(t)) break;
-      if (/ia\.contapyme\.com\/api\/login\/asw/i.test(t) || Boolean(m.meta?.login_url || m.meta?.extra?.login_url || m.meta?.contapyme_mcp_login)) {
+      if (/Sesión ContaPyme® activa|Sesión activa/i.test(t)) break;
+      if (/ia\.contapyme\.com\/api\/login\/asw/i.test(t) || Boolean(m.meta?.login_url || m.meta?.extra?.login_url || m.meta?.contapyme_mcp_login || m.meta?.mcp_await_front_poll)) {
         pending = true;
+        const sid = String(m.meta?.session_id || "").trim();
+        const pp = String(m.meta?.pending_prompt || "").trim();
+        if (pp) pendingPrompt = pp;
+        if (selectedId) {
+          startMcpSessionPoll({
+            convId: selectedId,
+            sessionId: sid || void 0,
+            pendingPrompt
+          });
+          return;
+        }
       }
       break;
     }
@@ -11810,7 +12283,7 @@ function useChatTool({ bootChat }) {
         contapymeResumeLockRef.current = false;
       }, 8e3);
     });
-  }, [canSend, jwt]);
+  }, [canSend, jwt, selectedId, startMcpSessionPoll, tickMcpSessionPoll]);
   const onRateMessage = useCallback6(async (msg, butil) => {
     if (!canSend || !jwt?.token || !selectedId) return;
     if (msg.calificacion !== void 0) return;
@@ -11973,7 +12446,7 @@ function useChatTool({ bootChat }) {
   };
 }
 
-// js/tools/chat/ChatLoggedOutShell.jsx
+// src/js/tools/chat/ChatLoggedOutShell.jsx
 init_platform();
 import { jsx as jsx16, jsxs as jsxs13 } from "react/jsx-runtime";
 var {
@@ -12049,11 +12522,11 @@ function ChatLoggedOutShell() {
   );
 }
 
-// js/tools/chat/ChatThreadSidebar.jsx
+// src/js/tools/chat/ChatThreadSidebar.jsx
 init_platform();
 init_patyia_jwt();
 
-// js/tools/chat/ChatSessionPanel.jsx
+// src/js/tools/chat/ChatSessionPanel.jsx
 init_platform();
 init_patyia();
 init_patyia_jwt();
@@ -12106,8 +12579,8 @@ function SessionModeChip({ canSend, jwtLoading }) {
   );
 }
 function ChatSessionPanel({ claims, displayScope, sessionUser: _sessionUser, ownerDisplayName, canSend, jwtLoading, canAudit = false, onOpenAudit }) {
-  const tercero = claims?.itercero ?? displayScope?.itercero;
-  const contacto = claims?.icontacto ?? displayScope?.icontacto;
+  const tercero = displayScope?.itercero ?? claims?.itercero;
+  const contacto = displayScope?.icontacto ?? claims?.icontacto;
   const codes = [tercero, contacto].filter(Boolean).join(" \xB7 ");
   const scopeName = String(displayScope?.nombre ?? "").trim();
   const claimsName = jwtUserDisplayName(claims) || jwtUserShortName(claims);
@@ -12158,7 +12631,7 @@ function ChatSessionPanel({ claims, displayScope, sessionUser: _sessionUser, own
   );
 }
 
-// js/tools/chat/ConvSearchAutocomplete.jsx
+// src/js/tools/chat/ConvSearchAutocomplete.jsx
 init_platform();
 import { Fragment as Fragment6, jsx as jsx18, jsxs as jsxs15 } from "react/jsx-runtime";
 import { createElement as createElement2 } from "react";
@@ -12306,7 +12779,7 @@ function ConvSearchAutocomplete({
   );
 }
 
-// js/tools/chat/ChatThreadSidebar.jsx
+// src/js/tools/chat/ChatThreadSidebar.jsx
 import { Fragment as Fragment7, jsx as jsx19, jsxs as jsxs16 } from "react/jsx-runtime";
 var {
   Box: Box9,
@@ -12736,14 +13209,14 @@ function ChatThreadSidebar({
   );
 }
 
-// js/tools/chat/ChatMainPanel.jsx
+// src/js/tools/chat/ChatMainPanel.jsx
 init_platform();
 
-// js/tools/chat/ChatComposer.jsx
+// src/js/tools/chat/ChatComposer.jsx
 init_platform();
 init_patyia_jwt();
 
-// js/tools/chat/ChatPayloadPreview.jsx
+// src/js/tools/chat/ChatPayloadPreview.jsx
 init_platform();
 init_patyiaChatApi();
 import { jsx as jsx20, jsxs as jsxs17 } from "react/jsx-runtime";
@@ -12827,7 +13300,7 @@ function ChatPayloadPreview({ open, body, endpoint, onClose }) {
   );
 }
 
-// js/tools/chat/ChatComposer.jsx
+// src/js/tools/chat/ChatComposer.jsx
 import { jsx as jsx21, jsxs as jsxs18 } from "react/jsx-runtime";
 var { useState: useState11, useMemo: useMemo12, useEffect: useEffect11 } = getReact();
 var {
@@ -12988,7 +13461,7 @@ function ChatComposer({
   ] });
 }
 
-// js/tools/chat/ChatMainPanel.jsx
+// src/js/tools/chat/ChatMainPanel.jsx
 import { jsx as jsx22, jsxs as jsxs19 } from "react/jsx-runtime";
 var {
   Box: Box11,
@@ -13137,7 +13610,7 @@ function ChatMainPanel({ jwt, needsJwt, viewingAuditOther, selectedId, detail, c
   ] });
 }
 
-// js/tools/chat/JwtModal.jsx
+// src/js/tools/chat/JwtModal.jsx
 init_platform();
 init_patyia_jwt();
 init_platform();
@@ -13205,7 +13678,7 @@ function JwtModal({ open, onClose, initialToken, onSave }) {
   );
 }
 
-// js/tools/chat/TercerosAuditDialog.jsx
+// src/js/tools/chat/TercerosAuditDialog.jsx
 init_platform();
 init_patyia_jwt();
 init_apiClient();
@@ -13386,6 +13859,7 @@ function TercerosAuditDialog({ open, onClose, jwt, sessionUser, onSelect, curren
                     }
                   )
                 ] }),
+                selected ? /* @__PURE__ */ jsx24(Chip7, { size: "small", label: "Viendo", color: "primary", sx: { height: 18, "& .MuiChip-label": { px: 0.5, fontSize: "0.65rem" } } }) : null,
                 row.es_sesion ? /* @__PURE__ */ jsx24(Chip7, { size: "small", label: "Sesi\xF3n", color: "success", sx: { height: 18, "& .MuiChip-label": { px: 0.5, fontSize: "0.65rem" } } }) : null
               ] }) }),
               /* @__PURE__ */ jsx24(TableCell2, { align: "right", sx: CELL_SX, children: Number(row.total_conversaciones || 0).toLocaleString("es-CO") }),
@@ -13408,7 +13882,7 @@ function TercerosAuditDialog({ open, onClose, jwt, sessionUser, onSelect, curren
                       nombre: row.nombre ? shortDisplayName(row.nombre) : null
                     });
                   },
-                  children: selected ? "Activo" : row.es_sesion ? "Mis convs" : "Ver"
+                  children: selected ? "Viendo" : row.es_sesion ? "Mis convs" : "Ver"
                 }
               ) })
             ] }, key);
@@ -13450,7 +13924,7 @@ function TercerosAuditDialog({ open, onClose, jwt, sessionUser, onSelect, curren
   ] });
 }
 
-// js/tools/ChatTool.jsx
+// src/js/tools/ChatTool.jsx
 import { Fragment as Fragment8, jsx as jsx25, jsxs as jsxs22 } from "react/jsx-runtime";
 var { Box: Box13, Drawer: Drawer2, Fab: Fab2, IconButton: IconButton6, Tooltip: Tooltip5, useTheme: useTheme2, useMediaQuery: useMediaQuery2 } = getMaterialUI();
 var { useState: useState14 } = getReact();
@@ -13696,14 +14170,14 @@ function ChatTool({ bootChat, onNeedLogin }) {
   );
 }
 
-// js/tools/TodosTool.jsx
+// src/js/tools/TodosTool.jsx
 init_platform();
 
-// js/tools/todos/useTodosTool.ts
+// src/js/tools/todos/useTodosTool.ts
 init_platform();
 init_platform();
 
-// js/api/todosApi.ts
+// src/js/api/todosApi.ts
 init_platform();
 init_patyia();
 init_sessionApi();
@@ -13878,7 +14352,7 @@ async function addTodoComment(taskId, body) {
   return data.event;
 }
 
-// js/tools/todos/todosBoardState.js
+// src/js/tools/todos/todosBoardState.js
 function patchTaskInBoard(board, taskId, patch) {
   if (!board) return board;
   return {
@@ -13918,7 +14392,7 @@ function buildOptimisticTask(opts) {
   };
 }
 
-// js/tools/todos/boardsHomeState.js
+// src/js/tools/todos/boardsHomeState.js
 var LS_KEY = "isa-patyia:todos-boards-expand";
 function readBoardExpandState() {
   try {
@@ -13962,7 +14436,7 @@ function boardRoleChips(board) {
   return chips;
 }
 
-// js/tools/todos/todosKanbanShared.js
+// src/js/tools/todos/todosKanbanShared.js
 var MAX_COLUMN_TASKS = 4;
 var IN_PROGRESS_COLUMN_KEY = "in_progress";
 function normalizeTodoBoardData(boardData) {
@@ -14040,7 +14514,7 @@ function assigneeTheme(assignedTo) {
   return { label: username, ...palette };
 }
 
-// js/tools/todos/useTodosTool.ts
+// src/js/tools/todos/useTodosTool.ts
 var { useState: useState15, useEffect: useEffect14, useCallback: useCallback8, useRef: useRef7 } = getReact();
 function useTodosTool({ bootTodos }) {
   const [loggedIn, setLoggedIn] = useState15(Session.isLoggedIn());
@@ -14481,10 +14955,10 @@ function useTodosTool({ bootTodos }) {
   };
 }
 
-// js/tools/todos/TodosKanban.jsx
+// src/js/tools/todos/TodosKanban.jsx
 init_platform();
 
-// js/tools/todos/TaskAssigneeLabel.jsx
+// src/js/tools/todos/TaskAssigneeLabel.jsx
 init_platform();
 import { jsx as jsx26 } from "react/jsx-runtime";
 var { Typography: Typography12 } = getMaterialUI();
@@ -14506,7 +14980,7 @@ function TaskAssigneeLabel({ assignedTo }) {
   );
 }
 
-// js/tools/todos/TodosKanban.jsx
+// src/js/tools/todos/TodosKanban.jsx
 import { Fragment as Fragment9, jsx as jsx27, jsxs as jsxs23 } from "react/jsx-runtime";
 var { useState: useState16, useMemo: useMemo14, useRef: useRef8, useEffect: useEffect15, memo: memo2 } = getReact();
 var { Box: Box14, Paper: Paper2, Typography: Typography13, TextField: TextField8, Button: Button9, Stack: Stack11, Chip: Chip8 } = getMaterialUI();
@@ -14912,10 +15386,10 @@ function TodosKanban({ boardData, readOnly = false, preview = false, onOpenTask,
   );
 }
 
-// js/tools/todos/TaskDetailDialog.jsx
+// src/js/tools/todos/TaskDetailDialog.jsx
 init_platform();
 
-// js/tools/todos/UserAssignAutocomplete.jsx
+// src/js/tools/todos/UserAssignAutocomplete.jsx
 init_platform();
 import { jsx as jsx28 } from "react/jsx-runtime";
 import { createElement as createElement3 } from "react";
@@ -15065,10 +15539,10 @@ function UserAssignAutocomplete({ value, onChange, disabled = false, label = "As
   );
 }
 
-// js/tools/todos/TaskConvoThread.jsx
+// src/js/tools/todos/TaskConvoThread.jsx
 init_platform();
 
-// js/api/treeMsgsApi.ts
+// src/js/api/treeMsgsApi.ts
 init_platform();
 init_patyia();
 init_sessionApi();
@@ -15119,12 +15593,12 @@ function scrumTaskContext(taskId) {
   return `scrum-task:${taskId}`;
 }
 
-// js/tools/todos/treePathUtils.js
+// src/js/tools/todos/treePathUtils.js
 function pathDepth(path) {
   return String(path || "").split(".").filter(Boolean).length;
 }
 
-// js/tools/todos/TaskConvoThread.jsx
+// src/js/tools/todos/TaskConvoThread.jsx
 import { jsx as jsx29, jsxs as jsxs24 } from "react/jsx-runtime";
 var { useState: useState18, useEffect: useEffect17, useCallback: useCallback10 } = getReact();
 var {
@@ -15312,7 +15786,7 @@ function TaskConvoThread({ contextKey, readOnly = false, appId = SCRUM_APP_ID })
   ] });
 }
 
-// js/tools/todos/TaskDetailDialog.jsx
+// src/js/tools/todos/TaskDetailDialog.jsx
 import { jsx as jsx30, jsxs as jsxs25 } from "react/jsx-runtime";
 var { useState: useState19, useEffect: useEffect18, useRef: useRef10 } = getReact();
 var {
@@ -15782,7 +16256,7 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
   );
 }
 
-// js/tools/todos/NewBoardDialog.jsx
+// src/js/tools/todos/NewBoardDialog.jsx
 init_platform();
 import { jsx as jsx31, jsxs as jsxs26 } from "react/jsx-runtime";
 var { useState: useState20 } = getReact();
@@ -15910,7 +16384,7 @@ function NewBoardDialog({ open, onClose, onCreate, busy }) {
   ] });
 }
 
-// js/tools/todos/PublicScrumBoard.jsx
+// src/js/tools/todos/PublicScrumBoard.jsx
 init_platform();
 import { jsx as jsx32, jsxs as jsxs27 } from "react/jsx-runtime";
 var { useState: useState21, useEffect: useEffect19 } = getReact();
@@ -15971,7 +16445,7 @@ function PublicScrumBoard({ publicSlug }) {
   ] });
 }
 
-// js/tools/todos/BoardsHome.jsx
+// src/js/tools/todos/BoardsHome.jsx
 init_platform();
 import { jsx as jsx33, jsxs as jsxs28 } from "react/jsx-runtime";
 var { useState: useState22, useEffect: useEffect20, useMemo: useMemo15 } = getReact();
@@ -16138,7 +16612,7 @@ function BoardsHome({ boards, boardPreviews = {}, loadingPreviews = false, loadi
   return /* @__PURE__ */ jsx33(Box20, { className: "paty-todos-boards-home", children: /* @__PURE__ */ jsx33(Box20, { className: "paty-todos-boards-list", children: sortedBoards.map((board) => /* @__PURE__ */ jsx33(BoardAccordionRow, { board, preview: boardPreviews[board.id], previewReady: Object.prototype.hasOwnProperty.call(boardPreviews, board.id), loadingPreviews, expanded: isExpanded(board.id), onToggleExpand: handleToggleExpand, onOpenBoard, onOpenTask, onPreviewDragStart, onPreviewDropColumn, onDeleteBoard: handleDeleteBoard, deleting: deletingId === board.id }, board.id)) }) });
 }
 
-// js/tools/todos/BoardSettingsDialog.jsx
+// src/js/tools/todos/BoardSettingsDialog.jsx
 init_platform();
 import { Fragment as Fragment10, jsx as jsx34, jsxs as jsxs29 } from "react/jsx-runtime";
 var { useState: useState23, useEffect: useEffect21 } = getReact();
@@ -16452,7 +16926,7 @@ function BoardSettingsDialog({
   ] });
 }
 
-// js/tools/todos/TodosShellParts.jsx
+// src/js/tools/todos/TodosShellParts.jsx
 init_platform();
 import { jsx as jsx35, jsxs as jsxs30 } from "react/jsx-runtime";
 var { Box: Box22, Typography: Typography19, Button: Button15, Stack: Stack17, Alert: Alert11, CircularProgress: CircularProgress13, Tooltip: Tooltip10, IconButton: IconButton11 } = getMaterialUI();
@@ -16513,7 +16987,7 @@ function TodosBoardToolbar({
   ] });
 }
 
-// js/tools/todos/TodosPublicHome.jsx
+// src/js/tools/todos/TodosPublicHome.jsx
 init_platform();
 import { jsx as jsx36, jsxs as jsxs31 } from "react/jsx-runtime";
 var { useState: useState24, useEffect: useEffect22 } = getReact();
@@ -16615,7 +17089,7 @@ function TodosPublicHome() {
   ] });
 }
 
-// js/tools/TodosTool.jsx
+// src/js/tools/TodosTool.jsx
 import { Fragment as Fragment11, jsx as jsx37, jsxs as jsxs32 } from "react/jsx-runtime";
 var { useState: useState25 } = getReact();
 var { Box: Box24, Alert: Alert13 } = getMaterialUI();
@@ -16797,23 +17271,23 @@ function TodosTool({ bootTodos, onNeedLogin }) {
   ] });
 }
 
-// js/tools/ConfigTool.jsx
+// src/js/tools/ConfigTool.jsx
 init_platform();
 init_systemConfigApi();
 init_platform();
 init_sessionApi();
 
-// js/tools/PermisosPanel.jsx
+// src/js/tools/PermisosPanel.jsx
 init_platform();
 init_systemConfigApi();
 
-// js/tools/permFilter.js
+// src/js/tools/permFilter.js
 var SESSION_OWNER_FILTER = {
   itercero: "{{itercero}}",
   icontacto: "{{icontacto}}"
 };
 
-// js/tools/permisosForm.js
+// src/js/tools/permisosForm.js
 var FLAG_DEFS = [
   { key: "*", label: "Acceso total", hint: "Wildcard \u2014 anula el resto de restricciones de ruta." },
   { key: "impersonate", label: "Suplantar chat", hint: "Actuar como otro usuario en conversaciones." },
@@ -16838,7 +17312,7 @@ function userRoles(permisos) {
   return Array.isArray(r) ? r.map((x) => String(x).trim().toUpperCase()).filter(Boolean) : [];
 }
 
-// js/tools/permisosKanbanShared.js
+// src/js/tools/permisosKanbanShared.js
 init_roleCanonicalMeta();
 var USR_ROLE = "USR";
 var ROLE_ACCENTS = ["#1e90ff", "#10b981", "#a855f7", "#f59e0b", "#ec4899", "#06b6d4", "#8b5cf6"];
@@ -17010,19 +17484,19 @@ function pointInRef(ref, clientX, clientY) {
   return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
 }
 
-// js/tools/PermisosKanban.jsx
+// src/js/tools/PermisosKanban.jsx
 init_platform();
 
-// js/tools/permisosRoleConfig.jsx
+// src/js/tools/permisosRoleConfig.jsx
 init_platform();
 
-// js/tools/permisosRouteCatalog.js
+// src/js/tools/permisosRouteCatalog.js
 var ROUTE_GROUPS = [
   {
     id: "conversaciones",
     title: "Conversaciones",
     routes: [
-      { key: "GET:/api/conversaciones", label: "Listar conversaciones", scoped: true },
+      { key: "QUERY:/api/conversaciones", label: "Listar conversaciones", scoped: true },
       { key: "GET:/api/conversacion/*", label: "Ver conversaci\xF3n", scoped: true },
       { key: "GET:/api/conversacion/logs/*", label: "Logs de conversaci\xF3n" },
       { key: "POST:/api/conversacion", label: "Crear conversaci\xF3n", scoped: true },
@@ -17052,12 +17526,12 @@ var ROUTE_GROUPS = [
   },
   {
     id: "patyia",
-    title: "PatyIA / instrucciones",
+    title: "PatyIA",
     routes: [
-      { key: "POST:/api/patyia/instrucciones/publish", label: "Publicar instrucciones" },
-      { key: "POST:/api/patyia/instrucciones/upsert", label: "Upsert instrucciones" },
-      { key: "POST:/api/patyia/prompts/upsert-sql", label: "Upsert SQL prompts" },
-      { key: "POST:/api/instrucciones/*", label: "POST instrucciones (wildcard)" }
+      { key: "GET:/api/patyia/admin/roles", label: "Admin roles PatyIA" },
+      { key: "PUT:/api/patyia/admin/roles/*", label: "Asignar rol contacto" },
+      { key: "GET:/api/patyia/admin/acciones", label: "Admin acciones x rol" },
+      { key: "PUT:/api/patyia/admin/acciones", label: "Upsert acci\xF3n x rol" }
     ]
   },
   {
@@ -17070,7 +17544,7 @@ var ROUTE_GROUPS = [
 ];
 var CATALOG_KEYS = new Set(ROUTE_GROUPS.flatMap((g) => g.routes.map((r) => r.key)));
 
-// js/tools/permisosRoleTransfer.js
+// src/js/tools/permisosRoleTransfer.js
 function isTopDevLeadRole(roleName) {
   return String(roleName ?? "").trim().toUpperCase() === "DEVISS";
 }
@@ -17120,7 +17594,7 @@ function canAddUserToRole({ username } = {}) {
   return { ok: true };
 }
 
-// js/tools/PermisosUserAutocomplete.jsx
+// src/js/tools/PermisosUserAutocomplete.jsx
 init_platform();
 init_systemConfigApi();
 import { jsx as jsx38 } from "react/jsx-runtime";
@@ -17285,11 +17759,11 @@ function PermisosUserAutocomplete({
   );
 }
 
-// js/tools/permisosVisitante.js
+// src/js/tools/permisosVisitante.js
 var VISITANTE_DEFAULT_PERMISOS = {
   namedisplay: "Usuario",
   descripcion: "Usuario \u2014 solo sus propias conversaciones; logs abiertos; resto lectura",
-  "GET:/api/conversaciones": { filter: { ...SESSION_OWNER_FILTER } },
+  "QUERY:/api/conversaciones": { filter: { ...SESSION_OWNER_FILTER } },
   "GET:/api/conversacion/*": { filter: { ...SESSION_OWNER_FILTER } },
   "GET:/api/conversacion/logs/*": true,
   "POST:/api/conversacion": { filter: { ...SESSION_OWNER_FILTER } },
@@ -17297,7 +17771,7 @@ var VISITANTE_DEFAULT_PERMISOS = {
   "DELETE:/api/conversacion/*": { filter: { ...SESSION_OWNER_FILTER } }
 };
 
-// js/tools/permisosRoleConfig.jsx
+// src/js/tools/permisosRoleConfig.jsx
 import { Fragment as Fragment12, jsx as jsx39, jsxs as jsxs33 } from "react/jsx-runtime";
 var { useState: useState27, useEffect: useEffect24, useMemo: useMemo16 } = getReact();
 var {
@@ -17494,7 +17968,7 @@ function RoleRemoveDialog({ open, pending, busy, sessionUsername, onClose, onCon
   );
 }
 
-// js/tools/PermisosKanban.jsx
+// src/js/tools/PermisosKanban.jsx
 import { Fragment as Fragment13, jsx as jsx40, jsxs as jsxs34 } from "react/jsx-runtime";
 var { useState: useState28, useMemo: useMemo17, useRef: useRef12, useEffect: useEffect25, memo: memo3 } = getReact();
 var { createPortal } = getReactDOM();
@@ -18006,7 +18480,7 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
   ] });
 }
 
-// js/tools/PermisosRoleFilterAutocomplete.jsx
+// src/js/tools/PermisosRoleFilterAutocomplete.jsx
 init_platform();
 import { jsx as jsx41 } from "react/jsx-runtime";
 var { Autocomplete: Autocomplete4, TextField: TextField15, Chip: Chip16 } = getMaterialUI();
@@ -18050,7 +18524,7 @@ function PermisosRoleFilterAutocomplete({ options, value, onChange, disabled = f
   );
 }
 
-// js/tools/UserPermissionsSummaryDialog.jsx
+// src/js/tools/UserPermissionsSummaryDialog.jsx
 init_platform();
 import { Fragment as Fragment14, jsx as jsx42, jsxs as jsxs35 } from "react/jsx-runtime";
 var { Typography: Typography24, Stack: Stack21, Box: Box28, Chip: Chip17, Divider: Divider6, CircularProgress: CircularProgress17 } = getMaterialUI();
@@ -18235,7 +18709,7 @@ function UserPermissionsSummaryDialog({ open, onClose, username, users, roles })
   );
 }
 
-// js/tools/PermisosPanel.jsx
+// src/js/tools/PermisosPanel.jsx
 import { jsx as jsx43, jsxs as jsxs36 } from "react/jsx-runtime";
 var { useState: useState29, useEffect: useEffect26, useCallback: useCallback12, useMemo: useMemo19, useRef: useRef13 } = getReact();
 var { Typography: Typography25, Stack: Stack22, Alert: Alert15, CircularProgress: CircularProgress18, Box: Box29, Chip: Chip18, DialogContent: DialogContent12, DialogActions: DialogActions10, Button: Button18, FormControlLabel: FormControlLabel4, Switch: Switch2 } = getMaterialUI();
@@ -18589,13 +19063,13 @@ function PermisosPanel({ onNeedLogin }) {
   ] });
 }
 
-// js/tools/ConfigPromptsOperativosPanel.jsx
+// src/js/tools/ConfigPromptsOperativosPanel.jsx
 init_platform();
 init_systemConfigApi();
 init_platform();
 init_sessionApi();
 
-// js/tools/configOpenAi.ts
+// src/js/tools/configOpenAi.ts
 var DEFAULT_MAX_NUM_RESULTS = 8;
 var MIN_MAX_NUM_RESULTS = 3;
 var MAX_MAX_NUM_RESULTS = 50;
@@ -18701,7 +19175,7 @@ function parseAndValidateJsonText(text, opts = {}) {
   return { ...result, parsed: result.normalized };
 }
 
-// js/tools/configPromptsOperativos.ts
+// src/js/tools/configPromptsOperativos.ts
 var REASONING_EFFORT_OPTIONS = ["low", "medium", "high"];
 var MESSAGE_ROLES = ["system", "user", "assistant"];
 var LEGACY_META_KEYS = ["modeloOperativo", "modeloConversacion", "temperaturaConversacion"];
@@ -18875,7 +19349,7 @@ function writePromptSkeletonCount(count) {
   }
 }
 
-// js/tools/configFieldPersist.ts
+// src/js/tools/configFieldPersist.ts
 init_platform();
 var { useRef: useRef14, useState: useState30 } = getReact();
 function useConfigFieldPersist() {
@@ -18897,7 +19371,7 @@ function useConfigFieldPersist() {
   return { saveGenRef, beginSave, endSave, fieldDisabled };
 }
 
-// js/tools/ConfigPromptsOperativosPanel.jsx
+// src/js/tools/ConfigPromptsOperativosPanel.jsx
 import { Fragment as Fragment15, jsx as jsx44, jsxs as jsxs37 } from "react/jsx-runtime";
 var { useState: useState31, useEffect: useEffect27, useCallback: useCallback13, useRef: useRef15 } = getReact();
 var {
@@ -19416,7 +19890,7 @@ function ConfigPromptsOperativosPanel({ onNeedLogin, ConfigFormSection: ConfigFo
   );
 }
 
-// js/tools/ConfigTool.jsx
+// src/js/tools/ConfigTool.jsx
 import { Fragment as Fragment16, jsx as jsx45, jsxs as jsxs38 } from "react/jsx-runtime";
 var { useState: useState32, useEffect: useEffect28, useCallback: useCallback14, useMemo: useMemo20, useRef: useRef16 } = getReact();
 var { Paper: Paper5, Typography: Typography27, TextField: TextField17, Stack: Stack24, Alert: Alert17, Box: Box31, FormControl: FormControl8, InputLabel: InputLabel5, Select: Select8, MenuItem: MenuItem8, Tooltip: Tooltip14, DialogContent: DialogContent14, DialogActions: DialogActions12, Button: Button20, Divider: Divider7 } = getMaterialUI();
@@ -19685,10 +20159,10 @@ function OpenAiSection({ onNeedLogin, onModelsChange }) {
   );
 }
 
-// js/tools/WelcomeHome.jsx
+// src/js/tools/WelcomeHome.jsx
 init_platform();
 
-// js/api/openaiStatusApi.ts
+// src/js/api/openaiStatusApi.ts
 var OPENAI_STATUS_POLL_MS = 6e4;
 var SUMMARY_URL = "https://status.openai.com/api/v2/summary.json";
 var STATUS_PAGE = "https://status.openai.com/";
@@ -19861,7 +20335,7 @@ function stopOpenAiStatusPolling() {
   _abort = null;
 }
 
-// js/status/OpenAiStatusRing.jsx
+// src/js/status/OpenAiStatusRing.jsx
 init_platform();
 import { jsx as jsx46, jsxs as jsxs39 } from "react/jsx-runtime";
 var TONE_COLOR = {
@@ -19890,7 +20364,8 @@ function OpenAiStatusRing({
   className = "",
   children = null,
   title: titleProp,
-  link = false
+  link = false,
+  compact = false
 }) {
   const { Tooltip: Tooltip15 } = getMaterialUI();
   const { status, progress, pollMs } = useOpenAiStatus();
@@ -19898,38 +20373,51 @@ function OpenAiStatusRing({
   const accent = TONE_COLOR[tone] || TONE_COLOR.loading;
   const secsLeft = Math.max(0, Math.ceil((1 - progress) * (pollMs / 1e3)));
   const vb = 36;
-  const r = 15.5;
+  const r = compact ? 14 : 15.5;
   const c = 2 * Math.PI * r;
   const offset = c * (1 - progress);
   const headline = openAiStatusHeadline(status);
   const href = status?.sourceUrl || "https://status.openai.com/";
   const tooltip = titleProp || headline;
   const aria = link ? `${headline}. Abrir status.openai.com` : `${headline}${status && !status.error ? ` \xB7 pr\xF3xima actualizaci\xF3n en ${secsLeft}s` : ""}`;
+  const showDot = compact || !children;
   const ring = /* @__PURE__ */ jsxs39(
     "span",
     {
-      className: `paty-openai-status-ring paty-openai-status-ring--${tone}${link ? " paty-openai-status-ring--link" : ""}${className ? ` ${className}` : ""}`,
-      style: { "--oa-ring-accent": accent, width: size, height: size },
+      className: `paty-openai-status-ring paty-openai-status-ring--${tone}${link ? " paty-openai-status-ring--link" : ""}${compact ? " paty-openai-status-ring--compact" : ""}${className ? ` ${className}` : ""}`,
+      style: { "--oa-ring-accent": accent, width: size, height: size, minWidth: size, minHeight: size },
       role: link ? void 0 : "img",
       "aria-label": link ? void 0 : aria,
       "aria-hidden": link ? true : void 0,
       children: [
-        /* @__PURE__ */ jsxs39("svg", { className: "paty-openai-status-ring__svg", viewBox: `0 0 ${vb} ${vb}`, "aria-hidden": "true", children: [
-          /* @__PURE__ */ jsx46("circle", { className: "paty-openai-status-ring__track", cx: "18", cy: "18", r }),
-          /* @__PURE__ */ jsx46(
-            "circle",
-            {
-              className: "paty-openai-status-ring__prog",
-              cx: "18",
-              cy: "18",
-              r,
-              style: {
-                strokeDasharray: `${c} ${c}`,
-                strokeDashoffset: offset
-              }
-            }
-          )
-        ] }),
+        /* @__PURE__ */ jsxs39(
+          "svg",
+          {
+            className: "paty-openai-status-ring__svg",
+            width: size,
+            height: size,
+            viewBox: `0 0 ${vb} ${vb}`,
+            "aria-hidden": "true",
+            focusable: "false",
+            children: [
+              /* @__PURE__ */ jsx46("circle", { className: "paty-openai-status-ring__track", cx: "18", cy: "18", r }),
+              /* @__PURE__ */ jsx46(
+                "circle",
+                {
+                  className: "paty-openai-status-ring__prog",
+                  cx: "18",
+                  cy: "18",
+                  r,
+                  style: {
+                    strokeDasharray: `${c} ${c}`,
+                    strokeDashoffset: offset
+                  }
+                }
+              ),
+              showDot ? /* @__PURE__ */ jsx46("circle", { className: "paty-openai-status-ring__dot", cx: "18", cy: "18", r: compact ? 5.5 : 4.5 }) : null
+            ]
+          }
+        ),
         children ? /* @__PURE__ */ jsx46("span", { className: "paty-openai-status-ring__inner", children }) : null
       ]
     }
@@ -19950,7 +20438,7 @@ function OpenAiStatusRing({
     else brand.removeAttribute("title");
     delete brand.dataset.patyTitleBackup;
   };
-  return /* @__PURE__ */ jsx46(Tooltip15, { title: tooltip, enterDelay: 200, disableInteractive: true, children: /* @__PURE__ */ jsx46(
+  return /* @__PURE__ */ jsx46(Tooltip15, { title: tooltip, enterDelay: 200, disableInteractive: true, placement: "bottom-start", children: /* @__PURE__ */ jsx46(
     "a",
     {
       className: "paty-openai-status-ring__anchor",
@@ -19982,8 +20470,33 @@ function OpenAiStatusRing({
     }
   ) });
 }
+function BrandOpenAiStatus({ size = 12 }) {
+  const { useState: useState34, useEffect: useEffect30, useLayoutEffect: useLayoutEffect3 } = getReact();
+  const { createPortal: createPortal2 } = getReactDOM();
+  const [host, setHost] = useState34(null);
+  useLayoutEffect3(() => {
+    const brand = document.querySelector(".isa-app-brand");
+    if (!brand) return void 0;
+    let mount = brand.querySelector(":scope > .paty-brand-status-mount");
+    if (!mount) {
+      mount = document.createElement("span");
+      mount.className = "paty-brand-status-mount";
+      brand.appendChild(mount);
+    }
+    setHost(mount);
+    return void 0;
+  }, []);
+  useEffect30(() => {
+    startOpenAiStatusPolling();
+  }, []);
+  if (!host || !createPortal2) return null;
+  return createPortal2(
+    /* @__PURE__ */ jsx46(OpenAiStatusRing, { size, className: "paty-brand-title__status", link: true, compact: true }),
+    host
+  );
+}
 
-// js/tools/WelcomeHome.jsx
+// src/js/tools/WelcomeHome.jsx
 import { jsx as jsx47, jsxs as jsxs40 } from "react/jsx-runtime";
 var TOOLS = [
   {
@@ -20217,10 +20730,10 @@ function WelcomeHome({ onOpenTool }) {
   );
 }
 
-// js/app/App.jsx
+// src/js/app/App.jsx
 init_IssTargetSwitch();
 
-// js/components/ViewAsRoleControl.jsx
+// src/js/components/ViewAsRoleControl.jsx
 init_platform();
 init_sessionApi();
 import { jsx as jsx48, jsxs as jsxs41 } from "react/jsx-runtime";
@@ -20334,7 +20847,7 @@ function ViewAsRoleMenu({ onPicked } = {}) {
   );
 }
 
-// js/app/App.jsx
+// src/js/app/App.jsx
 init_sessionApi();
 import { Fragment as Fragment17, jsx as jsx49, jsxs as jsxs42 } from "react/jsx-runtime";
 (function registerViewAsRoleMenu() {
@@ -20588,48 +21101,47 @@ function App() {
       tabHref: (id) => hrefFor({ tool: "config", config: { pane: id } })
     }] : []
   ];
-  const brandTitle = /* @__PURE__ */ jsxs42("span", { className: "paty-brand-title", children: [
-    /* @__PURE__ */ jsx49("span", { className: "paty-brand-title__text", children: "PatyIA" }),
-    /* @__PURE__ */ jsx49(OpenAiStatusRing, { size: 14, className: "paty-brand-title__status", link: true })
+  return /* @__PURE__ */ jsxs42(Fragment17, { children: [
+    /* @__PURE__ */ jsx49(BrandOpenAiStatus, {}),
+    /* @__PURE__ */ jsx49(
+      Shell,
+      {
+        ns: "ISA",
+        title: "PatyIA",
+        showTarget: false,
+        mobileBreakpoint: "xs",
+        chromeless: publicScrumView,
+        toolbarExtra: toolbarTools,
+        navRows,
+        children: authDownReason && !publicScrumView ? /* @__PURE__ */ jsx49("div", { className: "isa-auth-down-overlay", role: "alert", "aria-live": "assertive", children: /* @__PURE__ */ jsxs42("div", { className: "isa-auth-down-card", children: [
+          /* @__PURE__ */ jsx49("div", { className: "isa-auth-down-icon", "aria-hidden": "true", children: "\u26A0" }),
+          /* @__PURE__ */ jsx49("h2", { className: "isa-auth-down-title", children: "Servidor de autenticaci\xF3n no disponible" }),
+          /* @__PURE__ */ jsx49("p", { className: "isa-auth-down-reason", children: authDownReason }),
+          /* @__PURE__ */ jsxs42("p", { className: "isa-auth-down-target", children: [
+            /* @__PURE__ */ jsx49("span", { className: "isa-auth-down-target-label", children: "Servidor intentado:" }),
+            /* @__PURE__ */ jsx49("code", { className: "isa-auth-down-target-url", children: authDownTarget })
+          ] }),
+          /* @__PURE__ */ jsx49("p", { className: "isa-auth-down-hint", children: "PatyIA requiere conexi\xF3n con el servidor de autenticaci\xF3n para operar. Reintente autom\xE1ticamente o haga una recarga manual cuando el servicio se haya recuperado." }),
+          /* @__PURE__ */ jsx49("div", { className: "isa-auth-down-actions", children: /* @__PURE__ */ jsx49(
+            "button",
+            {
+              type: "button",
+              className: "isa-auth-down-retry",
+              onClick: () => window.location.reload(),
+              children: "Reintentar ahora"
+            }
+          ) })
+        ] }) }) : publicScrumView ? /* @__PURE__ */ jsx49(TodosTool, { bootTodos: appBoot.todos || {}, onNeedLogin: () => setAuthOpen(true) }, homeTick) : /* @__PURE__ */ jsxs42(Fragment17, { children: [
+          tool === "home" && /* @__PURE__ */ jsx49(WelcomeHome, { onOpenTool: openFromWelcome }, `home-${homeTick}`),
+          tool === "chat" && chatPane === "logs" && /* @__PURE__ */ jsx49(LogViewer, { bootLog: appBoot.log || getSnapshot().log || {} }, `logs-${homeTick}`),
+          tool === "chat" && chatPane !== "logs" && /* @__PURE__ */ jsx49(ChatTool, { bootChat: getSnapshot().chat || {}, onNeedLogin: () => setAuthOpen(true) }, homeTick),
+          tool === "todos" && DEVFLOW_NAV_ENABLED && /* @__PURE__ */ jsx49(TodosTool, { bootTodos: appBoot.todos || {}, onNeedLogin: () => setAuthOpen(true) }, `${homeTick}-${authTick}`),
+          tool === "config" && configPane === "prompts" && /* @__PURE__ */ jsx49(PromptsSqlTool, { bootPrompts: appBoot.prompts || {}, onNeedLogin: () => setAuthOpen(true) }, homeTick),
+          tool === "config" && (configPane === "permisos" || configPane === "sistema") && /* @__PURE__ */ jsx49(ConfigTool, { pane: configPane, onNeedLogin: () => setAuthOpen(true) }, homeTick)
+        ] })
+      }
+    )
   ] });
-  return /* @__PURE__ */ jsx49(
-    Shell,
-    {
-      ns: "ISA",
-      title: brandTitle,
-      showTarget: false,
-      mobileBreakpoint: "xs",
-      chromeless: publicScrumView,
-      toolbarExtra: toolbarTools,
-      navRows,
-      children: authDownReason && !publicScrumView ? /* @__PURE__ */ jsx49("div", { className: "isa-auth-down-overlay", role: "alert", "aria-live": "assertive", children: /* @__PURE__ */ jsxs42("div", { className: "isa-auth-down-card", children: [
-        /* @__PURE__ */ jsx49("div", { className: "isa-auth-down-icon", "aria-hidden": "true", children: "\u26A0" }),
-        /* @__PURE__ */ jsx49("h2", { className: "isa-auth-down-title", children: "Servidor de autenticaci\xF3n no disponible" }),
-        /* @__PURE__ */ jsx49("p", { className: "isa-auth-down-reason", children: authDownReason }),
-        /* @__PURE__ */ jsxs42("p", { className: "isa-auth-down-target", children: [
-          /* @__PURE__ */ jsx49("span", { className: "isa-auth-down-target-label", children: "Servidor intentado:" }),
-          /* @__PURE__ */ jsx49("code", { className: "isa-auth-down-target-url", children: authDownTarget })
-        ] }),
-        /* @__PURE__ */ jsx49("p", { className: "isa-auth-down-hint", children: "PatyIA requiere conexi\xF3n con el servidor de autenticaci\xF3n para operar. Reintente autom\xE1ticamente o haga una recarga manual cuando el servicio se haya recuperado." }),
-        /* @__PURE__ */ jsx49("div", { className: "isa-auth-down-actions", children: /* @__PURE__ */ jsx49(
-          "button",
-          {
-            type: "button",
-            className: "isa-auth-down-retry",
-            onClick: () => window.location.reload(),
-            children: "Reintentar ahora"
-          }
-        ) })
-      ] }) }) : publicScrumView ? /* @__PURE__ */ jsx49(TodosTool, { bootTodos: appBoot.todos || {}, onNeedLogin: () => setAuthOpen(true) }, homeTick) : /* @__PURE__ */ jsxs42(Fragment17, { children: [
-        tool === "home" && /* @__PURE__ */ jsx49(WelcomeHome, { onOpenTool: openFromWelcome }, `home-${homeTick}`),
-        tool === "chat" && chatPane === "logs" && /* @__PURE__ */ jsx49(LogViewer, { bootLog: appBoot.log || getSnapshot().log || {} }, `logs-${homeTick}`),
-        tool === "chat" && chatPane !== "logs" && /* @__PURE__ */ jsx49(ChatTool, { bootChat: getSnapshot().chat || {}, onNeedLogin: () => setAuthOpen(true) }, homeTick),
-        tool === "todos" && DEVFLOW_NAV_ENABLED && /* @__PURE__ */ jsx49(TodosTool, { bootTodos: appBoot.todos || {}, onNeedLogin: () => setAuthOpen(true) }, `${homeTick}-${authTick}`),
-        tool === "config" && configPane === "prompts" && /* @__PURE__ */ jsx49(PromptsSqlTool, { bootPrompts: appBoot.prompts || {}, onNeedLogin: () => setAuthOpen(true) }, homeTick),
-        tool === "config" && (configPane === "permisos" || configPane === "sistema") && /* @__PURE__ */ jsx49(ConfigTool, { pane: configPane, onNeedLogin: () => setAuthOpen(true) }, homeTick)
-      ] })
-    }
-  );
 }
 function mountApp() {
   const { createRoot } = getReactDOM();
