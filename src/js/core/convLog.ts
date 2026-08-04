@@ -6,7 +6,7 @@
 import { formatMsgFecha } from "./msgDateFormat.ts";
 
 /** Mensaje conv-log aplanado — campos base + propiedades según rol (user/assistant/operativa). */
-type FlatConvLogMensaje = { ts?: unknown; tokens?: unknown; cost?: unknown; usage?: unknown; latency_ms?: unknown; send?: unknown; receive?: unknown; others?: unknown; text?: string; prompt_text?: string; imagenes?: string[]; audios?: string[]; audios_transcripcion?: string[]; prompt_id?: string; prompt_variables?: unknown; vectorStoreIds?: unknown; vector_store_ids?: unknown; operativa_key?: string; operativa_engine?: string; model?: string; response_text?: string; response_id?: string; engine?: string; itdconsulta?: string; nombre_usuario?: string; stream_ok?: boolean; stream_error?: string; nombre_usado_en_respuesta?: boolean; modelo_configurado?: string; modelo_autoswitch_vision?: boolean; premisas?: string[]; prompt_chars?: number; response_chars?: number; file_search?: unknown; archivos_citados?: string[]; chunks?: unknown[]; chunks_total?: number; clasificador_vector_usado?: string[]; login_url?: string };
+type FlatConvLogMensaje = { ts?: unknown; tokens?: unknown; cost?: unknown; usage?: unknown; latency_ms?: unknown; send?: unknown; receive?: unknown; others?: unknown; text?: string; prompt_text?: string; imagenes?: string[]; audios?: string[]; audios_transcripcion?: string[]; prompt_id?: string; prompt_variables?: unknown; vectorStoreIds?: unknown; vector_store_ids?: unknown; operativa_key?: string; operativa_engine?: string; model?: string; response_text?: string; response_id?: string; engine?: string; itdconsulta?: string; nombre_usuario?: string; stream_ok?: boolean; stream_error?: string; nombre_usado_en_respuesta?: boolean; modelo_configurado?: string; modelo_autoswitch_vision?: boolean; premisas?: string[]; prompt_chars?: number; response_chars?: number; file_search?: unknown; archivos_citados?: string[]; chunks?: unknown[]; chunks_total?: number; clasificador_vector_usado?: string[]; login_url?: string; http_request?: unknown; http_response?: unknown };
 
 type NormalizeMetaOptions = { isUser?: boolean };
 
@@ -231,7 +231,7 @@ function pushImage(images: string[], ref: unknown) {
       .join("\n\n---\n\n");
   }
 
-  /** Prompt de operativas: chat.completions (messages) o responses (input). */
+  /** Prompt de operativas: chat.completions (messages), responses (input array) o MCP ContaPyme (input string + session). */
   function extractOperativaPromptMarkdown(send) {
     if (!send || typeof send !== "object") return "";
     const rec = send as Record<string, unknown>;
@@ -241,7 +241,52 @@ function pushImage(images: string[], ref: unknown) {
     if (Array.isArray(input) && input.length) {
       return formatOpenAiMessagesMarkdown(input);
     }
-    return "";
+    const lines = [];
+    if (typeof input === "string" && input.trim()) {
+      lines.push(`**Consulta (input)**\n\n${input.trim()}`);
+    }
+    const sessionId = typeof rec.session_id === "string" ? rec.session_id.trim() : "";
+    if (sessionId) lines.push(`**session_id**\n\n\`${sessionId}\``);
+    const loginUrl = typeof rec.login_url === "string" ? rec.login_url.trim() : "";
+    if (loginUrl) lines.push(`**login_url**\n\n${loginUrl}`);
+    const transport = typeof rec.transport === "string" ? rec.transport.trim() : "";
+    if (transport) lines.push(`**transport**\n\n\`${transport}\``);
+    const model = typeof rec.model === "string" ? rec.model.trim() : "";
+    if (model) lines.push(`**model**\n\n\`${model}\``);
+    const serverUrl = typeof rec.server_url === "string" ? rec.server_url.trim() : "";
+    if (serverUrl) lines.push(`**server_url**\n\n\`${serverUrl}\``);
+    if (rec.tools_count != null && String(rec.tools_count).trim() !== "") {
+      lines.push(`**tools_count**\n\n${Number(rec.tools_count)}`);
+    }
+    return lines.join("\n\n---\n\n");
+  }
+
+  function isContapymeMcpOperativaKey(key) {
+    return /^contapymeMcp(Login|Session|Unavailable)$/i.test(String(key || "").trim());
+  }
+
+  /** Markdown extra desde http_response MCP (kind, tools, texto) cuando el Prompt tab no tiene instructions OpenAI. */
+  function extractMcpResponseMarkdown(httpResponse) {
+    if (!httpResponse || typeof httpResponse !== "object") return "";
+    const rec = httpResponse as Record<string, unknown>;
+    const lines = [];
+    const kind = typeof rec.kind === "string" ? rec.kind.trim() : "";
+    if (kind) lines.push(`**kind**\n\n\`${kind}\``);
+    if (rec.ok === true) lines.push("**ok**\n\n`true`");
+    if (rec.ok === false) lines.push("**ok**\n\n`false`");
+    const text = typeof rec.text === "string" ? rec.text.trim() : "";
+    if (text) lines.push(`**Respuesta MCP**\n\n${text}`);
+    const tools = Array.isArray(rec.tools) ? rec.tools : [];
+    if (tools.length) {
+      const rows = tools.map((t, i) => {
+        if (!t || typeof t !== "object") return `${i + 1}. tool`;
+        const name = String((t as { name?: unknown }).name ?? "tool");
+        const status = String((t as { status?: unknown }).status ?? "").trim();
+        return status ? `${i + 1}. \`${name}\` · ${status}` : `${i + 1}. \`${name}\``;
+      });
+      lines.push(`**Tools MCP (${tools.length})**\n\n${rows.join("\n")}`);
+    }
+    return lines.join("\n\n---\n\n");
   }
 
   function extractUserTextFromConvSend(send) {
@@ -393,6 +438,8 @@ function pushImage(images: string[], ref: unknown) {
         ? r.login_url
         : (typeof s?.login_url === "string" ? s.login_url : undefined);
       if (loginUrl) flat.login_url = loginUrl;
+      if (s && typeof s === "object") flat.http_request = s;
+      if (r && typeof r === "object") flat.http_response = r;
     } else if (m.role === "assistant") {
       const txt = resolveAssistantLogContenido(o as Record<string, unknown>, r);
       if (txt) {
@@ -641,7 +688,16 @@ function pushImage(images: string[], ref: unknown) {
       ? String(raw.prompt_text ?? raw.text ?? extractUserTextFromConvSend(raw.send) ?? "").trim()
       : "";
     const assistantPromptMarkdown = !isUser
-      ? (extractInstructionsMarkdown(raw.send) || extractOperativaPromptMarkdown(raw.send)).trim()
+      ? (() => {
+        const sendBag = raw.send && typeof raw.send === "object" ? raw.send : raw.http_request;
+        const fromSend = (extractInstructionsMarkdown(sendBag) || extractOperativaPromptMarkdown(sendBag)).trim();
+        const opKey = operativaKey || String(raw.prompt_id ?? "").trim();
+        const fromRes = isContapymeMcpOperativaKey(opKey)
+          ? extractMcpResponseMarkdown(raw.http_response || raw.receive).trim()
+          : "";
+        if (fromSend && fromRes) return `${fromSend}\n\n---\n\n${fromRes}`;
+        return fromSend || fromRes;
+      })()
       : "";
     const promptMarkdown = isUser ? userPromptText : assistantPromptMarkdown;
     const userImagenes = isUser && Array.isArray(raw.imagenes)
@@ -707,6 +763,8 @@ function pushImage(images: string[], ref: unknown) {
         ? raw.clasificador_vector_usado.map(String)
         : undefined,
       login_url: typeof raw.login_url === "string" && raw.login_url.trim() ? raw.login_url.trim() : undefined,
+      http_request: raw.http_request && typeof raw.http_request === "object" ? raw.http_request : undefined,
+      http_response: raw.http_response && typeof raw.http_response === "object" ? raw.http_response : undefined,
     };
   }
 

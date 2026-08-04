@@ -49,8 +49,8 @@ const JSDELIVR_CDN = `https://cdn.jsdelivr.net/gh/Jeff-Aporta/front-shared@${PIN
  *      ?isa_cdn=remote   → jsDelivr (para QA contra el pin remoto sin tocar vendor local).
  *  - IMPORTANTE: la URL debe ser absoluta (location.origin + path) — el `loader.mjs`
  *    importa desde aquí, y `import()` resuelve URLs relativas contra el baseURI del
- *    MÓDULO importador (`_dist/js/boot/loader.mjs`), no del documento. Si fuera
- *    relativa, se buscaría en `_dist/js/boot/vendor/front-shared/...` → 404.
+ *    MÓDULO importador (`dist/js/boot/loader.mjs`), no del documento. Si fuera
+ *    relativa, se buscaría en `dist/js/boot/vendor/front-shared/...` → 404.
  *    vendorCdnBase() y frontSharedCdnBase() ya retornan absolutas via `new URL(...)`.
  */
 export const CDN = !isDevHost

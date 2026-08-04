@@ -8,7 +8,7 @@ import { ConfigTool } from "../tools/ConfigTool.jsx";
 import { WelcomeHome } from "../tools/WelcomeHome.jsx";
 import { IssTargetChip } from "../components/IssTargetSwitch.jsx";
 import { ViewAsRoleMenu } from "../components/ViewAsRoleControl.jsx";
-import { OpenAiStatusRing } from "../status/OpenAiStatusRing.jsx";
+import { BrandOpenAiStatus } from "../status/OpenAiStatusRing.jsx";
 import { startOpenAiStatusPolling, stopOpenAiStatusPolling } from "../api/openaiStatusApi.ts";
 import * as SessionApi from "../api/sessionApi.ts";
 
@@ -292,17 +292,12 @@ export function App() {
           : []),
       ];
 
-  const brandTitle = (
-    <span className="paty-brand-title">
-      <span className="paty-brand-title__text">PatyIA</span>
-      <OpenAiStatusRing size={14} className="paty-brand-title__status" link />
-    </span>
-  );
-
   return (
-    <Shell
+    <>
+      <BrandOpenAiStatus />
+      <Shell
       ns="ISA"
-      title={brandTitle}
+      title="PatyIA"
       showTarget={false}
       mobileBreakpoint="xs"
       chromeless={publicScrumView}
@@ -357,6 +352,7 @@ export function App() {
         </>
       )}
     </Shell>
+    </>
   );
 }
 

@@ -17,9 +17,9 @@ function vendorFrontSharedBase() {
 
 /** URLs del bundle ISAFront, en orden de preferencia (vendor same-origin primero en dev). */
 function isaFrontBundleUrls() {
-  const vendor = `${vendorFrontSharedBase()}_dist/isa/js/index.min.js?v=${VENDOR_BUNDLE_V}`;
-  const primary = `${CDN}_dist/isa/js/index.min.js?v=${VENDOR_BUNDLE_V}`;
-  const remote = `${JSDELIVR_CDN}_dist/isa/js/index.min.js?v=${PIN}`;
+  const vendor = `${vendorFrontSharedBase()}dist/isa/js/index.min.js?v=${VENDOR_BUNDLE_V}`;
+  const primary = `${CDN}dist/isa/js/index.min.js?v=${VENDOR_BUNDLE_V}`;
+  const remote = `${JSDELIVR_CDN}dist/isa/js/index.min.js?v=${PIN}`;
   // En localhost: vendor → CDN configurado → jsDelivr (monorepo vacío no tumba el boot).
   if (isDevHost) return [vendor, primary, remote];
   return [primary, vendor, remote];
@@ -51,7 +51,7 @@ async function importBootLoader() {
   return importFirst(urls, "boot-loader");
 }
 
-/** Bundle _dist (esbuild). Fuente isa/js/index.js importa .jsx y falla en el navegador. */
+/** Bundle dist (esbuild). Fuente isa/js/index.js importa .jsx y falla en el navegador. */
 async function loadIsaFrontPinned(h) {
   const urls = isaFrontBundleUrls();
   if (isDist) {
@@ -60,7 +60,7 @@ async function loadIsaFrontPinned(h) {
     try {
       await h.loadIsaFront();
     } catch (e) {
-      console.warn("loadIsaFront falló, usando bundle _dist:", e);
+      console.warn("loadIsaFront falló, usando bundle dist:", e);
     }
     if (!window.ISAFront?.ensureCodeMirrorLoaded) {
       await importFirst(urls, "ISAFront bundle");
