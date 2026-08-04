@@ -17,3 +17,6 @@ components/
 
 # Respaldo del .git de submódulo roto (reparación 4-ago-2026): es local, nunca se versiona.
 .git-roto.bak
+
+scripts/_agent_commit_*.mjs
+
