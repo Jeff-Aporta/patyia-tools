@@ -1,4 +1,4 @@
-// js/core/patyia.ts
+// src/js/core/patyia.ts
 window.ISAFront.migrateLegacyGatewayKeys?.({ "jeff:gateway-local": "", "patyia-apptools:gateway-local": "", "patyia-apptools:lab-local": "" });
 var PATYIA_ISS_URL = "https://ayudascp-ia-staging.azurewebsites.net";
 var PATYIA_ISS_PROD_URL = "https://ayudascp-ia.azurewebsites.net";
@@ -55,7 +55,7 @@ try {
 } catch {
 }
 
-// js/core/urlState.ts
+// src/js/core/urlState.ts
 var STATE_VERSION = 1;
 function normalizeLog(raw) {
   if (!raw || typeof raw !== "object") return {};

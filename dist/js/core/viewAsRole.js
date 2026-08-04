@@ -1,4 +1,4 @@
-// js/tools/roleCanonicalMeta.js
+// src/js/tools/roleCanonicalMeta.js
 var CANONICAL_ROLE_META = {
   AUDITOR: {
     namedisplay: "Auditor",
@@ -22,7 +22,7 @@ function canonicalRoleMeta(roleName) {
   return CANONICAL_ROLE_META[key] ?? null;
 }
 
-// js/core/viewAsRole.ts
+// src/js/core/viewAsRole.ts
 var VIEW_AS_ROLE_LS_KEY = "isa-patyia:view-as-role";
 var VIEW_AS_ROLE_EVENT = "patyia-apptools:view-as-role";
 var VIEW_AS_ROLE_OPTIONS = [
