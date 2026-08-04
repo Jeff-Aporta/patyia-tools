@@ -7,7 +7,7 @@ Front React + MUI de PatyIA AppTools. Sirve en Cloudflare Pages (dev) y GH Pages
 ## Stack y arranque
 
 - React 18 + MUI 9, TypeScript 5
-- Sin bundler propio en runtime — bundles precompilados en `_dist/` (esbuild via `paty_build.mjs`)
+- Sin bundler propio en runtime — bundles precompilados en `dist/` (esbuild via `paty_build.mjs`)
 - ISAFront (`vendor/front-shared/`) provee AppShell, IsaSplitView, CodeMirrorPanel, Glass, LightboxZoom, Feedback (toasts), urlState — todo se carga vía `window.ISAFront.*`
 - **Orden de carga** (`index.html`):
   1. `vendor/front-shared/base-href.js` — `<base href>` para rutas relativas
@@ -21,8 +21,8 @@ Front React + MUI de PatyIA AppTools. Sirve en Cloudflare Pages (dev) y GH Pages
 ```
 frontend/
 ├── index.html              # entry HTML; carga vendor/boot/main en orden
-├── index.json              # meta (título, theme, badges, mergeHistory, libs)
-├── _dist/                  # bundles esbuild generados (no commitear source)
+├── src/json/index.json     # meta (título, theme, badges, mergeHistory, libs) — convención activa
+├── dist/                  # bundles esbuild generados (no commitear source)
 ├── vendor/
 │   ├── front-shared/       # ISAFront + loader.mjs + base-href.js (vendored)
 │   └── cdn/                # shims de CDN (iconify, etc.)
@@ -44,8 +44,7 @@ frontend/
 │   ├── tools/              # 5 tools (ver tabla) + helpers compartidos
 │   ├── ui/                 # componentes MUI reusables: shared.jsx (MetaDialog, ButtonIconify), ConvLogThread, ConvLogWebView, ImageLightboxDialog, GlassDialog, PromptBodyEditor, bootShimmer, treeView/*
 │   └── editors/jsonEditor.jsx
-├── scripts/                # setup-cloudflare-pages.ps1, setup-github-secrets.ps1, qa-instrucciones.mjs, dev-local.ps1
-├── paty_build.mjs          # regenera _dist/ con esbuild (lista hardcoded)
+├── scripts/                # setup-cloudflare-pages.ps1, setup-github-secrets.ps1, qa-instrucciones.mjs, dev-local.ps1, paty_build.mjs, vendor_bundle_build.mjs
 └── tsconfig.json           # target browser ES2020, strict
 ```
 
@@ -112,12 +111,13 @@ Domain wrappers en `js/api/`:
 ## Build local
 
 ```bash
-# Bundles JS/JSX listados en paty_build.mjs (App, sessionApi, IssTargetSwitch, …)
+# Bundles JS/JSX listados en scripts/paty_build.mjs (App, sessionApi, IssTargetSwitch, …)
 cd "C:\ContaPyme\Personal\apps\isa-patyia\frontend"
-node paty_build.mjs
+node scripts/paty_build.mjs
 
-# CSS / boot / módulos NO listados en paty_build: sync puntual o gen-front-dist
-# ¡Cuidado! gen-front-dist sobreescribe App.js y rompe el bundle — ver § 23-jul-2026
+# CSS / boot / módulos NO listados en paty_build: gen-front-dist (apps/src/scripts/front/)
+# ¡Cuidado! gen-front-dist pisa App.js y rompe el bundle: correrlo SIEMPRE antes de paty_build,
+# nunca después — ver § 23-jul-2026 y § 4-ago-2026
 
 # Server estático local (front solo, sin backend)
 npx serve .      # o: http-server -p 8766 .
@@ -127,9 +127,9 @@ cd "C:\ContaPyme\PatyIA\ISS-AyudasCPIA"
 npm run start    # :8802
 ```
 
-`paty_build.mjs` lista hardcoded `jobs[]` (línea 56). Si añadís `.jsx`/`.ts`/`.tsx` en `js/`, agregalo a `jobs[]` o no se compila para deploy.
+`scripts/paty_build.mjs` lista hardcoded `jobs[]`. Si añadís `.jsx`/`.ts`/`.tsx` en `src/js/` (los fuentes se movieron ahí), agregalo a `jobs[]` o no se compila para deploy.
 
-**Invariantes locales (gitignore `tests/`):**
+**Invariantes (versionados en `tests/` desde el 4-ago-2026):**
 
 ```bash
 node --test tests/invariants-2026-07-23-force-perms-and-dist.test.mjs
@@ -137,7 +137,7 @@ node --test tests/invariants-2026-07-23-force-perms-and-dist.test.mjs
 
 ## Deploy
 
-- `index.json` `mergeHistory` — agregar fila `{date, url:"https://HASH.isa-patyia-dev.pages.dev"}` antes de merge a `main`. Una fila por fecha (la más reciente).
+- `src/json/index.json` `mergeHistory` — agregar fila `{date, url:"https://HASH.isa-patyia-dev.pages.dev"}` antes de merge a `main`. Una fila por fecha (la más reciente).
 - `dev` → Cloudflare Pages (`isa-patyia-dev.pages.dev`)
 - `main` → GH Pages (`jeff-aporta.github.io/isa-patyia/`)
 - Workflow: `Jeff-Aporta/isa-patyia/.github/workflows/deploy-front.yml`
@@ -145,10 +145,10 @@ node --test tests/invariants-2026-07-23-force-perms-and-dist.test.mjs
 ## Caveats
 
 - **NO tocar `vendor/`** salvo actualización vendorada de ISAFront. Cambios van upstream.
-- **SÍ commitear** fuentes en `js/` **y** bundles en `_dist/` tras `node paty_build.mjs`. El CI no recompila solo desde sources en todos los flujos — el deploy usa `_dist/`.
+- **SÍ commitear** fuentes en `src/js/` **y** bundles en `dist/` tras el build de dos pasos. El CI **nunca** recompila: publica el `dist/` commiteado tal cual (ver § 4-ago-2026).
 - **NO commitear** `components/` bajo `frontend/` (copias locales de swagger/lightbox para dev). **NO** subir credenciales ni `.env`.
-- `paty_build.mjs` requiere rutas absolutas Windows (`C:\\ContaPyme\\Personal\\apps\\isa-patyia\\frontend`). No portable a WSL sin editar.
-- `index.json` es la fuente de verdad del README + badges + theme. NO editar `README.md` directo — regenera via `gen-front-readme.mjs`.
+- `scripts/paty_build.mjs` requiere rutas absolutas Windows (`C:\\ContaPyme\\Personal\\apps\\isa-patyia\\frontend`). No portable a WSL sin editar.
+- `src/json/index.json` es la fuente de verdad del README + badges + theme. NO editar `README.md` directo — regenera via `gen-front-readme.mjs`.
 - `?s=` tiene `maxB64Len: 12000` — si excedes, `slimForUrl` trunca silenciosamente. Para Prompts con bodies grandes, perderás contenido al recargar.
 - `isLocalMode()` lee LS `patyia-apptools:iss-local` por compatibilidad pero está **deprecada**: el switch real es 3-way (`production`|`staging`|`local`) persistido en `patyia-apptools:iss-target`. Ver `IssTargetChip` en `js/components/IssTargetSwitch.jsx` y la sección "Switch target ISS-AyudasCPIA (2026-07)" más abajo.
 - `chat-staging.css` y `todos-staging.css` se cargan lazy solo cuando la tool está activa (`App.jsx:48-51`). Si añades CSS scoped a una tool, sigue este patrón.
@@ -282,7 +282,7 @@ En `SYS_USR_PERMISSIONS` el identificador canónico del rol/usuario en filas de 
 
 ### 3. Diálogo «Filtrar por usuario» (terceros audit)
 
-**Síntoma:** `GET /api/auditoria/terceros` OK (ej. 75 filas) pero UI «Sin resultados».
+**Síntoma:** `QUERY /api/auditoria/terceros` OK (ej. 75 filas) pero UI «Sin resultados».
 
 **Causa:** `fetchTercerosAudit` en `apiClient.ts` hacía `raw.body` en lugar de desenvolver `respuesta`.
 
@@ -362,7 +362,7 @@ node --input-type=module -e "import('./dist/src/health/_register.js'); ..."
 **Sí hacer (orden):**
 1. Deploy `dev` validado en Cloudflare.
 2. Obtener URL hash: `gh api repos/Jeff-Aporta/isa-patyia/deployments?sha=$(git rev-parse dev)` → `environment_url` de `isa-patyia-dev (Production)`.
-3. Añadir `{ date, url }` **al inicio** de `readme.mergeHistory` en `index.json`.
+3. Añadir `{ date, url }` **al inicio** de `readme.mergeHistory` en `src/json/index.json`.
 4. `node Personal/apps/src/scripts/front/gen-front-readme.mjs --slug isa-patyia`.
 5. Commit en `dev` (fix + fila mergeHistory).
 6. `git push origin dev` → `git checkout main` → `git merge dev` → `git push origin main`.
@@ -398,7 +398,7 @@ node --input-type=module -e "import('./dist/src/health/_register.js'); ..."
 | 7 | Merge `main` sin `mergeHistory` | Rompe trazabilidad deploy |
 | 8 | `git add -A` en frontend sin revisar | Arrastra `components/`, backups locales |
 | 9 | SQL embebido en `node -e` desde PowerShell | Escaping rompe queries (`LEN`, comillas) — usar `.mjs` |
-| 10 | Probar modal sin `paty_build` tras editar `.tsx` | Live server sirve `_dist/` viejo |
+| 10 | Probar modal sin `paty_build` tras editar `.tsx` | Live server sirve `dist/` viejo |
 | 11 | Usar `PATYIA_ISS_LOCAL_API` sin importarlo en `apiClient.ts` | Modo local: auditoría terceros crash `PATYIA_ISS_LOCAL_API is not defined` |
 | 12 | Confiar solo en `Session.can("patyia.chat.audit")` para auditoría | ISS expone `canAccessOthers` en `/permissions/me` — usar `sessionApi.canAccessOthers()` |
 | 13 | Mostrar rol desde `Session.current().role` (system-login) | Fuente canónica: `resolveDisplayRole()` ← `ME_ISS_ROLES` de `/api/permissions/me` |
@@ -407,7 +407,7 @@ node --input-type=module -e "import('./dist/src/health/_register.js'); ..."
 
 ### 10. Checklist «lo que sí hay que hacer»
 
-- [ ] Tras cambiar `js/`: `node paty_build.mjs` y commitear `_dist/` correspondiente.
+- [ ] Tras cambiar `js/`: `node scripts/paty_build.mjs` y commitear `dist/` correspondiente.
 - [ ] Clientes ISS: desenvolver `respuesta` (y `body` legacy).
 - [ ] Normalizar permisos con `ientity`/`iusuario`.
 - [ ] Jerarquía: seed local + fetch remoto con fallback.
@@ -448,7 +448,7 @@ node --input-type=module -e "import('./dist/src/health/_register.js'); ..."
 | Auditoría chat | `canAccessOthers()` desde `sessionApi` (OR legacy `patyia.chat.audit`) |
 | Cache permissions/me | `Session.current()?.token` como session key (`systemConfigApi.ts`) |
 | Modo local auditoría | Importar `PATYIA_ISS_LOCAL_API` desde `core/patyia.ts` en `apiClient.ts` |
-| Tras editar `js/` | `node paty_build.mjs` |
+| Tras editar `js/` | `node scripts/paty_build.mjs` |
 
 ### Qué NO hacer
 
@@ -499,15 +499,15 @@ node --input-type=module -e "import('./dist/src/health/_register.js'); ..."
 El front pasa a resolver React/MUI/Emotion/Babel/Iconify desde rutas internas en lugar de CDNs públicos. Beneficios: operación en redes restringidas y eliminación de latencia intercontinental.
 
 **Sí hacer:**
-- Mantener `"cdnVendor": true` y `"frontSharedVendor": true` en `index.json`.
+- Mantener `"cdnVendor": true` y `"frontSharedVendor": true` en `src/json/index.json`.
 - Tras cualquier cambio en vendor pack: **regenerar** con `node front/gen-front-vendor.mjs --slug isa-patyia` desde `apps/src/scripts`.
-- Regenerar `_dist/` después con `node front/gen-front-dist.mjs --slug isa-patyia`.
+- Regenerar `dist/` después con `node front/gen-front-dist.mjs --slug isa-patyia`.
 - `"preconnect": []` (sin CDNs externos que pre-cargar).
 - Verificar `vendor/cdn/meta.json` para conocer el hash y la versión exacta de cada dependencia.
 
 **No hacer:**
 - Volver a usar `<script src="https://esm.sh/...">` o `<link rel="preconnect" href="https://cdn.jsdelivr.net">`. Los CDNs externos rompen el modo offline.
-- Regenerar `_dist/` sin antes regenerar vendor si se actualizó alguna dependencia compartida.
+- Regenerar `dist/` sin antes regenerar vendor si se actualizó alguna dependencia compartida.
 - Ignorar la advertencia `Siguiente: node gen-front-index.mjs (requiere useDist:true en index.json)` del script.
 
 ### 2. Cliente `js/api/adjuntosApi.ts` — URLs firmadas en R2
@@ -524,21 +524,21 @@ Se retira el helper legacy de base64 inline y se introduce un cliente dedicado q
 - Construir manualmente el fetch contra `/api/adjuntos/...` desde los componentes: siempre pasar por `adjuntosApi.ts`.
 - Subir data URLs base64 a `/conversacion` — el backend rechaza y/o no los almacena.
 
-### 3. Bundle `_dist/` — regenerar y commitear
+### 3. Bundle `dist/` — regenerar y commitear
 
-El CI usa `_dist/` precompilado. Si editaste un `.ts/.tsx/.jsx`, **siempre** regenerar y commitear el bundle junto con la fuente.
+El CI usa `dist/` precompilado. Si editaste un `.ts/.tsx/.jsx`, **siempre** regenerar y commitear el bundle junto con la fuente.
 
 **Sí hacer:**
 ```bash
 cd "C:\ContaPyme\Personal\apps\src\scripts"
 node front/gen-front-dist.mjs --slug isa-patyia
 ```
-- Commitear **siempre** los cambios de `_dist/` que correspondan al `js/` editado.
-- Confirmar `_dist/build-meta.json` (hash cambia) — un SHA nuevo sin cambios en `_dist/` es síntoma de drift.
+- Commitear **siempre** los cambios de `dist/` que correspondan al `js/` editado.
+- Confirmar `dist/build-meta.json` (hash cambia) — un SHA nuevo sin cambios en `dist/` es síntoma de drift.
 
 **No hacer:**
 - Confiar en que el CI recompile desde fuente: para `isa-patyia`, **no lo hace** en todos los flujos.
-- Hacer commit de `js/` sin su `_dist/`: deploy queda con bundle viejo.
+- Hacer commit de `js/` sin su `dist/`: deploy queda con bundle viejo.
 - Mezclar vendor pack y bundle en el mismo commit: preferible **un commit de vendor**, **otro de bundle** para revertir selectivamente.
 
 ### 4. `components/` — submódulos fantasma (NO versionar localmente)
@@ -565,7 +565,7 @@ Workflow obligatorio: **antes** de abrir el PR, actualizar `mergeHistory`.
 2. Esperar a que el run de GH Actions finalice (`gh run list --branch dev --limit 5`).
 3. Obtener el deployment ID: `gh api repos/Jeff-Aporta/isa-patyia/deployments` y filtrar `environment == "isa-patyia-dev (Production)"`.
 4. Obtener URL preview: `gh api repos/Jeff-Aporta/isa-patyia/deployments/{id}/statuses` → `environment_url` (formato `https://HASH.isa-patyia-dev.pages.dev`, no el alias).
-5. Añadir `{ date, url }` **al inicio** del array `readme.mergeHistory` en `index.json`.
+5. Añadir `{ date, url }` **al inicio** del array `readme.mergeHistory` en `src/json/index.json`.
 6. Regenerar README: `node front/gen-front-readme.mjs --slug isa-patyia` desde `apps/src/scripts`.
 7. Commit en `dev` (un commit separado, no junto al feature).
 8. `git push origin dev` (re-push para que el CI tome la fila).
@@ -598,7 +598,7 @@ Carpeta `tests/` ignorada por git. Alberga `.test.mjs` ejecutables con `node --t
 
 | Archivo | Cambio | Notas |
 |---------|--------|-------|
-| `index.json` | `cdnVendor:true`, `preconnect:[]` | Sin CDN externos |
+| `src/json/index.json` | `cdnVendor:true`, `preconnect:[]` | Sin CDN externos |
 | `index.html` | Ajustado a vendor local | Regenerado por `gen-front-index.mjs` |
 | `js/api/adjuntosApi.ts` | Nuevo cliente | Sustituye base64 inline |
 | `js/api/patyiaChatApi.ts` | Refactor a URLs firmadas | Quita `ensureBase64DataUrl` |
@@ -606,7 +606,7 @@ Carpeta `tests/` ignorada por git. Alberga `.test.mjs` ejecutables con `node --t
 | `js/tools/chat/{ChatComposer,ChatLoggedOutShell,audio,images,types,useChatTool}.{tsx,ts}` | Composers ajustados | |
 | `js/tools/ChatTool.jsx`, `js/tools/todos/TodosShellParts.jsx`, `js/ui/ConvLogWebView.jsx` | Ajustes de routing/UI | |
 | `css/chat-staging.css` | Estilos del nuevo flujo | |
-| `_dist/**` | Regenerado contra nueva config | 40.000+ líneas diff |
+| `dist/**` | Regenerado contra nueva config | 40.000+ líneas diff |
 | `vendor/cdn/*.{js,min.js,meta.json}` | Pack vendor local | 10 archivos, ~4MB |
 | `COMPONENTS.md` | Nuevo, doc de origen monorepo | |
 | `.gitignore` | `components/` y `tests/` ignorados | |
@@ -616,19 +616,19 @@ Carpeta `tests/` ignorada por git. Alberga `.test.mjs` ejecutables con `node --t
 | # | Anti-patrón | Por qué | Cómo detectarlo |
 |---|-------------|---------|-----------------|
 | 16 | `git add -A` sin revisar | Arrastra `components/` (5400 archivos) | `git status --short \| wc -l` antes de stage |
-| 17 | Regenerar `_dist/` sin `cdnVendor:true` | Vendor global vuelve a CDNs | Buscar `https://esm.sh` en `_dist/index.html` |
-| 18 | Mezclar `vendor/cdn/` y `_dist/` en un commit | Difícil de revertir selectivamente | `git diff --stat HEAD~1 HEAD` por grupo |
+| 17 | Regenerar `dist/` sin `cdnVendor:true` | Vendor global vuelve a CDNs | Buscar `https://esm.sh` en `dist/index.html` |
+| 18 | Mezclar `vendor/cdn/` y `dist/` en un commit | Difícil de revertir selectivamente | `git diff --stat HEAD~1 HEAD` por grupo |
 | 19 | Push a `dev` y abrir PR sin esperar CI | URL preview stale | `gh run list --branch dev --limit 1` |
 | 20 | Asumir que `components/` es "parte del repo" | Son submódulos del monorepo `apps/` | `ls components/*/.git` debe existir en `apps/` no aquí |
 | 21 | Hardcodear URLs externas en código | Rompe modo offline | `rg "https://(esm\.sh\|cdn\.jsdelivr)" js/` debe dar 0 |
-| 22 | Editar `README.md` a mano | Driftea de `index.json` | Diff `README.md` vs `node gen-front-readme.mjs` |
+| 22 | Editar `README.md` a mano | Driftea de `src/json/index.json` | Diff `README.md` vs `node gen-front-readme.mjs` |
 | 23 | `git add vendor/cdn/*.js` sin commitear `meta.json` | Rompe versionado del pack | Stage siempre `vendor/cdn/` completo |
 
 ### 9. Checklist actualizado «lo que sí hay que hacer»
 
-- [ ] Tras editar `js/`: `gen:front-dist --slug isa-patyia` y commitear `_dist/`.
+- [ ] Tras editar `js/`: `gen:front-dist --slug isa-patyia` y commitear `dist/`.
 - [ ] Si cambias vendor pack: `gen:front-vendor` **y luego** `gen:front-dist`.
-- [ ] `cdnVendor:true` y `preconnect:[]` siempre en `index.json`.
+- [ ] `cdnVendor:true` y `preconnect:[]` siempre en `src/json/index.json`.
 - [ ] `components/` ignorado. Si reaparece, `rm -rf` + chore commit.
 - [ ] Antes de PR: añadir fila a `mergeHistory` + regenerar README + re-push `dev`.
 - [ ] PR con URL preview (`https://HASH.isa-patyia-dev.pages.dev`) en el body.
@@ -670,7 +670,7 @@ Carpeta `tests/` ignorada por git. Alberga `.test.mjs` ejecutables con `node --t
 - `js/core/patyia.ts` — constantes, `getIssTarget`, `setIssTarget`, `patyiaIssBase` ahora respeta target 3-way.
 - `js/core/platform.ts` — `patchIssOnlyLocalConfig` ya no fuerza local; `patchIsaPatyiaTargetSwitchReadOnly` carga `IssTargetSwitch` vía dynamic import y registra `IssTargetMenuWithAdmin` en `UI.TargetSwitchMenu`.
 - `js/api/sysValuesCopy.ts` — orquestador GET/PUT.
-- `paty_build.mjs` — `jobs[]` incluye los 3 archivos nuevos.
+- `scripts/paty_build.mjs` — `jobs[]` incluye los 3 archivos nuevos.
 
 **Anti-patterns (NO hacer):**
 - ❌ Hardcodear `PATYIA_ISS_URL` directamente en una feature. Usar `getIssTarget()` + `patyiaIssBase()`.
@@ -692,7 +692,7 @@ Carpeta `tests/` ignorada por git. Alberga `.test.mjs` ejecutables con `node --t
 
 **Fix definitivo** (`js/boot/cdn.mjs`):
 - En localhost, **vendor local same-origin** (`vendor/front-shared/`) por defecto. El importmap del `index.html` (`vendor/cdn/react.js`...) sí aplica a módulos same-origin, así que `stack.mjs` resuelve correctamente desde el vendor.
-- **Las URLs de `vendorCdnBase()` y `frontSharedCdnBase()` DEBEN ser absolutas** (`new URL("...", base).href` con `base = location.origin + path`). Si fueran relativas (`"vendor/front-shared/"`), el `loader.mjs` (en `_dist/js/boot/`) las resolvería contra su propio baseURI como `_dist/js/boot/vendor/front-shared/...` → **404**.
+- **Las URLs de `vendorCdnBase()` y `frontSharedCdnBase()` DEBEN ser absolutas** (`new URL("...", base).href` con `base = location.origin + path`). Si fueran relativas (`"vendor/front-shared/"`), el `loader.mjs` (en `dist/js/boot/`) las resolvería contra su propio baseURI como `dist/js/boot/vendor/front-shared/...` → **404**.
 - Override explícito:
   - `?isa_cdn=monorepo` → `components/front-shared/cdn/` (Apps-fullstack)
   - `?isa_cdn=remote`   → jsDelivr (QA pin remoto; importmap NO aplica)
@@ -707,12 +707,12 @@ Carpeta `tests/` ignorada por git. Alberga `.test.mjs` ejecutables con `node --t
 
 **Reglas duras**:
 1. Si el `index.html` define un importmap que apunta a vendor local, **`stack.mjs` debe servirse también desde vendor local**.
-2. La URL del CDN resuelta por `cdn.mjs` **debe ser absoluta** (con `location.origin`) — si es relativa, el `loader.mjs` (en `_dist/js/boot/`) la resuelve contra su propio directorio y rompe.
-3. Después de cambiar `cdn.mjs`, regenerar `_dist/` con `node Personal/apps/src/scripts/front/gen-front-dist.mjs --slug isa-patyia` (el `_dist/js/boot/cdn.mjs` se minifica y refleja la nueva lógica).
+2. La URL del CDN resuelta por `cdn.mjs` **debe ser absoluta** (con `location.origin`) — si es relativa, el `loader.mjs` (en `dist/js/boot/`) la resuelve contra su propio directorio y rompe.
+3. Después de cambiar `cdn.mjs`, regenerar `dist/` con `node Personal/apps/src/scripts/front/gen-front-dist.mjs --slug isa-patyia` (el `dist/js/boot/cdn.mjs` se minifica y refleja la nueva lógica).
 
 **Verificación QA** (post-fix): tras navegar a `http://127.0.0.1:5503/isa-patyia/frontend/`, los logs del servidor deben mostrar (en orden):
 ```
-GET /_dist/js/boot/cdn.mjs 200
+GET /dist/js/boot/cdn.mjs 200
 GET /vendor/front-shared/boot-loader.mjs?v=<PIN> 200     ← vendor local, NO jsDelivr
 GET /vendor/front-shared/boot-helper.mjs 200
 GET /vendor/front-shared/stack.mjs 200
@@ -866,7 +866,7 @@ están en Get/Update/VerifyInsert pero el `super.Insert` aún revienta en
 1. Quitada la llamada `await ensureLightboxZoom()` de `loader.mjs` (línea 65). El lightbox ya tiene su cargador lazy (`js/core/lightboxBoot.ts → ensureLightboxReady()`) que se invoca solo cuando algún componente lo pide.
 2. Quitado el import innecesario de `ensureLightboxZoom` en `loader.mjs`.
 3. Añadido comentario explicando el porqué, con referencia a este EP-6.
-4. Regenerado `_dist/` con `gen-front-dist --front isa-patyia` (132 archivos, −42% tamaño, hash `41f33af6a1c0`).
+4. Regenerado `dist/` con `gen-front-dist --front isa-patyia` (132 archivos, −42% tamaño, hash `41f33af6a1c0`).
 
 ### Resultado QA (con el navegador MCP de Cursor, 2026-07-17)
 
@@ -877,10 +877,10 @@ están en Get/Update/VerifyInsert pero el `super.Insert` aún revienta en
 | `http://127.0.0.1:5512/isa-patyia/frontend/?isa_cdn=local` | 200 | MUI login completa (monorepo path) |
 
 Todos los endpoints 200:
-- `/_dist/js/boot/loader.mjs` (200)
-- `/_dist/js/boot/cdn.mjs` (200)
-- `/_dist/js/main.js` (200)
-- `/_dist/js/core/isa-setup.js` (200)
+- `/dist/js/boot/loader.mjs` (200)
+- `/dist/js/boot/cdn.mjs` (200)
+- `/dist/js/main.js` (200)
+- `/dist/js/core/isa-setup.js` (200)
 - `/vendor/front-shared/stack.mjs` (200)
 - `/vendor/front-shared/boot-loader.mjs` (200)
 
@@ -910,7 +910,7 @@ Todos los endpoints 200:
 | Campos prompt operativos apilados | CSS `& .MuiTextField-root { width:100% }` gana al flex item | Row `nowrap` + width fijo en hijos directos |
 | «Ocultar vacíos» off al entrar | `hideEmpty === true` → ausente = false | Default **true** salvo `hideEmpty: false` explícito en `?s=` |
 | Fecha ISO cruda en hilo Logs | `slice(0,19).replace("T"," ")` | `formatTs()` / `msgDateFormat.ts` (es-CO, mes en español) |
-| Cambio en chat module no se ve | `paty_build.mjs` **no** lista todos los `tools/chat/*` | Rebuild `App.jsx` (bundle) y/o módulo suelto a `_dist/` |
+| Cambio en chat module no se ve | `scripts/paty_build.mjs` **no** lista todos los `tools/chat/*` | Rebuild `App.jsx` (bundle) y/o módulo suelto a `dist/` |
 
 ---
 
@@ -921,7 +921,7 @@ Todos los endpoints 200:
 **SÍ hacer:**
 - Layout flex: `avatar | body` con `paty-chat-session__title-row` = `name` (clamp/ellipsis) + `action` (icono filtro).
 - Icono de filtro como chip pequeño (`border` + fondo suave), **en flujo**, nunca absoluto sobre el nombre.
-- Tras editar: sync `css/chat-staging.css` → `_dist/css/` y regenerar `_dist` del panel / `App.js`.
+- Tras editar: sync `css/chat-staging.css` → `dist/css/` y regenerar `dist` del panel / `App.js`.
 
 **NO hacer:**
 - ❌ `position: absolute; top/right` para el icono de filtro encima del label.
@@ -1024,17 +1024,17 @@ export function readPermisosHideEmptyFromUrl(snap?) {
 
 ---
 
-### 7. Build — módulos chat fuera de `paty_build.mjs`
+### 7. Build — módulos chat fuera de `scripts/paty_build.mjs`
 
-**Hecho aprendido:** `paty_build.mjs` `jobs[]` compila `App.jsx` (bundlea chat) pero **no** lista `ChatSessionPanel.jsx` / `ChatThreadSidebar.jsx` como entries sueltos. Si el runtime carga `_dist/js/tools/chat/*.js` modulares, quedan stale.
+**Hecho aprendido:** `scripts/paty_build.mjs` `jobs[]` compila `App.jsx` (bundlea chat) pero **no** lista `ChatSessionPanel.jsx` / `ChatThreadSidebar.jsx` como entries sueltos. Si el runtime carga `dist/js/tools/chat/*.js` modulares, quedan stale.
 
 **SÍ hacer tras editar chat:**
-1. `node paty_build.mjs` (actualiza `App.js`).
-2. Si el live server usa módulos sueltos: rebuild explícito del `.jsx` tocado → `_dist/js/tools/chat/...`.
-3. Sync CSS: `Copy-Item css\X.css _dist\css\X.css`.
+1. `node scripts/paty_build.mjs` (actualiza `App.js`).
+2. Si el live server usa módulos sueltos: rebuild explícito del `.jsx` tocado → `dist/js/tools/chat/...`.
+3. Sync CSS: `Copy-Item css\X.css dist\css\X.css`.
 4. Hard refresh Ctrl+F5.
 
-**NO hacer:** editar solo `js/` y asumir que `_dist/js/tools/chat/Foo.js` se actualizó solo.
+**NO hacer:** editar solo `js/` y asumir que `dist/js/tools/chat/Foo.js` se actualizó solo.
 
 ---
 
@@ -1053,7 +1053,7 @@ Front-only Dev Lead: `js/core/viewAsRole.ts` + `sessionApi` + `ViewAsRoleControl
 | 26 | `width:100%` en TextField hijo de flex row | Apila campos |
 | 27 | Default URL booleano con `=== true` | `undefined` ≠ default deseado |
 | 28 | Fecha ISO cruda en UI | Usuario pide mes en español |
-| 29 | Olvidar rebuild módulo chat suelto | `_dist` stale aunque `App.js` esté OK |
+| 29 | Olvidar rebuild módulo chat suelto | `dist` stale aunque `App.js` esté OK |
 
 ### Checklist SÍ (esta sesión)
 
@@ -1097,7 +1097,7 @@ ISS pide login ContaPyme® (MCP `pagina_login_asw`) y el mensaje trae URL `https
 1. **Iframe embebido ~500px** — invade el chat. Solución: modal 95vh/vw.
 2. **Toast «solo puede abrir tus propias conversaciones»** con ISS local muerto o PERMS_OPEN a medias — ver ISS `llm.md` ContaPyme MCP / PERMS_OPEN; front no debe asumir USR si el rol display es Dev ISS.
 3. **User «(mensaje usuario sin texto en log)»** — bug ISS (falta `http_request.input` en short-circuit); no «arreglar» inventando texto en el front.
-4. **CTA/enlace ASW en card OP** — el `_dist` no pasaba `disableLoginEmbed`; además el resumen OP trae `login_url:` y `mdToHtml` lo linkifica. Solución: `disableLoginEmbed` + scrub de URL en OP.
+4. **CTA/enlace ASW en card OP** — el `dist` no pasaba `disableLoginEmbed`; además el resumen OP trae `login_url:` y `mdToHtml` lo linkifica. Solución: `disableLoginEmbed` + scrub de URL en OP.
 5. **Modal ContaPyme en blanco / formulario derecho vacío hasta resize** — ASW hidrata con el tamaño del iframe; si carga durante la transición MUI o sin resize, el panel login queda vacío. Solución: `transitionDuration={0}`, montar `src` en `onEntered`, y pulso 1px + `resize` en `onLoad`.
 
 ### Qué NO hacer
@@ -1109,7 +1109,7 @@ ISS pide login ContaPyme® (MCP `pagina_login_asw`) y el mensaje trae URL `https
 | Inventar LangGraph en el front para MCP | Gate vive en ISS |
 | Commitear `tests/` del front | gitignore a propósito; health productivo ISS = `src/health/` |
 
-Tras cambios: `node paty_build.mjs` (App bundle incluye ConvLogWebView).
+Tras cambios: `node scripts/paty_build.mjs` (App bundle incluye ConvLogWebView).
 
 ---
 
@@ -1193,3 +1193,170 @@ Al clic en marca **PatyIA** (`isa:brand-home` → `brandHomeReset`) la URL queda
 | Alert sticky | Si `indicator` ≠ none o hay incidentes abiertos |
 
 QA: `node tests/openai-status-home.test.mjs`
+
+---
+
+## Sesión 24-jul-2026 — Contacto JWT + demo `demotime` (ISS)
+
+### Contacto actual (reemplaza SYS_VALUES.contactos)
+
+| Hacer | No hacer |
+|-------|----------|
+| `js/api/contactoLookup.ts` → claims JWT (`itercero`, `icontacto`) | Mapa hardcode username→icontacto |
+| Username = local-part email (`JAGUDELOE`) | Usar `iusuario` ContaPyme |
+| Doc ContaPyme DS = skill Cursor `dsclientes-contapyme` | Recrear `frontend/dsclientes.md` (absorbido en skill) |
+
+Contrato seguridad / fechas / evento `011085`: **ISS** `llm.md` «Demo 30 días» + «Contactos DS/JWT». Este front **no** inventa el reloj.
+
+### Campo `demotime` en conversaciones (API ISS)
+
+Cada item de lista / GET / logs trae `demotime` **junto a** `titulo`:
+
+| Valor | Significado |
+|------|-------------|
+| `-1` | No aplica (usuario no en demo) |
+| `1`…`30` | Día entero usado del demo (sin decimales) |
+| `30` | También en el límite 23:59:59.999 y **después** (escritura ya bloqueada en ISS) |
+
+UI: si `demotime < 0` no mostrar contador demo. **No** pedir `GET /api/auth/demo-status` (no existe a propósito).
+
+QA local gitignored: carpeta `tests/` del front (si existe) — **no** versionar. Regresión ISS: `src/health/demo-access-30d.test.ts` + `contactos-ds-jwt.test.ts`.
+
+## Sesión 4-ago-2026 — Alineación con el ISS, salud del deploy y repo reenganchado
+
+Test de regresión: `tests/alineacion-iss-y-deploy.test.mjs` (8 casos, verificado por mutación). `tests/` sigue en `.gitignore`: es checkout local.
+
+### Lo que hay que respetar
+
+- **El CI no compila. Nunca.** `deploy-front.yml` solo verifica que existan `index.html` y `dist/js/boot`, y publica el directorio con `path: .`. Lo que se ve en producción es **exactamente el `dist/` commiteado**. Regenerar antes de cada push, sin excepción.
+- **El build son DOS pasos y el orden importa:**
+
+  ```bash
+  cd Personal/apps/src/scripts/front
+  node gen-front-dist.mjs --slug isa-patyia   # 1. minifica los ~124 archivos
+  cd ../../../isa-patyia/frontend
+  node scripts/paty_build.mjs                 # 2. re-bundlea los 24 de jobs[]
+  ```
+
+- **Los generadores viven en `apps/src/scripts/front/`**, no en `apps/src/scripts/`. `DEPLOY.md` apuntaba a la carpeta padre y por eso «no existían».
+- **Si agregás un `.jsx`/`.ts`/`.tsx` que deba ser bundle, sumalo a `jobs[]`** de `paty_build.mjs`, o no se compila para deploy. Los fuentes viven en `src/js/` (la nota vieja decía `js/`).
+- **Verificación objetiva de que `dist/` está al día:** ningún archivo de `src/` puede ser más nuevo que su salida en `dist/`. Lo chequea `DIST-01`.
+
+### Lo que NO hay que hacer
+
+- **No dejar `gen-front-dist` como último paso.** Minifica archivo por archivo y destruye los bundles: `App.js` queda en ~8 KB (real: ~850 KB) y la app no arranca. Ya estaba advertido en § 23-jul-2026 y se volvió a pisar igual. Ahora `DIST-02` lo detecta por tamaño.
+- **No dar por rota la app porque un test tire `ENOENT`.** Tras la mudanza a `src/`, cuatro suites fallaban por rutas viejas (`js/…`, `css/…`, `index.json`), no por código. Se arreglan con un helper que resuelve bajo `src/` con fallback a la raíz (`dist/` sigue en la raíz). `REPO-03` avisa si alguien agrega un test con rutas legacy y sin ese helper.
+- **No confiar en que una ruta `/api/...` del front exista en el ISS.** Las llamadas van dentro de `try/catch`: si el ISS no la expone, la función queda muerta **sin error visible**. `ISS-01` compara contra `01-api.json` del ISS y falla ante cualquier desalineación nueva.
+- **No commitear `.git-roto.bak`.** Ya está en `.gitignore`.
+
+### Deuda abierta con el ISS (4-ago-2026)
+
+`GET /api/system/permisos` responde **404**: el ISS ya no la registra en `01-api.json`, aunque su propio `llm.md` la documenta («roles + usuarios kanban»). El front la pide en `contactoLookup.ts` dentro de `try/catch` → **los roles nunca cargan y nadie ve un error**. Se repone en el ISS, no acá. Anotada en `DEUDA_ABIERTA` del test; cuando el ISS la reponga, `ISS-01` avisa para sacarla de la lista.
+
+Aparte, tres **claves de permiso** de `permAccessFromMap.js` no corresponden a rutas reales del ISS (`ISS-02`). No son llamadas, pero `hasAccess` nunca las concede, así que el control de UI que dependa solo de ellas queda oculto para siempre: `/api/system/swagger.json` (el editor de swagger; el ISS sirve `/api/system/swagger/config.json`), `/api/permisos/usuarios` y `/api/system/permisos/usuarios` (ambas con alternativa, así que hoy no bloquean).
+
+### El repo estaba desenganchado
+
+`frontend/.git` era un **archivo de submódulo** apuntando a `Personal/.git/modules/isa-patyia/frontend`, que no existe — `Personal/` ya no es un repo. Con eso **ningún** comando git funcionaba, ni `git status`. Reparación (no toca el working tree):
+
+```bash
+mv .git .git-roto.bak
+git init -b main
+git remote add origin https://github.com/Jeff-Aporta/isa-patyia.git
+git fetch origin main
+git reset --mixed origin/main
+```
+
+Tras reengancharlo aparecen **~250 archivos como borrados**: no es pérdida, es que el remoto sigue en la estructura vieja (`js/`, `_dist/`) y el local ya migró (`src/js/`, `dist/`). Cada `js/X` «borrado» existe como `src/js/X`. Usar `git add -A` para que git los registre como renames. `REPO-01` avisa si el `.git` vuelve a quedar en ese estado.
+
+**La rama `dev` no existe en el remoto** (solo `main`), pese a que `DEPLOY.md` describe el flujo `dev` → Cloudflare. Crearla antes de usar ese flujo.
+
+### Errores pagados (tabla corta)
+
+| Error | Por qué duele | Qué hacer |
+|-------|---------------|-----------|
+| Correr solo `gen-front-dist` | Deja `App.js` en ~8 KB: la app no arranca en producción y el CI no lo detecta porque no compila | Siempre `paty_build.mjs` después; `DIST-02` lo verifica |
+| Suponer que el CI construye el front | Se pushea un `dist/` viejo y producción queda atrasada sin ningún aviso | Regenerar y verificar `DIST-01` antes del push |
+| Leer un `ENOENT` de test como código roto | Se persigue un bug inexistente; el fallo era la mudanza a `src/` | Revisar primero la ruta del test |
+| Llamar un endpoint que el ISS no expone | El `try/catch` lo silencia: la funcionalidad muere sin error | `ISS-01` compara contra el catálogo del ISS |
+| Relajar un chequeo para que pase | La regla «cubre por prefijo» tapó el hallazgo real (`/api/system/permisos` quedaba cubierto por `/api/system/permisos/usuarios/*/roles`) | Excepciones **explícitas y documentadas**, nunca reglas laxas |
+| Dar por buena una lista de excepciones | Con el tiempo documenta algo falso | El test falla si una excepción ya se resolvió, para obligar a borrarla |
+
+### Estado al cierre
+
+`dist/` regenerado y verificado (0 desactualizados, `App.js` 849 KB). Tests: 7 de 8 suites en verde; `standup-2026-07-15` queda con 2 fallas que son decisión del equipo, no bugs: `cdnVendor:false` frente al invariante VENDOR-01 (cambiarlo exige regenerar `index.html`, y `gen-front-index.mjs` falla porque le falta `apps/components/front-shared/cdn/versions.json`), y la fila de `mergeHistory` pendiente en `src/json/index.json`.
+
+### Cierre 4-ago-2026 — `tests/` versionado, vendor local activado y pins verificados
+
+**`tests/` dejó de ignorarse.** Los invariantes de deploy y de alineación con el ISS valen para todo el equipo; ignorarlos los dejaba sin efecto justo donde hacen falta. Tres invariantes que *exigían* `tests/` ignorado se actualizaron para exigir lo contrario. `components/` y `.git-roto.bak` siguen ignorados.
+
+**`cdnVendor` se intentó activar y se REVIRTIÓ: el vendor generado está roto** (detalle al final de la sección). Aun así, lo aprendido del intento vale, porque el orden importa y hay dos trampas:
+
+1. `gen-front-vendor.mjs` **exige `cdnVendor:true` antes de generar** (pollo-huevo): primero el flag, después el vendor, después el index.
+2. **Escribe en la ruta equivocada.** Resuelve relativo a `index.json`, que se mudó a `src/json/`, así que dejó todo en `frontend/src/json/vendor/cdn/` en vez de `frontend/vendor/cdn/`. Hay que mover los archivos y borrar el directorio espurio.
+
+Antes de activarlo, `vendor/cdn/*.js` estaba **vacío** (0 bytes salvo `react.js` y `babel.min.js`) pese a que `meta.json` decía «built». Activar el flag con el vendor vacío deja la app sin arrancar: el importmap apunta a archivos de 0 bytes.
+
+**`frontBase: "./"` sería obligatorio con `cdnVendor`.** Sin él, `localImportMapObject("")` calcula `norm = "" + "/"` y emite rutas **absolutas** (`/vendor/cdn/react.js`). Funciona en Cloudflare (dominio propio) pero **rompe GitHub Pages**, que sirve bajo `/isa-patyia/`. El `<base>` que inyecta `base-href.js` corrige rutas relativas, no absolutas.
+
+**Un pin roto en `index.json` a punto de tumbar producción.** `frontSharedPin` valía `f8ce806`, que en jsDelivr da **404**; el `index.html` conservaba `a13fc29`, que sí responde 200. Como nadie regeneraba el HTML, el pin malo estaba latente: el primer `gen-front-index.mjs` habría publicado scripts y CSS inexistentes. Corregido a `a13fc29`. **Verificar el pin con una petición real antes de regenerar**, no confiar en que `index.json` esté sano.
+
+De paso, regenerar el índice añadió `dist/css/welcome-home.css`, que faltaba en el HTML.
+
+**Un test congelado en una fecha.** `README-01` exigía que la fila más reciente de `mergeHistory` fuera exactamente `2026-07-15`, así que se rompía **al cumplir el proceso** de agregar una fila antes de cada merge. Ahora valida la forma: fechas ISO, orden descendente, URL con hash y una sola fila por fecha.
+
+#### Errores pagados (continuación)
+
+| Error | Por qué duele | Qué hacer |
+|-------|---------------|-----------|
+| Fijar una fecha concreta en un invariante | El test se rompe justo cuando alguien cumple el proceso; se aprende a ignorarlo | Validar forma y orden, nunca un valor que va a cambiar |
+| Confiar en `meta.json` del vendor | Decía «built» con los archivos en 0 bytes | Verificar tamaño y contenido, no el metadato |
+| Activar `cdnVendor` sin `frontBase` | Importmap absoluto: anda en Cloudflare y **rompe GH Pages** | `frontBase: "./"` siempre que `cdnVendor` esté activo |
+| Regenerar `index.html` sin comprobar el pin | `index.json` puede tener un ref que ya no existe; publicás 404s | `curl` al `base-href.js` del pin antes de regenerar |
+| Asumir que un generador escribe donde parece | `gen-front-vendor` resuelve relativo a `index.json` (`src/json/`) y creó `src/json/vendor/cdn/` | Verificar la ruta de salida y mover si hace falta |
+
+#### Segundo pin roto: `_dist/` publicado vs `dist/` local (4-ago-2026)
+
+La mudanza `_dist/` → `dist/` también tocó `vendor/front-shared/boot-helper.mjs`, y ahí tenía una trampa: ese archivo sirve **dos bases distintas**.
+
+`resolveCdnBase()` devuelve `new URL("./", import.meta.url)` — o sea el **propio directorio del vendor**, que ya migró a `dist/`. Solo si eso falla cae al CDN de jsDelivr, donde el paquete publicado (`front-shared@a13fc29`) **conserva `_dist/`**: `…/cdn/dist/isa/js/index.min.js` da **404**, `…/cdn/_dist/isa/js/index.min.js` da 200.
+
+Como el camino normal es el local, el bug estaba **latente**: solo se manifiesta cuando se usa el fallback remoto, que es justo el momento en que menos margen hay. Corregido con `DIST_DIR = CDN.includes("cdn.jsdelivr.net") ? "_dist" : "dist"`, aplicado a las tres rutas (entry, retry y `feedback.min.css`). Lo protege `DIST-04`.
+
+**Regla:** cuando una ruta puede resolverse contra el vendor local **o** contra el paquete publicado, el segmento no se fija a mano — se deriva de la base. Los dos repos migran en momentos distintos.
+
+#### `mergeHistory`: el proceso está bloqueado, no incumplido
+
+`README-01` ya no exige una fecha fija, pero el proceso del equipo sí pide una fila `{date, url}` con **hash de preview de Cloudflare** antes de cada merge a `main`. Hoy **no se puede cumplir**: la rama `dev` no existe en el remoto, así que no hay preview que registrar y cualquier URL sería inventada — no se fabrica un registro público para que un test pase en verde.
+
+Queda así a propósito. Para desbloquearlo: crear `dev`, pushear, tomar la URL con hash que devuelva Cloudflare y agregar la fila en `src/json/index.json` (`readme.mergeHistory`, más reciente primero, una por fecha) y regenerar el README con `gen-front-readme.mjs`.
+
+#### `cdnVendor` NO se puede activar: el vendor generado está roto (4-ago-2026)
+
+Se activó, se desplegó en local y **la app no arrancó**:
+
+```
+Error de arranque: TypeError: tr is not a function
+    at vendor/cdn/mui-material.js:1:8981
+```
+
+**Causa raíz:** `gen-front-vendor.mjs` genera `vendor/cdn/react.js` y `vendor/cdn/react-dom.js` con **solo el export default**:
+
+```js
+export{export_default as default}   // ← sin useState, sin createElement, sin nada más
+```
+
+MUI hace `import { useState } from "react"`, recibe `undefined` y revienta en el primer hook. Es un **bug del generador** (`Personal/apps/src/scripts/front/`), no del front: los archivos se descargan y pesan lo correcto, pero la interop CJS→ESM pierde los *named exports*.
+
+Revertido a `cdnVendor: false`. El `index.html` volvió al importmap de `esm.sh`, que es lo que funciona hoy en producción. Lo único que se conservó del intento es `dist/css/welcome-home.css`, que faltaba en el HTML.
+
+**VENDOR-01 se reformuló**: ya no exige `cdnVendor:true` —sería exigir que la app esté rota—, sino que **activarlo sea seguro**. Si alguien lo pone en `true`, el test comprueba que `react.js` exponga named exports y que el importmap sea relativo. Cuando arreglen el generador, el test dejará pasar la activación.
+
+**Para arreglarlo upstream:** el bundle de React debe generarse preservando los named exports (esbuild necesita un shim que reexporte explícitamente, o usar una build ESM de React en vez de la CJS).
+
+#### Errores pagados (continuación)
+
+| Error | Por qué duele | Qué hacer |
+|-------|---------------|-----------|
+| Dar por bueno un cambio de carga porque «todos los recursos responden 200» | Los siete archivos del vendor daban 200 y la app igual no arrancaba: el problema era el **contenido** del módulo, no su existencia | Un cambio en cómo carga la app **solo** se valida ejecutándola en el navegador |
+| Cumplir un invariante sin comprobar que lo que exige funcione | VENDOR-01 pedía `cdnVendor:true`; obedecerlo dejaba la app muerta | Un invariante que exige un estado roto está mal escrito: corregir el invariante, no forzar el estado |
