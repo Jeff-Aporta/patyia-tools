@@ -196,6 +196,7 @@ export function TercerosAuditDialog({ open, onClose, jwt, sessionUser, onSelect,
                               {codes}
                             </Typography>
                           </Box>
+                          {selected ? <Chip size="small" label="Viendo" color="primary" sx={{ height: 18, "& .MuiChip-label": { px: 0.5, fontSize: "0.65rem" } }} /> : null}
                           {row.es_sesion ? <Chip size="small" label="Sesión" color="success" sx={{ height: 18, "& .MuiChip-label": { px: 0.5, fontSize: "0.65rem" } }} /> : null}
                         </Stack>
                       </TableCell>
@@ -219,7 +220,7 @@ export function TercerosAuditDialog({ open, onClose, jwt, sessionUser, onSelect,
                             });
                           }}
                         >
-                          {selected ? "Activo" : (row.es_sesion ? "Mis convs" : "Ver")}
+                          {selected ? "Viendo" : (row.es_sesion ? "Mis convs" : "Ver")}
                         </Button>
                       </TableCell>
                     </TableRow>
