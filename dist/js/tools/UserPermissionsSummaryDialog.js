@@ -8,7 +8,7 @@ var __esm = (fn, res, err) => function __init() {
   }
 };
 
-// js/core/patyia.ts
+// src/js/core/patyia.ts
 function avatarBgFromName(name) {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = h * 31 + name.charCodeAt(i) >>> 0;
@@ -25,7 +25,7 @@ function buildUserAvatarUrl(name, size = 72) {
 }
 var PATYIA_ISS_URL, PATYIA_ISS_PROD_URL, PATYIA_ISS_LOCAL, PATYIA_ISS_LOCAL_API, PATYIA_ISS_PROD_API, PATYIA_ISS_STAGING_API, AVATAR_BG_PALETTE;
 var init_patyia = __esm({
-  "js/core/patyia.ts"() {
+  "src/js/core/patyia.ts"() {
     window.ISAFront.migrateLegacyGatewayKeys?.({ "jeff:gateway-local": "", "patyia-apptools:gateway-local": "", "patyia-apptools:lab-local": "" });
     PATYIA_ISS_URL = "https://ayudascp-ia-staging.azurewebsites.net";
     PATYIA_ISS_PROD_URL = "https://ayudascp-ia.azurewebsites.net";
@@ -54,10 +54,10 @@ var init_patyia = __esm({
   }
 });
 
-// js/core/platform.ts
+// src/js/core/platform.ts
 var bridge, UI, getReact, getMaterialUI;
 var init_platform = __esm({
-  "js/core/platform.ts"() {
+  "src/js/core/platform.ts"() {
     init_patyia();
     bridge = () => window.ISAFront.createPlatformBridge("ISA");
     UI = {
@@ -94,14 +94,14 @@ var init_platform = __esm({
   }
 });
 
-// js/tools/roleCanonicalMeta.js
+// src/js/tools/roleCanonicalMeta.js
 function canonicalRoleMeta(roleName) {
   const key = String(roleName ?? "").trim().toUpperCase();
   return CANONICAL_ROLE_META[key] ?? null;
 }
 var CANONICAL_ROLE_META;
 var init_roleCanonicalMeta = __esm({
-  "js/tools/roleCanonicalMeta.js"() {
+  "src/js/tools/roleCanonicalMeta.js"() {
     CANONICAL_ROLE_META = {
       AUDITOR: {
         namedisplay: "Auditor",
@@ -123,10 +123,10 @@ var init_roleCanonicalMeta = __esm({
   }
 });
 
-// js/tools/UserPermissionsSummaryDialog.jsx
+// src/js/tools/UserPermissionsSummaryDialog.jsx
 init_platform();
 
-// js/tools/permisosForm.js
+// src/js/tools/permisosForm.js
 var FLAG_DEFS = [
   { key: "*", label: "Acceso total", hint: "Wildcard \u2014 anula el resto de restricciones de ruta." },
   { key: "impersonate", label: "Suplantar chat", hint: "Actuar como otro usuario en conversaciones." },
@@ -142,7 +142,7 @@ function userRoles(permisos) {
   return Array.isArray(r) ? r.map((x) => String(x).trim().toUpperCase()).filter(Boolean) : [];
 }
 
-// js/tools/permisosKanbanShared.js
+// src/js/tools/permisosKanbanShared.js
 init_roleCanonicalMeta();
 function permEntryKey(entry) {
   return String(entry?.iusuario ?? entry?.ientity ?? "").trim();
@@ -169,7 +169,7 @@ function roleTitleFromEntry(entry) {
   return namedisplay;
 }
 
-// js/ui/GlassDialog.jsx
+// src/js/ui/GlassDialog.jsx
 init_platform();
 import { jsx, jsxs } from "react/jsx-runtime";
 function isaLoginSurface() {
@@ -331,7 +331,7 @@ function GlassDialog({ children, header = null, maxWidth, fullWidth, fullScreen,
   ] });
 }
 
-// js/tools/UserPermissionsSummaryDialog.jsx
+// src/js/tools/UserPermissionsSummaryDialog.jsx
 import { Fragment, jsx as jsx2, jsxs as jsxs2 } from "react/jsx-runtime";
 var { Typography, Stack, Box, Chip, Divider, CircularProgress } = getMaterialUI();
 var { useMemo } = getReact();
