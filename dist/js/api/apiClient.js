@@ -8,7 +8,7 @@ var __esm = (fn, res, err) => function __init() {
   }
 };
 
-// js/core/patyia.ts
+// src/js/core/patyia.ts
 function isPatyiaApiPath(path) {
   const p = path.startsWith("/") ? path : `/${path}`;
   return p.startsWith("/patyia") || p.startsWith("/api/patyia");
@@ -60,7 +60,7 @@ function buildUserAvatarUrl(name, size = 72) {
 }
 var PATYIA_ISS_URL, PATYIA_ISS_PROD_URL, PATYIA_ISS_LOCAL, PATYIA_ISS_LOCAL_API, PATYIA_ISS_PROD_API, PATYIA_ISS_STAGING_API, PATYIA_ISS_TARGET_LS_KEY, AVATAR_BG_PALETTE;
 var init_patyia = __esm({
-  "js/core/patyia.ts"() {
+  "src/js/core/patyia.ts"() {
     window.ISAFront.migrateLegacyGatewayKeys?.({ "jeff:gateway-local": "", "patyia-apptools:gateway-local": "", "patyia-apptools:lab-local": "" });
     PATYIA_ISS_URL = "https://ayudascp-ia-staging.azurewebsites.net";
     PATYIA_ISS_PROD_URL = "https://ayudascp-ia.azurewebsites.net";
@@ -90,10 +90,10 @@ var init_patyia = __esm({
   }
 });
 
-// js/core/platform.ts
+// src/js/core/platform.ts
 var bridge, Session, Config;
 var init_platform = __esm({
-  "js/core/platform.ts"() {
+  "src/js/core/platform.ts"() {
     init_patyia();
     bridge = () => window.ISAFront.createPlatformBridge("ISA");
     Session = {
@@ -129,15 +129,15 @@ var init_platform = __esm({
   }
 });
 
-// js/api/portalJwtApi.ts
+// src/js/api/portalJwtApi.ts
 var init_portalJwtApi = __esm({
-  "js/api/portalJwtApi.ts"() {
+  "src/js/api/portalJwtApi.ts"() {
     init_platform();
     init_patyia();
   }
 });
 
-// js/core/patyia-jwt.ts
+// src/js/core/patyia-jwt.ts
 function parseJwtExp(token) {
   try {
     const part = String(token || "").trim().split(".")[1];
@@ -183,7 +183,7 @@ function loadPatyJwt() {
 }
 var PATYIA_JWT_STORAGE_KEY;
 var init_patyia_jwt = __esm({
-  "js/core/patyia-jwt.ts"() {
+  "src/js/core/patyia-jwt.ts"() {
     init_portalJwtApi();
     init_apiClient();
     init_platform();
@@ -191,51 +191,62 @@ var init_patyia_jwt = __esm({
   }
 });
 
-// js/api/issListFilter.ts
-function encodeIssListFilterB64(filter) {
-  const json = JSON.stringify(filter);
-  return btoa(unescape(encodeURIComponent(json)));
-}
+// src/js/api/issListFilter.ts
 function buildConversacionesListFilter(input = {}) {
   const limit = Math.min(100, Math.max(1, Math.floor(Number(input.limit) || 10)));
   const offset = Math.max(0, Math.floor(Number(input.offset) || 0));
   const sort = String(input.sort || CONVERSACIONES_LIST_SORT_DEFAULT).trim() || CONVERSACIONES_LIST_SORT_DEFAULT;
   const search = String(input.search ?? "").trim().slice(0, 200);
+  const itercero = String(input.itercero ?? "").trim();
+  const icontacto = String(input.icontacto ?? "").trim();
   return {
     limit,
     offset,
     sort,
-    ...search ? { search } : {}
+    ...search ? { search } : {},
+    ...itercero && icontacto ? { itercero, icontacto } : {}
   };
 }
-function conversacionesListQueryParams(input = {}) {
+function conversacionesListBody(input = {}) {
   const limit = Math.min(100, Math.max(1, Math.floor(Number(input.limit) || 10)));
   const page = Math.max(1, Math.floor(Number(input.page) || 1));
-  const offset = (page - 1) * limit;
-  const qs = new URLSearchParams();
-  qs.set(ISS_LIST_FILTER_QUERY_PARAM, encodeIssListFilterB64(buildConversacionesListFilter({
+  return buildConversacionesListFilter({
     search: input.search,
     limit,
-    offset,
-    sort: input.sort
-  })));
-  const itercero = String(input.itercero ?? "").trim();
-  const icontacto = String(input.icontacto ?? "").trim();
-  if (itercero && icontacto) {
-    qs.set("itercero", itercero);
-    qs.set("icontacto", icontacto);
-  }
-  return qs;
+    offset: (page - 1) * limit,
+    sort: input.sort,
+    itercero: input.itercero,
+    icontacto: input.icontacto
+  });
 }
-var ISS_LIST_FILTER_QUERY_PARAM, CONVERSACIONES_LIST_SORT_DEFAULT;
+function tercerosAuditListBody(input = {}) {
+  const limit = Math.min(100, Math.max(1, Math.floor(Number(input.limit) || 20)));
+  const page = Math.max(1, Math.floor(Number(input.page) || 1));
+  const search = String(input.search ?? input.q ?? "").trim().slice(0, 200);
+  const jwtTercero = String(input.jwtTercero ?? "").trim();
+  const jwtContacto = String(input.jwtContacto ?? "").trim();
+  const jwtNombre = String(input.jwtNombre ?? "").trim();
+  const body = {
+    limit,
+    offset: (page - 1) * limit
+  };
+  if (search) body.search = search;
+  if (input.eq && typeof input.eq === "object" && !Array.isArray(input.eq) && Object.keys(input.eq).length) {
+    body.eq = input.eq;
+  }
+  if (jwtTercero) body.jwtTercero = jwtTercero;
+  if (jwtContacto) body.jwtContacto = jwtContacto;
+  if (jwtNombre) body.jwtNombre = jwtNombre;
+  return body;
+}
+var CONVERSACIONES_LIST_SORT_DEFAULT;
 var init_issListFilter = __esm({
-  "js/api/issListFilter.ts"() {
-    ISS_LIST_FILTER_QUERY_PARAM = "f";
+  "src/js/api/issListFilter.ts"() {
     CONVERSACIONES_LIST_SORT_DEFAULT = "-iconversacion";
   }
 });
 
-// js/api/patyiaTokens.ts
+// src/js/api/patyiaTokens.ts
 function patyAuthHeaders(jwt, extra = {}) {
   return {
     Authorization: `Bearer ${jwt.token}`,
@@ -244,12 +255,12 @@ function patyAuthHeaders(jwt, extra = {}) {
   };
 }
 var init_patyiaTokens = __esm({
-  "js/api/patyiaTokens.ts"() {
+  "src/js/api/patyiaTokens.ts"() {
     init_platform();
   }
 });
 
-// js/api/patyiaChatApi.ts
+// src/js/api/patyiaChatApi.ts
 function authHeaders(jwt, extra = {}) {
   return patyAuthHeaders(jwt, extra);
 }
@@ -294,21 +305,13 @@ async function jsonFetch(path, jwt, init) {
   }
   return {};
 }
-function buildConversacionesListPath(input = {}) {
-  const qs = conversacionesListQueryParams({
-    page: input.page,
-    limit: input.limit,
-    search: input.search,
-    sort: input.sort,
-    itercero: input.itercero,
-    icontacto: input.icontacto
-  });
-  return `/conversaciones?${qs.toString()}`;
-}
 async function listConversaciones(jwt, input = {}) {
   const page = Math.max(1, Math.floor(Number(input.page) || 1));
   const limit = Math.min(100, Math.max(1, Math.floor(Number(input.limit) || 10)));
-  const body = await jsonFetch(buildConversacionesListPath(input), jwt);
+  const body = await jsonFetch("/conversaciones", jwt, {
+    method: "QUERY",
+    body: JSON.stringify(conversacionesListBody(input))
+  });
   const conversaciones = Array.isArray(body.conversaciones) ? body.conversaciones : [];
   const total = Number(body.total ?? 0) || 0;
   const resLimit = Number(body.limit ?? limit) || limit;
@@ -326,14 +329,14 @@ function convLogFromDetalle(detail, id) {
   return { ...raw, iconversacion: convId > 0 ? convId : raw.iconversacion };
 }
 var init_patyiaChatApi = __esm({
-  "js/api/patyiaChatApi.ts"() {
+  "src/js/api/patyiaChatApi.ts"() {
     init_issListFilter();
     init_patyiaTokens();
     init_patyia();
   }
 });
 
-// js/tools/permAccessFromMap.js
+// src/js/tools/permAccessFromMap.js
 function normalizePath(path) {
   let p = String(path ?? "").trim();
   try {
@@ -386,34 +389,43 @@ function capsFromPermisosEfectivos(perms) {
   return {
     canEditOpenAiConfig: hasAccess(p, "PUT", "/api/system/openai"),
     canEditSwagger: hasAccess(p, "PUT", "/api/system/swagger.json"),
-    canEditInstrucciones: hasAccess(p, "PUT", "/api/system/instrucciones") || hasAccess(p, "POST", "/api/patyia/instrucciones/publish"),
+    canEditInstrucciones: hasAccess(p, "PUT", "/api/system/instrucciones"),
     canEditPromptsOperativos: hasAccess(p, "PUT", "/api/system/prompts-operativos"),
     canEditConversacionConfig: hasAccess(p, "PUT", "/api/system/config/conversacion"),
     canOverrideSampling: canAccessOthers(p, "POST", "/api/conversacion"),
     canManagePermissions: manage,
     canAssignUserRoles: assign,
     canEditRoleDescriptions: manage,
-    canAccessOthers: canAccessOthers(p, "GET", "/api/conversaciones"),
+    canAccessOthers: canAccessOthers(p, "QUERY", "/api/conversaciones"),
     canViewKanban: hasAccess(p, "GET", "/api/permisos/usuarios") || hasAccess(p, "GET", API_PERMISOS),
     canEditKanbanCards: assign || hasAccess(p, "POST", "/api/system/permisos/usuarios"),
     canViewLogs: hasAccess(p, "GET", "/api/conversacion/logs/{id}") || hasAccess(p, "GET", "/api/conversacion/logs/*"),
     canViewPrompts: hasAccess(p, "GET", "/api/system/instrucciones"),
-    canViewChat: hasAccess(p, "POST", "/api/conversacion") || hasAccess(p, "POST", "/api/mensaje") || hasAccess(p, "GET", "/api/conversaciones"),
+    canViewChat: hasAccess(p, "POST", "/api/conversacion") || hasAccess(p, "POST", "/api/mensaje") || hasAccess(p, "QUERY", "/api/conversaciones"),
     canViewConfig: hasAccess(p, "GET", "/api/system/openai") || hasAccess(p, "GET", "/api/system/prompts-operativos") || hasAccess(p, "GET", "/api/system/instrucciones") || hasAccess(p, "GET", "/api/system/config/conversacion") || hasAccess(p, "GET", "/api/system/swagger.json") || hasAccess(p, "GET", API_PERMISOS),
     canSendChat: hasAccess(p, "POST", "/api/conversacion") && hasAccess(p, "POST", "/api/mensaje")
   };
 }
 var API_PERMISOS, API_ROLES;
 var init_permAccessFromMap = __esm({
-  "js/tools/permAccessFromMap.js"() {
+  "src/js/tools/permAccessFromMap.js"() {
     API_PERMISOS = "/api/system/permisos";
     API_ROLES = "/api/system/permisos/usuarios/*/roles";
   }
 });
 
-// js/api/systemConfigApi.ts
+// src/js/api/systemConfigApi.ts
 function systemApiBase() {
   return resolveIssApiBase();
+}
+function isSegApiPath(path) {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return p.startsWith("/permissions/me") || p.startsWith("/patyia/admin/") || p.startsWith("/system/permisos");
+}
+function shouldRetrySegOnStaging(err) {
+  if (!isLocalMode()) return false;
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return /timeout|terminated|ECONN|ENOTFOUND|Failed to fetch|NetworkError|HTTP 5\d\d|Connection|sin METHOD:path/i.test(msg);
 }
 function humanizeIssAuthMessage(msg) {
   const m = String(msg ?? "").trim();
@@ -461,8 +473,8 @@ function unwrapBody2(data) {
   }
   return inner;
 }
-async function jsonFetch2(path, init) {
-  const res = await fetch(`${systemApiBase()}${path}`, init);
+async function jsonFetchAt(base, path, init) {
+  const res = await fetch(`${base.replace(/\/+$/, "")}${path.startsWith("/") ? path : `/${path}`}`, init);
   const ct = res.headers.get("content-type") || "";
   if (!res.ok) {
     let msg = res.statusText;
@@ -481,10 +493,19 @@ async function jsonFetch2(path, init) {
     throw new Error(humanizeIssAuthMessage(msg) || `HTTP ${res.status}`);
   }
   if (!ct.includes("json")) {
-    throw new Error(`Respuesta no JSON (${res.status}) desde ${systemApiBase()}${path}`);
+    throw new Error(`Respuesta no JSON (${res.status}) desde ${base}${path}`);
   }
   const raw = await res.json();
   return unwrapBody2(raw);
+}
+async function jsonFetch2(path, init) {
+  try {
+    return await jsonFetchAt(systemApiBase(), path, init);
+  } catch (err) {
+    if (!isSegApiPath(path) || !shouldRetrySegOnStaging(err)) throw err;
+    console.warn(`[seg-front] local \u2192 staging ${path}:`, err instanceof Error ? err.message : err);
+    return jsonFetchAt(PATYIA_ISS_STAGING_API, path, init);
+  }
 }
 async function fetchInstruccionesSystemConfig() {
   const body = await jsonFetch2("/system/instrucciones", { method: "GET", headers: systemApiHeaders() });
@@ -530,23 +551,39 @@ async function fetchPermissionsMe(opts) {
   if (!opts?.force && PERMISSIONS_ME_INFLIGHT) return PERMISSIONS_ME_INFLIGHT;
   const f = opts?.fetchImpl ?? fetch;
   const req = (async () => {
-    const res = await f(`${systemApiBase()}/permissions/me`, {
-      method: "GET",
-      headers: { ...headers, Accept: "application/json" },
-      credentials: "omit"
-    });
-    if (res.status === 401) {
+    const hit = async (base) => {
+      const res = await f(`${base.replace(/\/+$/, "")}/permissions/me`, {
+        method: "GET",
+        headers: { ...headers, Accept: "application/json" },
+        credentials: "omit"
+      });
+      if (res.status === 401) return { status: 401, data: null };
+      if (!res.ok) return { status: res.status, data: null };
+      const data = unwrapBody2(await res.json());
+      if (!data || data.kind !== "insoft.permissions-me") return { status: res.status, data: null };
+      return { status: res.status, data };
+    };
+    let got = await hit(systemApiBase());
+    if (isLocalMode()) {
+      try {
+        const stg = await hit(PATYIA_ISS_STAGING_API);
+        if (stg.data) {
+          console.warn("[seg-front] permissions/me v\xEDa staging");
+          got = stg;
+        }
+      } catch {
+      }
+    }
+    if (got.status === 401) {
       PERMISSIONS_ME_CACHE.value = null;
       return null;
     }
-    if (!res.ok) return PERMISSIONS_ME_CACHE.value;
-    const data = unwrapBody2(await res.json());
-    if (!data || data.kind !== "insoft.permissions-me") return PERMISSIONS_ME_CACHE.value;
-    PERMISSIONS_ME_CACHE.value = data;
-    PERMISSIONS_ME_CACHE.iat = data.iat || Date.now();
-    PERMISSIONS_ME_CACHE.ttlMs = data.ttlMs || 8 * 60 * 60 * 1e3;
+    if (!got.data) return PERMISSIONS_ME_CACHE.value;
+    PERMISSIONS_ME_CACHE.value = got.data;
+    PERMISSIONS_ME_CACHE.iat = got.data.iat || Date.now();
+    PERMISSIONS_ME_CACHE.ttlMs = got.data.ttlMs || 8 * 60 * 60 * 1e3;
     PERMISSIONS_ME_CACHE.key = sessionKey;
-    return data;
+    return got.data;
   })().finally(() => {
     if (PERMISSIONS_ME_INFLIGHT === req) PERMISSIONS_ME_INFLIGHT = null;
   });
@@ -566,7 +603,7 @@ function invalidatePermisosCache() {
 }
 var CONTAPYME_NOAUTH_RX, PERMISSIONS_ME_CACHE, PERMISSIONS_ME_INFLIGHT, PERMISOS_LIST_CACHE, PERMISOS_LIST_INFLIGHT;
 var init_systemConfigApi = __esm({
-  "js/api/systemConfigApi.ts"() {
+  "src/js/api/systemConfigApi.ts"() {
     init_platform();
     init_patyia();
     init_patyia_jwt();
@@ -579,14 +616,14 @@ var init_systemConfigApi = __esm({
   }
 });
 
-// js/tools/roleCanonicalMeta.js
+// src/js/tools/roleCanonicalMeta.js
 function canonicalRoleMeta(roleName) {
   const key = String(roleName ?? "").trim().toUpperCase();
   return CANONICAL_ROLE_META[key] ?? null;
 }
 var CANONICAL_ROLE_META;
 var init_roleCanonicalMeta = __esm({
-  "js/tools/roleCanonicalMeta.js"() {
+  "src/js/tools/roleCanonicalMeta.js"() {
     CANONICAL_ROLE_META = {
       AUDITOR: {
         namedisplay: "Auditor",
@@ -608,7 +645,7 @@ var init_roleCanonicalMeta = __esm({
   }
 });
 
-// js/core/viewAsRole.ts
+// src/js/core/viewAsRole.ts
 function roleKey(name) {
   return String(name ?? "").trim().toUpperCase();
 }
@@ -663,7 +700,7 @@ function clampViewAsCapsToReal(preset, realCaps) {
 }
 var VIEW_AS_ROLE_LS_KEY, VIEW_AS_ROLE_EVENT, NONE, ROLE_CAPS_PRESETS;
 var init_viewAsRole = __esm({
-  "js/core/viewAsRole.ts"() {
+  "src/js/core/viewAsRole.ts"() {
     init_roleCanonicalMeta();
     VIEW_AS_ROLE_LS_KEY = "isa-patyia:view-as-role";
     VIEW_AS_ROLE_EVENT = "patyia-apptools:view-as-role";
@@ -728,7 +765,7 @@ var init_viewAsRole = __esm({
   }
 });
 
-// js/api/sessionApi.ts
+// src/js/api/sessionApi.ts
 function formatRoleTitle(roleName) {
   const key = String(roleName ?? "").trim().toUpperCase();
   if (!key) return "";
@@ -957,7 +994,7 @@ function getSession() {
 }
 var ROLE_PRIORITY, INSTRUCCIONES_WRITE_CAP, OPEN_ME_CAPS, ME_CAP_KEYS, ME_CAPS, ME_CAPS_KEY, ME_ISS_ROLES, ME_LOGIN_ROLE, ME_CAPS_BOOTSTRAP_TS, ME_CAPS_INFLIGHT, ME_CAPS_RETRY_TIMER, ME_SERVER_INSTRUCCIONES_EDIT, ME_CAPS_FETCH_GUARD_MS, ME_CAPS_REENTRY_GUARD_MS, isLoggedIn, can, blockReason, clearSession;
 var init_sessionApi = __esm({
-  "js/api/sessionApi.ts"() {
+  "src/js/api/sessionApi.ts"() {
     init_platform();
     init_platform();
     init_patyia();
@@ -1023,7 +1060,7 @@ var init_sessionApi = __esm({
   }
 });
 
-// js/api/apiClient.ts
+// src/js/api/apiClient.ts
 function unwrapIssEnvelope(raw) {
   const d = raw;
   const enc = d?.encabezado;
@@ -1171,17 +1208,21 @@ function formatIssClientError(err, fallback = "Error del servidor") {
   return msg;
 }
 async function fetchTercerosAudit(input = {}) {
-  const params = new URLSearchParams();
-  params.set("page", String(input.page ?? 1));
-  params.set("limit", String(input.limit ?? 20));
-  if (input.q?.trim()) params.set("q", input.q.trim());
-  if (input.jwtTercero?.trim()) params.set("jwtTercero", input.jwtTercero.trim());
-  if (input.jwtContacto?.trim()) params.set("jwtContacto", input.jwtContacto.trim());
-  if (input.jwtNombre?.trim()) params.set("jwtNombre", input.jwtNombre.trim());
-  if (input.appUser?.trim()) params.set("appUser", input.appUser.trim());
+  const body = tercerosAuditListBody({
+    page: input.page,
+    limit: input.limit ?? 20,
+    q: input.q,
+    jwtTercero: input.jwtTercero,
+    jwtContacto: input.jwtContacto,
+    jwtNombre: input.jwtNombre
+  });
   let raw;
   try {
-    raw = await capFetch(`${patyiaIssPath("/auditoria/terceros")}?${params.toString()}`, { method: "GET" });
+    raw = await capFetch(patyiaIssPath("/auditoria/terceros"), {
+      method: "QUERY",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
   } catch (err) {
     if (isLocalMode() && input.jwtToken) {
       try {
@@ -1211,9 +1252,10 @@ async function fetchTercerosAuditFromLocalConversaciones(input) {
   const limit = input.limit ?? 20;
   const groups = /* @__PURE__ */ new Map();
   for (let page2 = 1; page2 <= 5; page2 += 1) {
-    const params = conversacionesListQueryParams({ page: page2, limit: 100, sort: "-iconversacion" });
-    const res = await fetch(`${PATYIA_ISS_LOCAL_API.replace(/\/$/, "")}/conversaciones?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${input.jwtToken}` }
+    const res = await fetch(`${PATYIA_ISS_LOCAL_API.replace(/\/$/, "")}/conversaciones`, {
+      method: "QUERY",
+      headers: { Authorization: `Bearer ${input.jwtToken}`, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(conversacionesListBody({ page: page2, limit: 100, sort: "-iconversacion" }))
     });
     if (!res.ok) throw new Error(`No se pudo cargar auditor\xEDa local (${res.status})`);
     const raw = await res.json();
@@ -1277,7 +1319,7 @@ async function fetchConversacionesBridge(input, jwt) {
 }
 var bridgeHttp, capFetch, apiUrl, rowVal;
 var init_apiClient = __esm({
-  "js/api/apiClient.ts"() {
+  "src/js/api/apiClient.ts"() {
     init_platform();
     init_patyia();
     init_patyia_jwt();
