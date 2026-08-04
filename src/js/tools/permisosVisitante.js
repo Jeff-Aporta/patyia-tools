@@ -7,7 +7,7 @@ export const VISITANTE_ROLE = USR_ROLE;
 export const VISITANTE_DEFAULT_PERMISOS = {
   namedisplay: "Usuario",
   descripcion: "Usuario — solo sus propias conversaciones; logs abiertos; resto lectura",
-  "GET:/api/conversaciones": { filter: { ...SESSION_OWNER_FILTER } },
+  "QUERY:/api/conversaciones": { filter: { ...SESSION_OWNER_FILTER } },
   "GET:/api/conversacion/*": { filter: { ...SESSION_OWNER_FILTER } },
   "GET:/api/conversacion/logs/*": true,
   "POST:/api/conversacion": { filter: { ...SESSION_OWNER_FILTER } },
@@ -17,7 +17,7 @@ export const VISITANTE_DEFAULT_PERMISOS = {
 
 /** Rutas de conversación con filter fijo «dueño de sesión» (no editable). */
 export const VISITANTE_LOCKED_OWN_KEYS = new Set([
-  "GET:/api/conversaciones",
+  "QUERY:/api/conversaciones",
   "GET:/api/conversacion/*",
   "POST:/api/conversacion",
   "POST:/api/mensaje",
@@ -25,7 +25,7 @@ export const VISITANTE_LOCKED_OWN_KEYS = new Set([
 ]);
 
 export const VISITANTE_REQUIRED_OWN_KEYS = new Set([
-  "GET:/api/conversaciones",
+  "QUERY:/api/conversaciones",
   "GET:/api/conversacion/*",
 ]);
 

@@ -5,7 +5,7 @@ export const ROUTE_GROUPS = [
     id: "conversaciones",
     title: "Conversaciones",
     routes: [
-      { key: "GET:/api/conversaciones", label: "Listar conversaciones", scoped: true },
+      { key: "QUERY:/api/conversaciones", label: "Listar conversaciones", scoped: true },
       { key: "GET:/api/conversacion/*", label: "Ver conversación", scoped: true },
       { key: "GET:/api/conversacion/logs/*", label: "Logs de conversación" },
       { key: "POST:/api/conversacion", label: "Crear conversación", scoped: true },
@@ -35,12 +35,12 @@ export const ROUTE_GROUPS = [
   },
   {
     id: "patyia",
-    title: "PatyIA / instrucciones",
+    title: "PatyIA",
     routes: [
-      { key: "POST:/api/patyia/instrucciones/publish", label: "Publicar instrucciones" },
-      { key: "POST:/api/patyia/instrucciones/upsert", label: "Upsert instrucciones" },
-      { key: "POST:/api/patyia/prompts/upsert-sql", label: "Upsert SQL prompts" },
-      { key: "POST:/api/instrucciones/*", label: "POST instrucciones (wildcard)" },
+      { key: "GET:/api/patyia/admin/roles", label: "Admin roles PatyIA" },
+      { key: "PUT:/api/patyia/admin/roles/*", label: "Asignar rol contacto" },
+      { key: "GET:/api/patyia/admin/acciones", label: "Admin acciones x rol" },
+      { key: "PUT:/api/patyia/admin/acciones", label: "Upsert acción x rol" },
     ],
   },
   {

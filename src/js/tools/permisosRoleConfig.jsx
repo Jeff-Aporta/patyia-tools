@@ -345,7 +345,7 @@ function RoutePermCatalog({ routes, flags, permisos, canEdit, onRoutesChange, is
 
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mt: 1.5 }}>
 
-          <TextField size="small" fullWidth label="Clave adicional" placeholder="GET:/api/conversaciones" value={newKey}
+          <TextField size="small" fullWidth label="Clave adicional" placeholder="QUERY:/api/conversaciones" value={newKey}
 
             onChange={(e) => setNewKey(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addRow()} />
 
