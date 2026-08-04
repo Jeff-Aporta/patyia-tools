@@ -50,8 +50,9 @@ function SessionModeChip({ canSend, jwtLoading }) {
 }
 
 export function ChatSessionPanel({ claims, displayScope, sessionUser: _sessionUser, ownerDisplayName, canSend, jwtLoading, canAudit = false, onOpenAudit }) {
-  const tercero = claims?.itercero ?? displayScope?.itercero;
-  const contacto = claims?.icontacto ?? displayScope?.icontacto;
+  // Preferir displayScope (filtro auditoría / otro usuario) sobre claims JWT — si no, el chip muestra Viviana con IDs de Jeffrey.
+  const tercero = displayScope?.itercero ?? claims?.itercero;
+  const contacto = displayScope?.icontacto ?? claims?.icontacto;
   const codes = [tercero, contacto].filter(Boolean).join(" · ");
   const scopeName = String(displayScope?.nombre ?? "").trim();
   const claimsName = jwtUserDisplayName(claims) || jwtUserShortName(claims);
