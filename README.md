@@ -30,6 +30,7 @@
 
 | Fecha | Preview |
 |-------|---------|
+| 2026-07-21 | [c4b5d22.isa-patyia-dev.pages.dev](https://c4b5d22.isa-patyia-dev.pages.dev/) |
 | 2026-07-17 | [db09d2b7.isa-patyia-dev.pages.dev](https://db09d2b7.isa-patyia-dev.pages.dev/) |
 | 2026-07-15 | [121cc5cc.isa-patyia-dev.pages.dev](https://121cc5cc.isa-patyia-dev.pages.dev/) |
 | 2026-07-06 | [8dc93bfd.isa-patyia-dev.pages.dev](https://8dc93bfd.isa-patyia-dev.pages.dev/) |

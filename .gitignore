@@ -7,11 +7,13 @@ package-lock.json
 # no aquí. Si reaparecen por accidente, no se versionan.
 components/
 
-# Tests locales: .mjs/.test.mjs/.test.ts que viven solo en este checkout.
-# No se suben a Git. Para activarlos globalmente, moverlos a src/health/.
-tests/
+# tests/ SE VERSIONA (4-ago-2026): los invariantes de deploy y de alineación con el ISS
+# valen para todo el equipo, no solo para un checkout local.
 
 # Carpetas ocultas (prefijo .) — excepto workflows CI
 **/.*/
 !/.github/
 !/.github/**
+
+# Respaldo del .git de submódulo roto (reparación 4-ago-2026): es local, nunca se versiona.
+.git-roto.bak

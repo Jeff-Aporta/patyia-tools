@@ -14,11 +14,11 @@
     "noImplicitAny": false
   },
   "include": [
-    "js/**/*.ts",
-    "js/**/*.tsx",
-    "js/**/*.jsx",
-    "js/**/*.mjs",
-    "js/global.d.ts",
+    "src/js/**/*.ts",
+    "src/js/**/*.tsx",
+    "src/js/**/*.jsx",
+    "src/js/**/*.mjs",
+    "src/js/global.d.ts",
     "../../components/front-shared/cdn/types/**/*.d.ts"
   ]
 }

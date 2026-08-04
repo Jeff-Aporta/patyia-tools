@@ -41,10 +41,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verificar artefacto _dist
+      - name: Verificar artefacto dist
         run: |
           test -f index.html || (echo "::error::Falta index.html" && exit 1)
-          test -d _dist/js/boot || (echo "::error::Falta _dist — ejecutar gen-front-dist.mjs antes del push" && exit 1)
+          test -d dist/js/boot || (echo "::error::Falta dist — ejecutar gen-front-dist.mjs antes del push" && exit 1)
 
       - uses: actions/configure-pages@v5
 
@@ -91,10 +91,10 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
-      - name: Verificar artefacto _dist
+      - name: Verificar artefacto dist
         run: |
           test -f index.html || (echo "::error::Falta index.html" && exit 1)
-          test -d _dist/js/boot || (echo "::error::Falta _dist — ejecutar gen-front-dist.mjs antes del push" && exit 1)
+          test -d dist/js/boot || (echo "::error::Falta dist — ejecutar gen-front-dist.mjs antes del push" && exit 1)
 
       - name: Publicar en Cloudflare Pages (dev)
         uses: cloudflare/pages-action@v1
