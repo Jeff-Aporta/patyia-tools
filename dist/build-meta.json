@@ -1,0 +1,754 @@
+{
+  "builtAt": "2026-08-04T14:05:47.818Z",
+  "files": 124,
+  "bytesIn": 1319361,
+  "bytesOut": 777667,
+  "ratio": 0.589,
+  "hash": "fb30d4e25a1e",
+  "entries": [
+    {
+      "src": "src/css/app.css",
+      "dist": "dist/css/app.css",
+      "bytesIn": 110952,
+      "bytesOut": 83744
+    },
+    {
+      "src": "src/css/boot-loading.css",
+      "dist": "dist/css/boot-loading.css",
+      "bytesIn": 4783,
+      "bytesOut": 3768
+    },
+    {
+      "src": "src/css/chat-staging.css",
+      "dist": "dist/css/chat-staging.css",
+      "bytesIn": 53721,
+      "bytesOut": 39932
+    },
+    {
+      "src": "src/css/neon-glass-bridge.css",
+      "dist": "dist/css/neon-glass-bridge.css",
+      "bytesIn": 59333,
+      "bytesOut": 47268
+    },
+    {
+      "src": "src/css/theme.css",
+      "dist": "dist/css/theme.css",
+      "bytesIn": 15972,
+      "bytesOut": 12262
+    },
+    {
+      "src": "src/css/todos-staging.css",
+      "dist": "dist/css/todos-staging.css",
+      "bytesIn": 43063,
+      "bytesOut": 32175
+    },
+    {
+      "src": "src/css/welcome-home.css",
+      "dist": "dist/css/welcome-home.css",
+      "bytesIn": 13092,
+      "bytesOut": 10968
+    },
+    {
+      "src": "src/js/api/adjuntosApi.ts",
+      "dist": "dist/js/api/adjuntosApi.js",
+      "bytesIn": 4549,
+      "bytesOut": 1489
+    },
+    {
+      "src": "src/js/api/apiClient.ts",
+      "dist": "dist/js/api/apiClient.js",
+      "bytesIn": 15040,
+      "bytesOut": 7390
+    },
+    {
+      "src": "src/js/api/contactoLookup.ts",
+      "dist": "dist/js/api/contactoLookup.js",
+      "bytesIn": 3198,
+      "bytesOut": 1594
+    },
+    {
+      "src": "src/js/api/issListFilter.ts",
+      "dist": "dist/js/api/issListFilter.js",
+      "bytesIn": 4065,
+      "bytesOut": 1577
+    },
+    {
+      "src": "src/js/api/labApi.ts",
+      "dist": "dist/js/api/labApi.js",
+      "bytesIn": 265,
+      "bytesOut": 327
+    },
+    {
+      "src": "src/js/api/openaiStatusApi.ts",
+      "dist": "dist/js/api/openaiStatusApi.js",
+      "bytesIn": 6809,
+      "bytesOut": 2918
+    },
+    {
+      "src": "src/js/api/patyiaChatApi.ts",
+      "dist": "dist/js/api/patyiaChatApi.js",
+      "bytesIn": 12360,
+      "bytesOut": 4687
+    },
+    {
+      "src": "src/js/api/patyiaTokens.ts",
+      "dist": "dist/js/api/patyiaTokens.js",
+      "bytesIn": 1980,
+      "bytesOut": 691
+    },
+    {
+      "src": "src/js/api/portalJwtApi.ts",
+      "dist": "dist/js/api/portalJwtApi.js",
+      "bytesIn": 4145,
+      "bytesOut": 1697
+    },
+    {
+      "src": "src/js/api/promptsSql.ts",
+      "dist": "dist/js/api/promptsSql.js",
+      "bytesIn": 18613,
+      "bytesOut": 10418
+    },
+    {
+      "src": "src/js/api/sessionApi.ts",
+      "dist": "dist/js/api/sessionApi.js",
+      "bytesIn": 18026,
+      "bytesOut": 7719
+    },
+    {
+      "src": "src/js/api/sysValuesCopy.ts",
+      "dist": "dist/js/api/sysValuesCopy.js",
+      "bytesIn": 5190,
+      "bytesOut": 2566
+    },
+    {
+      "src": "src/js/api/systemConfigApi.ts",
+      "dist": "dist/js/api/systemConfigApi.js",
+      "bytesIn": 28262,
+      "bytesOut": 12434
+    },
+    {
+      "src": "src/js/api/todosApi.ts",
+      "dist": "dist/js/api/todosApi.js",
+      "bytesIn": 10520,
+      "bytesOut": 4546
+    },
+    {
+      "src": "src/js/api/treeMsgsApi.ts",
+      "dist": "dist/js/api/treeMsgsApi.js",
+      "bytesIn": 3194,
+      "bytesOut": 1330
+    },
+    {
+      "src": "src/js/app/App.jsx",
+      "dist": "dist/js/app/App.js",
+      "bytesIn": 13504,
+      "bytesOut": 7835
+    },
+    {
+      "src": "src/js/boot/cdn.mjs",
+      "dist": "dist/js/boot/cdn.mjs",
+      "bytesIn": 7663,
+      "bytesOut": 3808
+    },
+    {
+      "src": "src/js/boot/loader.mjs",
+      "dist": "dist/js/boot/loader.mjs",
+      "bytesIn": 3952,
+      "bytesOut": 2123
+    },
+    {
+      "src": "src/js/boot/theme-init.mjs",
+      "dist": "dist/js/boot/theme-init.mjs",
+      "bytesIn": 376,
+      "bytesOut": 227
+    },
+    {
+      "src": "src/js/components/CopySysValuesModal.jsx",
+      "dist": "dist/js/components/CopySysValuesModal.js",
+      "bytesIn": 3637,
+      "bytesOut": 1882
+    },
+    {
+      "src": "src/js/components/IssTargetSwitch.jsx",
+      "dist": "dist/js/components/IssTargetSwitch.js",
+      "bytesIn": 9734,
+      "bytesOut": 4770
+    },
+    {
+      "src": "src/js/components/ViewAsRoleControl.jsx",
+      "dist": "dist/js/components/ViewAsRoleControl.js",
+      "bytesIn": 4077,
+      "bytesOut": 2319
+    },
+    {
+      "src": "src/js/core/convLog.ts",
+      "dist": "dist/js/core/convLog.js",
+      "bytesIn": 39354,
+      "bytesOut": 20606
+    },
+    {
+      "src": "src/js/core/fileSearchTrace.js",
+      "dist": "dist/js/core/fileSearchTrace.js",
+      "bytesIn": 7060,
+      "bytesOut": 3385
+    },
+    {
+      "src": "src/js/core/isa-setup.ts",
+      "dist": "dist/js/core/isa-setup.js",
+      "bytesIn": 170,
+      "bytesOut": 56
+    },
+    {
+      "src": "src/js/core/lightboxBoot.ts",
+      "dist": "dist/js/core/lightboxBoot.js",
+      "bytesIn": 682,
+      "bytesOut": 325
+    },
+    {
+      "src": "src/js/core/msgDateFormat.ts",
+      "dist": "dist/js/core/msgDateFormat.js",
+      "bytesIn": 1800,
+      "bytesOut": 1008
+    },
+    {
+      "src": "src/js/core/patyia-jwt.ts",
+      "dist": "dist/js/core/patyia-jwt.js",
+      "bytesIn": 13362,
+      "bytesOut": 6013
+    },
+    {
+      "src": "src/js/core/patyia.ts",
+      "dist": "dist/js/core/patyia.js",
+      "bytesIn": 8122,
+      "bytesOut": 3788
+    },
+    {
+      "src": "src/js/core/platform.ts",
+      "dist": "dist/js/core/platform.js",
+      "bytesIn": 24200,
+      "bytesOut": 12956
+    },
+    {
+      "src": "src/js/core/promptVariables.ts",
+      "dist": "dist/js/core/promptVariables.js",
+      "bytesIn": 4368,
+      "bytesOut": 2120
+    },
+    {
+      "src": "src/js/core/theme.ts",
+      "dist": "dist/js/core/theme.js",
+      "bytesIn": 7914,
+      "bytesOut": 4801
+    },
+    {
+      "src": "src/js/core/urlState.ts",
+      "dist": "dist/js/core/urlState.js",
+      "bytesIn": 12356,
+      "bytesOut": 5412
+    },
+    {
+      "src": "src/js/core/viewAsRole.ts",
+      "dist": "dist/js/core/viewAsRole.js",
+      "bytesIn": 4912,
+      "bytesOut": 2403
+    },
+    {
+      "src": "src/js/editors/jsonEditor.jsx",
+      "dist": "dist/js/editors/jsonEditor.js",
+      "bytesIn": 558,
+      "bytesOut": 336
+    },
+    {
+      "src": "src/js/main.jsx",
+      "dist": "dist/js/main.js",
+      "bytesIn": 188,
+      "bytesOut": 90
+    },
+    {
+      "src": "src/js/status/OpenAiStatusRing.jsx",
+      "dist": "dist/js/status/OpenAiStatusRing.js",
+      "bytesIn": 5913,
+      "bytesOut": 3460
+    },
+    {
+      "src": "src/js/tools/ChatTool.jsx",
+      "dist": "dist/js/tools/ChatTool.js",
+      "bytesIn": 9203,
+      "bytesOut": 5990
+    },
+    {
+      "src": "src/js/tools/ConfigPromptsOperativosPanel.jsx",
+      "dist": "dist/js/tools/ConfigPromptsOperativosPanel.js",
+      "bytesIn": 19949,
+      "bytesOut": 12144
+    },
+    {
+      "src": "src/js/tools/ConfigTool.jsx",
+      "dist": "dist/js/tools/ConfigTool.js",
+      "bytesIn": 14057,
+      "bytesOut": 9463
+    },
+    {
+      "src": "src/js/tools/LogViewer.jsx",
+      "dist": "dist/js/tools/LogViewer.js",
+      "bytesIn": 23255,
+      "bytesOut": 13736
+    },
+    {
+      "src": "src/js/tools/PermisosKanban.jsx",
+      "dist": "dist/js/tools/PermisosKanban.js",
+      "bytesIn": 24694,
+      "bytesOut": 13394
+    },
+    {
+      "src": "src/js/tools/PermisosPanel.jsx",
+      "dist": "dist/js/tools/PermisosPanel.js",
+      "bytesIn": 15396,
+      "bytesOut": 8030
+    },
+    {
+      "src": "src/js/tools/PermisosRoleFilterAutocomplete.jsx",
+      "dist": "dist/js/tools/PermisosRoleFilterAutocomplete.js",
+      "bytesIn": 1604,
+      "bytesOut": 1127
+    },
+    {
+      "src": "src/js/tools/PermisosUserAutocomplete.jsx",
+      "dist": "dist/js/tools/PermisosUserAutocomplete.js",
+      "bytesIn": 5954,
+      "bytesOut": 3031
+    },
+    {
+      "src": "src/js/tools/PromptsSqlTool.jsx",
+      "dist": "dist/js/tools/PromptsSqlTool.js",
+      "bytesIn": 4631,
+      "bytesOut": 3091
+    },
+    {
+      "src": "src/js/tools/TodosTool.jsx",
+      "dist": "dist/js/tools/TodosTool.js",
+      "bytesIn": 6032,
+      "bytesOut": 3728
+    },
+    {
+      "src": "src/js/tools/UserPermissionsSummaryDialog.jsx",
+      "dist": "dist/js/tools/UserPermissionsSummaryDialog.js",
+      "bytesIn": 9423,
+      "bytesOut": 6082
+    },
+    {
+      "src": "src/js/tools/WelcomeHome.jsx",
+      "dist": "dist/js/tools/WelcomeHome.js",
+      "bytesIn": 10474,
+      "bytesOut": 7082
+    },
+    {
+      "src": "src/js/tools/chat/ChatComposer.jsx",
+      "dist": "dist/js/tools/chat/ChatComposer.js",
+      "bytesIn": 7127,
+      "bytesOut": 4427
+    },
+    {
+      "src": "src/js/tools/chat/ChatLoggedOutShell.jsx",
+      "dist": "dist/js/tools/chat/ChatLoggedOutShell.js",
+      "bytesIn": 3873,
+      "bytesOut": 3227
+    },
+    {
+      "src": "src/js/tools/chat/ChatMainPanel.jsx",
+      "dist": "dist/js/tools/chat/ChatMainPanel.js",
+      "bytesIn": 6998,
+      "bytesOut": 4540
+    },
+    {
+      "src": "src/js/tools/chat/ChatPayloadPreview.jsx",
+      "dist": "dist/js/tools/chat/ChatPayloadPreview.js",
+      "bytesIn": 2972,
+      "bytesOut": 2287
+    },
+    {
+      "src": "src/js/tools/chat/ChatSessionPanel.jsx",
+      "dist": "dist/js/tools/chat/ChatSessionPanel.js",
+      "bytesIn": 4556,
+      "bytesOut": 2978
+    },
+    {
+      "src": "src/js/tools/chat/ChatThreadSidebar.jsx",
+      "dist": "dist/js/tools/chat/ChatThreadSidebar.js",
+      "bytesIn": 18095,
+      "bytesOut": 11125
+    },
+    {
+      "src": "src/js/tools/chat/ConvSearchAutocomplete.jsx",
+      "dist": "dist/js/tools/chat/ConvSearchAutocomplete.js",
+      "bytesIn": 5835,
+      "bytesOut": 3164
+    },
+    {
+      "src": "src/js/tools/chat/JwtModal.jsx",
+      "dist": "dist/js/tools/chat/JwtModal.js",
+      "bytesIn": 2411,
+      "bytesOut": 1581
+    },
+    {
+      "src": "src/js/tools/chat/TercerosAuditDialog.jsx",
+      "dist": "dist/js/tools/chat/TercerosAuditDialog.js",
+      "bytesIn": 12287,
+      "bytesOut": 6686
+    },
+    {
+      "src": "src/js/tools/chat/audio.ts",
+      "dist": "dist/js/tools/chat/audio.js",
+      "bytesIn": 5748,
+      "bytesOut": 2549
+    },
+    {
+      "src": "src/js/tools/chat/auditScope.ts",
+      "dist": "dist/js/tools/chat/auditScope.js",
+      "bytesIn": 5110,
+      "bytesOut": 1707
+    },
+    {
+      "src": "src/js/tools/chat/constants.ts",
+      "dist": "dist/js/tools/chat/constants.js",
+      "bytesIn": 5622,
+      "bytesOut": 2228
+    },
+    {
+      "src": "src/js/tools/chat/images.ts",
+      "dist": "dist/js/tools/chat/images.js",
+      "bytesIn": 3832,
+      "bytesOut": 1883
+    },
+    {
+      "src": "src/js/tools/chat/mensajesModel.ts",
+      "dist": "dist/js/tools/chat/mensajesModel.js",
+      "bytesIn": 16437,
+      "bytesOut": 7396
+    },
+    {
+      "src": "src/js/tools/chat/threadScroll.ts",
+      "dist": "dist/js/tools/chat/threadScroll.js",
+      "bytesIn": 2326,
+      "bytesOut": 902
+    },
+    {
+      "src": "src/js/tools/chat/types.ts",
+      "dist": "dist/js/tools/chat/types.js",
+      "bytesIn": 2971,
+      "bytesOut": 0
+    },
+    {
+      "src": "src/js/tools/chat/useChatTool.ts",
+      "dist": "dist/js/tools/chat/useChatTool.js",
+      "bytesIn": 55916,
+      "bytesOut": 22235
+    },
+    {
+      "src": "src/js/tools/configFieldPersist.ts",
+      "dist": "dist/js/tools/configFieldPersist.js",
+      "bytesIn": 852,
+      "bytesOut": 387
+    },
+    {
+      "src": "src/js/tools/configOpenAi.ts",
+      "dist": "dist/js/tools/configOpenAi.js",
+      "bytesIn": 4687,
+      "bytesOut": 2460
+    },
+    {
+      "src": "src/js/tools/configPromptsOperativos.ts",
+      "dist": "dist/js/tools/configPromptsOperativos.js",
+      "bytesIn": 9569,
+      "bytesOut": 4681
+    },
+    {
+      "src": "src/js/tools/configToolState.ts",
+      "dist": "dist/js/tools/configToolState.js",
+      "bytesIn": 494,
+      "bytesOut": 284
+    },
+    {
+      "src": "src/js/tools/permAccessFromMap.js",
+      "dist": "dist/js/tools/permAccessFromMap.js",
+      "bytesIn": 4022,
+      "bytesOut": 2353
+    },
+    {
+      "src": "src/js/tools/permFilter.js",
+      "dist": "dist/js/tools/permFilter.js",
+      "bytesIn": 1076,
+      "bytesOut": 596
+    },
+    {
+      "src": "src/js/tools/permJsonPathPolicy.js",
+      "dist": "dist/js/tools/permJsonPathPolicy.js",
+      "bytesIn": 766,
+      "bytesOut": 381
+    },
+    {
+      "src": "src/js/tools/permisosForm.js",
+      "dist": "dist/js/tools/permisosForm.js",
+      "bytesIn": 4100,
+      "bytesOut": 2604
+    },
+    {
+      "src": "src/js/tools/permisosKanbanShared.js",
+      "dist": "dist/js/tools/permisosKanbanShared.js",
+      "bytesIn": 8908,
+      "bytesOut": 4443
+    },
+    {
+      "src": "src/js/tools/permisosRoleConfig.jsx",
+      "dist": "dist/js/tools/permisosRoleConfig.js",
+      "bytesIn": 26266,
+      "bytesOut": 17059
+    },
+    {
+      "src": "src/js/tools/permisosRoleTransfer.js",
+      "dist": "dist/js/tools/permisosRoleTransfer.js",
+      "bytesIn": 2665,
+      "bytesOut": 1782
+    },
+    {
+      "src": "src/js/tools/permisosRouteCatalog.js",
+      "dist": "dist/js/tools/permisosRouteCatalog.js",
+      "bytesIn": 5408,
+      "bytesOut": 3558
+    },
+    {
+      "src": "src/js/tools/permisosVisitante.js",
+      "dist": "dist/js/tools/permisosVisitante.js",
+      "bytesIn": 2720,
+      "bytesOut": 1675
+    },
+    {
+      "src": "src/js/tools/promptsSql/FileImportMapDialog.jsx",
+      "dist": "dist/js/tools/promptsSql/FileImportMapDialog.js",
+      "bytesIn": 3642,
+      "bytesOut": 2498
+    },
+    {
+      "src": "src/js/tools/promptsSql/JconfigDetailDialog.jsx",
+      "dist": "dist/js/tools/promptsSql/JconfigDetailDialog.js",
+      "bytesIn": 2659,
+      "bytesOut": 2703
+    },
+    {
+      "src": "src/js/tools/promptsSql/PromptInstructionDot.jsx",
+      "dist": "dist/js/tools/promptsSql/PromptInstructionDot.js",
+      "bytesIn": 1057,
+      "bytesOut": 660
+    },
+    {
+      "src": "src/js/tools/promptsSql/PromptsSqlActionBar.jsx",
+      "dist": "dist/js/tools/promptsSql/PromptsSqlActionBar.js",
+      "bytesIn": 1875,
+      "bytesOut": 1253
+    },
+    {
+      "src": "src/js/tools/promptsSql/PromptsSqlEditorPane.jsx",
+      "dist": "dist/js/tools/promptsSql/PromptsSqlEditorPane.js",
+      "bytesIn": 6978,
+      "bytesOut": 3668
+    },
+    {
+      "src": "src/js/tools/promptsSql/PromptsSqlTree.jsx",
+      "dist": "dist/js/tools/promptsSql/PromptsSqlTree.js",
+      "bytesIn": 2259,
+      "bytesOut": 1619
+    },
+    {
+      "src": "src/js/tools/promptsSql/cloudRows.ts",
+      "dist": "dist/js/tools/promptsSql/cloudRows.js",
+      "bytesIn": 3021,
+      "bytesOut": 1583
+    },
+    {
+      "src": "src/js/tools/promptsSql/constants.ts",
+      "dist": "dist/js/tools/promptsSql/constants.js",
+      "bytesIn": 808,
+      "bytesOut": 701
+    },
+    {
+      "src": "src/js/tools/promptsSql/helpers.ts",
+      "dist": "dist/js/tools/promptsSql/helpers.js",
+      "bytesIn": 4910,
+      "bytesOut": 2799
+    },
+    {
+      "src": "src/js/tools/promptsSql/promptActions.ts",
+      "dist": "dist/js/tools/promptsSql/promptActions.js",
+      "bytesIn": 7756,
+      "bytesOut": 4677
+    },
+    {
+      "src": "src/js/tools/promptsSql/usePromptsSqlTool.ts",
+      "dist": "dist/js/tools/promptsSql/usePromptsSqlTool.js",
+      "bytesIn": 12216,
+      "bytesOut": 5786
+    },
+    {
+      "src": "src/js/tools/roleCanonicalMeta.js",
+      "dist": "dist/js/tools/roleCanonicalMeta.js",
+      "bytesIn": 752,
+      "bytesOut": 520
+    },
+    {
+      "src": "src/js/tools/todos/BoardSettingsDialog.jsx",
+      "dist": "dist/js/tools/todos/BoardSettingsDialog.js",
+      "bytesIn": 11766,
+      "bytesOut": 6612
+    },
+    {
+      "src": "src/js/tools/todos/BoardsHome.jsx",
+      "dist": "dist/js/tools/todos/BoardsHome.js",
+      "bytesIn": 9454,
+      "bytesOut": 6435
+    },
+    {
+      "src": "src/js/tools/todos/NewBoardDialog.jsx",
+      "dist": "dist/js/tools/todos/NewBoardDialog.js",
+      "bytesIn": 4067,
+      "bytesOut": 2499
+    },
+    {
+      "src": "src/js/tools/todos/PublicScrumBoard.jsx",
+      "dist": "dist/js/tools/todos/PublicScrumBoard.js",
+      "bytesIn": 2090,
+      "bytesOut": 1268
+    },
+    {
+      "src": "src/js/tools/todos/TaskAssigneeLabel.jsx",
+      "dist": "dist/js/tools/todos/TaskAssigneeLabel.js",
+      "bytesIn": 638,
+      "bytesOut": 435
+    },
+    {
+      "src": "src/js/tools/todos/TaskConvoThread.jsx",
+      "dist": "dist/js/tools/todos/TaskConvoThread.js",
+      "bytesIn": 8262,
+      "bytesOut": 5199
+    },
+    {
+      "src": "src/js/tools/todos/TaskDetailDialog.jsx",
+      "dist": "dist/js/tools/todos/TaskDetailDialog.js",
+      "bytesIn": 17878,
+      "bytesOut": 9740
+    },
+    {
+      "src": "src/js/tools/todos/TodosKanban.jsx",
+      "dist": "dist/js/tools/todos/TodosKanban.js",
+      "bytesIn": 13776,
+      "bytesOut": 7464
+    },
+    {
+      "src": "src/js/tools/todos/TodosPublicHome.jsx",
+      "dist": "dist/js/tools/todos/TodosPublicHome.js",
+      "bytesIn": 4678,
+      "bytesOut": 2923
+    },
+    {
+      "src": "src/js/tools/todos/TodosShellParts.jsx",
+      "dist": "dist/js/tools/todos/TodosShellParts.js",
+      "bytesIn": 2876,
+      "bytesOut": 2288
+    },
+    {
+      "src": "src/js/tools/todos/UserAssignAutocomplete.jsx",
+      "dist": "dist/js/tools/todos/UserAssignAutocomplete.js",
+      "bytesIn": 5262,
+      "bytesOut": 2514
+    },
+    {
+      "src": "src/js/tools/todos/boardsHomeState.js",
+      "dist": "dist/js/tools/todos/boardsHomeState.js",
+      "bytesIn": 1449,
+      "bytesOut": 937
+    },
+    {
+      "src": "src/js/tools/todos/todosBoardState.js",
+      "dist": "dist/js/tools/todos/todosBoardState.js",
+      "bytesIn": 1117,
+      "bytesOut": 651
+    },
+    {
+      "src": "src/js/tools/todos/todosKanbanShared.js",
+      "dist": "dist/js/tools/todos/todosKanbanShared.js",
+      "bytesIn": 3497,
+      "bytesOut": 1815
+    },
+    {
+      "src": "src/js/tools/todos/treePathUtils.js",
+      "dist": "dist/js/tools/todos/treePathUtils.js",
+      "bytesIn": 157,
+      "bytesOut": 93
+    },
+    {
+      "src": "src/js/tools/todos/useTodosTool.ts",
+      "dist": "dist/js/tools/todos/useTodosTool.js",
+      "bytesIn": 17719,
+      "bytesOut": 7004
+    },
+    {
+      "src": "src/js/ui/ConvLogThread.jsx",
+      "dist": "dist/js/ui/ConvLogThread.js",
+      "bytesIn": 2886,
+      "bytesOut": 2059
+    },
+    {
+      "src": "src/js/ui/ConvLogWebView.jsx",
+      "dist": "dist/js/ui/ConvLogWebView.js",
+      "bytesIn": 83978,
+      "bytesOut": 47518
+    },
+    {
+      "src": "src/js/ui/GlassDialog.jsx",
+      "dist": "dist/js/ui/GlassDialog.js",
+      "bytesIn": 8199,
+      "bytesOut": 5522
+    },
+    {
+      "src": "src/js/ui/ImageLightboxDialog.jsx",
+      "dist": "dist/js/ui/ImageLightboxDialog.js",
+      "bytesIn": 1367,
+      "bytesOut": 798
+    },
+    {
+      "src": "src/js/ui/PromptBodyEditor.jsx",
+      "dist": "dist/js/ui/PromptBodyEditor.js",
+      "bytesIn": 31789,
+      "bytesOut": 16403
+    },
+    {
+      "src": "src/js/ui/bootShimmer.ts",
+      "dist": "dist/js/ui/bootShimmer.js",
+      "bytesIn": 4456,
+      "bytesOut": 2354
+    },
+    {
+      "src": "src/js/ui/mdImagePaste.ts",
+      "dist": "dist/js/ui/mdImagePaste.js",
+      "bytesIn": 1947,
+      "bytesOut": 1103
+    },
+    {
+      "src": "src/js/ui/mobileDrawer.ts",
+      "dist": "dist/js/ui/mobileDrawer.js",
+      "bytesIn": 479,
+      "bytesOut": 279
+    },
+    {
+      "src": "src/js/ui/promptMdEditorHtml.ts",
+      "dist": "dist/js/ui/promptMdEditorHtml.js",
+      "bytesIn": 8294,
+      "bytesOut": 4292
+    },
+    {
+      "src": "src/js/ui/shared.jsx",
+      "dist": "dist/js/ui/shared.js",
+      "bytesIn": 33992,
+      "bytesOut": 21696
+    }
+  ]
+}
