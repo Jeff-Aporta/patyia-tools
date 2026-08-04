@@ -8,7 +8,7 @@ var __esm = (fn, res, err) => function __init() {
   }
 };
 
-// js/core/patyia.ts
+// src/js/core/patyia.ts
 function isPatyiaApiPath(path) {
   const p = path.startsWith("/") ? path : `/${path}`;
   return p.startsWith("/patyia") || p.startsWith("/api/patyia");
@@ -60,7 +60,7 @@ function buildUserAvatarUrl(name, size = 72) {
 }
 var PATYIA_ISS_URL, PATYIA_ISS_PROD_URL, PATYIA_ISS_LOCAL, PATYIA_ISS_LOCAL_API, PATYIA_ISS_PROD_API, PATYIA_ISS_STAGING_API, PATYIA_ISS_TARGET_LS_KEY, AVATAR_BG_PALETTE;
 var init_patyia = __esm({
-  "js/core/patyia.ts"() {
+  "src/js/core/patyia.ts"() {
     window.ISAFront.migrateLegacyGatewayKeys?.({ "jeff:gateway-local": "", "patyia-apptools:gateway-local": "", "patyia-apptools:lab-local": "" });
     PATYIA_ISS_URL = "https://ayudascp-ia-staging.azurewebsites.net";
     PATYIA_ISS_PROD_URL = "https://ayudascp-ia.azurewebsites.net";
@@ -90,7 +90,7 @@ var init_patyia = __esm({
   }
 });
 
-// js/core/platform.ts
+// src/js/core/platform.ts
 function toastError(text, timeout) {
   fb()?.toast?.error?.(text, timeout);
 }
@@ -99,7 +99,7 @@ function toastWarning(text, timeout) {
 }
 var bridge, Session, Config, fb;
 var init_platform = __esm({
-  "js/core/platform.ts"() {
+  "src/js/core/platform.ts"() {
     init_patyia();
     bridge = () => window.ISAFront.createPlatformBridge("ISA");
     Session = {
@@ -136,40 +136,40 @@ var init_platform = __esm({
   }
 });
 
-// js/api/portalJwtApi.ts
+// src/js/api/portalJwtApi.ts
 var init_portalJwtApi = __esm({
-  "js/api/portalJwtApi.ts"() {
+  "src/js/api/portalJwtApi.ts"() {
     init_platform();
     init_patyia();
   }
 });
 
-// js/api/issListFilter.ts
+// src/js/api/issListFilter.ts
 var init_issListFilter = __esm({
-  "js/api/issListFilter.ts"() {
+  "src/js/api/issListFilter.ts"() {
   }
 });
 
-// js/api/patyiaTokens.ts
+// src/js/api/patyiaTokens.ts
 var init_patyiaTokens = __esm({
-  "js/api/patyiaTokens.ts"() {
+  "src/js/api/patyiaTokens.ts"() {
     init_platform();
   }
 });
 
-// js/api/patyiaChatApi.ts
+// src/js/api/patyiaChatApi.ts
 var init_patyiaChatApi = __esm({
-  "js/api/patyiaChatApi.ts"() {
+  "src/js/api/patyiaChatApi.ts"() {
     init_issListFilter();
     init_patyiaTokens();
     init_patyia();
   }
 });
 
-// js/api/apiClient.ts
+// src/js/api/apiClient.ts
 var bridgeHttp, capFetch, apiUrl, rowVal;
 var init_apiClient = __esm({
-  "js/api/apiClient.ts"() {
+  "src/js/api/apiClient.ts"() {
     init_platform();
     init_patyia();
     init_patyia_jwt();
@@ -194,7 +194,7 @@ var init_apiClient = __esm({
   }
 });
 
-// js/core/patyia-jwt.ts
+// src/js/core/patyia-jwt.ts
 function parseJwtExp(token) {
   try {
     const part = String(token || "").trim().split(".")[1];
@@ -240,7 +240,7 @@ function loadPatyJwt() {
 }
 var PATYIA_JWT_STORAGE_KEY;
 var init_patyia_jwt = __esm({
-  "js/core/patyia-jwt.ts"() {
+  "src/js/core/patyia-jwt.ts"() {
     init_portalJwtApi();
     init_apiClient();
     init_platform();
@@ -248,7 +248,7 @@ var init_patyia_jwt = __esm({
   }
 });
 
-// js/tools/permAccessFromMap.js
+// src/js/tools/permAccessFromMap.js
 function normalizePath(path) {
   let p = String(path ?? "").trim();
   try {
@@ -301,32 +301,32 @@ function capsFromPermisosEfectivos(perms) {
   return {
     canEditOpenAiConfig: hasAccess(p, "PUT", "/api/system/openai"),
     canEditSwagger: hasAccess(p, "PUT", "/api/system/swagger.json"),
-    canEditInstrucciones: hasAccess(p, "PUT", "/api/system/instrucciones") || hasAccess(p, "POST", "/api/patyia/instrucciones/publish"),
+    canEditInstrucciones: hasAccess(p, "PUT", "/api/system/instrucciones"),
     canEditPromptsOperativos: hasAccess(p, "PUT", "/api/system/prompts-operativos"),
     canEditConversacionConfig: hasAccess(p, "PUT", "/api/system/config/conversacion"),
     canOverrideSampling: canAccessOthers(p, "POST", "/api/conversacion"),
     canManagePermissions: manage,
     canAssignUserRoles: assign,
     canEditRoleDescriptions: manage,
-    canAccessOthers: canAccessOthers(p, "GET", "/api/conversaciones"),
+    canAccessOthers: canAccessOthers(p, "QUERY", "/api/conversaciones"),
     canViewKanban: hasAccess(p, "GET", "/api/permisos/usuarios") || hasAccess(p, "GET", API_PERMISOS),
     canEditKanbanCards: assign || hasAccess(p, "POST", "/api/system/permisos/usuarios"),
     canViewLogs: hasAccess(p, "GET", "/api/conversacion/logs/{id}") || hasAccess(p, "GET", "/api/conversacion/logs/*"),
     canViewPrompts: hasAccess(p, "GET", "/api/system/instrucciones"),
-    canViewChat: hasAccess(p, "POST", "/api/conversacion") || hasAccess(p, "POST", "/api/mensaje") || hasAccess(p, "GET", "/api/conversaciones"),
+    canViewChat: hasAccess(p, "POST", "/api/conversacion") || hasAccess(p, "POST", "/api/mensaje") || hasAccess(p, "QUERY", "/api/conversaciones"),
     canViewConfig: hasAccess(p, "GET", "/api/system/openai") || hasAccess(p, "GET", "/api/system/prompts-operativos") || hasAccess(p, "GET", "/api/system/instrucciones") || hasAccess(p, "GET", "/api/system/config/conversacion") || hasAccess(p, "GET", "/api/system/swagger.json") || hasAccess(p, "GET", API_PERMISOS),
     canSendChat: hasAccess(p, "POST", "/api/conversacion") && hasAccess(p, "POST", "/api/mensaje")
   };
 }
 var API_PERMISOS, API_ROLES;
 var init_permAccessFromMap = __esm({
-  "js/tools/permAccessFromMap.js"() {
+  "src/js/tools/permAccessFromMap.js"() {
     API_PERMISOS = "/api/system/permisos";
     API_ROLES = "/api/system/permisos/usuarios/*/roles";
   }
 });
 
-// js/api/systemConfigApi.ts
+// src/js/api/systemConfigApi.ts
 function systemApiBase() {
   return resolveIssApiBase();
 }
@@ -395,23 +395,39 @@ async function fetchPermissionsMe(opts) {
   if (!opts?.force && PERMISSIONS_ME_INFLIGHT) return PERMISSIONS_ME_INFLIGHT;
   const f = opts?.fetchImpl ?? fetch;
   const req = (async () => {
-    const res = await f(`${systemApiBase()}/permissions/me`, {
-      method: "GET",
-      headers: { ...headers, Accept: "application/json" },
-      credentials: "omit"
-    });
-    if (res.status === 401) {
+    const hit = async (base) => {
+      const res = await f(`${base.replace(/\/+$/, "")}/permissions/me`, {
+        method: "GET",
+        headers: { ...headers, Accept: "application/json" },
+        credentials: "omit"
+      });
+      if (res.status === 401) return { status: 401, data: null };
+      if (!res.ok) return { status: res.status, data: null };
+      const data = unwrapBody(await res.json());
+      if (!data || data.kind !== "insoft.permissions-me") return { status: res.status, data: null };
+      return { status: res.status, data };
+    };
+    let got = await hit(systemApiBase());
+    if (isLocalMode()) {
+      try {
+        const stg = await hit(PATYIA_ISS_STAGING_API);
+        if (stg.data) {
+          console.warn("[seg-front] permissions/me v\xEDa staging");
+          got = stg;
+        }
+      } catch {
+      }
+    }
+    if (got.status === 401) {
       PERMISSIONS_ME_CACHE.value = null;
       return null;
     }
-    if (!res.ok) return PERMISSIONS_ME_CACHE.value;
-    const data = unwrapBody(await res.json());
-    if (!data || data.kind !== "insoft.permissions-me") return PERMISSIONS_ME_CACHE.value;
-    PERMISSIONS_ME_CACHE.value = data;
-    PERMISSIONS_ME_CACHE.iat = data.iat || Date.now();
-    PERMISSIONS_ME_CACHE.ttlMs = data.ttlMs || 8 * 60 * 60 * 1e3;
+    if (!got.data) return PERMISSIONS_ME_CACHE.value;
+    PERMISSIONS_ME_CACHE.value = got.data;
+    PERMISSIONS_ME_CACHE.iat = got.data.iat || Date.now();
+    PERMISSIONS_ME_CACHE.ttlMs = got.data.ttlMs || 8 * 60 * 60 * 1e3;
     PERMISSIONS_ME_CACHE.key = sessionKey;
-    return data;
+    return got.data;
   })().finally(() => {
     if (PERMISSIONS_ME_INFLIGHT === req) PERMISSIONS_ME_INFLIGHT = null;
   });
@@ -431,7 +447,7 @@ function invalidatePermisosCache() {
 }
 var CONTAPYME_NOAUTH_RX, PERMISSIONS_ME_CACHE, PERMISSIONS_ME_INFLIGHT, PERMISOS_LIST_CACHE, PERMISOS_LIST_INFLIGHT;
 var init_systemConfigApi = __esm({
-  "js/api/systemConfigApi.ts"() {
+  "src/js/api/systemConfigApi.ts"() {
     init_platform();
     init_patyia();
     init_patyia_jwt();
@@ -444,14 +460,14 @@ var init_systemConfigApi = __esm({
   }
 });
 
-// js/tools/roleCanonicalMeta.js
+// src/js/tools/roleCanonicalMeta.js
 function canonicalRoleMeta(roleName) {
   const key = String(roleName ?? "").trim().toUpperCase();
   return CANONICAL_ROLE_META[key] ?? null;
 }
 var CANONICAL_ROLE_META;
 var init_roleCanonicalMeta = __esm({
-  "js/tools/roleCanonicalMeta.js"() {
+  "src/js/tools/roleCanonicalMeta.js"() {
     CANONICAL_ROLE_META = {
       AUDITOR: {
         namedisplay: "Auditor",
@@ -473,7 +489,7 @@ var init_roleCanonicalMeta = __esm({
   }
 });
 
-// js/core/viewAsRole.ts
+// src/js/core/viewAsRole.ts
 function roleKey(name) {
   return String(name ?? "").trim().toUpperCase();
 }
@@ -537,7 +553,7 @@ function clampViewAsCapsToReal(preset, realCaps) {
 }
 var VIEW_AS_ROLE_LS_KEY, VIEW_AS_ROLE_EVENT, VIEW_AS_ROLE_OPTIONS, NONE, ROLE_CAPS_PRESETS;
 var init_viewAsRole = __esm({
-  "js/core/viewAsRole.ts"() {
+  "src/js/core/viewAsRole.ts"() {
     init_roleCanonicalMeta();
     VIEW_AS_ROLE_LS_KEY = "isa-patyia:view-as-role";
     VIEW_AS_ROLE_EVENT = "patyia-apptools:view-as-role";
@@ -608,7 +624,7 @@ var init_viewAsRole = __esm({
   }
 });
 
-// js/api/sessionApi.ts
+// src/js/api/sessionApi.ts
 function formatRoleTitle(roleName) {
   const key = String(roleName ?? "").trim().toUpperCase();
   if (!key) return "";
@@ -920,7 +936,7 @@ function handleApiError(err, cap) {
 }
 var ROLE_PRIORITY, INSTRUCCIONES_WRITE_CAP, TARGET_SWITCH_CAP, FORCE_PERMS_OPEN, OPEN_ME_CAPS, ME_CAP_KEYS, ME_CAPS, ME_CAPS_KEY, ME_ISS_ROLES, ME_LOGIN_ROLE, ME_CAPS_BOOTSTRAP_TS, ME_CAPS_INFLIGHT, ME_CAPS_RETRY_TIMER, ME_SERVER_INSTRUCCIONES_EDIT, ME_CAPS_FETCH_GUARD_MS, ME_CAPS_REENTRY_GUARD_MS, isLoggedIn, can, blockReason, clearSession;
 var init_sessionApi = __esm({
-  "js/api/sessionApi.ts"() {
+  "src/js/api/sessionApi.ts"() {
     init_platform();
     init_platform();
     init_patyia();

@@ -1,4 +1,4 @@
-// js/api/openaiStatusApi.ts
+// src/js/api/openaiStatusApi.ts
 var OPENAI_STATUS_POLL_MS = 6e4;
 var SUMMARY_URL = "https://status.openai.com/api/v2/summary.json";
 var STATUS_PAGE = "https://status.openai.com/";

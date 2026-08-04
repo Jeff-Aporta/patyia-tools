@@ -8,7 +8,7 @@ var __esm = (fn, res, err) => function __init() {
   }
 };
 
-// js/core/patyia.ts
+// src/js/core/patyia.ts
 function avatarBgFromName(name) {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = h * 31 + name.charCodeAt(i) >>> 0;
@@ -25,7 +25,7 @@ function buildUserAvatarUrl(name, size = 72) {
 }
 var ORCH_ONLINE, PATYIA_ISS_URL, PATYIA_ISS_PROD_URL, PATYIA_ISS_LOCAL, PATYIA_ISS_LOCAL_API, PATYIA_ISS_PROD_API, PATYIA_ISS_STAGING_API, AVATAR_BG_PALETTE;
 var init_patyia = __esm({
-  "js/core/patyia.ts"() {
+  "src/js/core/patyia.ts"() {
     window.ISAFront.migrateLegacyGatewayKeys?.({ "jeff:gateway-local": "", "patyia-apptools:gateway-local": "", "patyia-apptools:lab-local": "" });
     ORCH_ONLINE = "https://main-orchestrator.jeffaporta.workers.dev";
     PATYIA_ISS_URL = "https://ayudascp-ia-staging.azurewebsites.net";
@@ -55,10 +55,10 @@ var init_patyia = __esm({
   }
 });
 
-// js/core/platform.ts
+// src/js/core/platform.ts
 var bridge, Session;
 var init_platform = __esm({
-  "js/core/platform.ts"() {
+  "src/js/core/platform.ts"() {
     init_patyia();
     bridge = () => window.ISAFront.createPlatformBridge("ISA");
     Session = {
@@ -85,7 +85,7 @@ var init_platform = __esm({
   }
 });
 
-// js/api/portalJwtApi.ts
+// src/js/api/portalJwtApi.ts
 function orchBase() {
   return ORCH_ONLINE.replace(/\/$/, "");
 }
@@ -149,7 +149,7 @@ async function removePortalJwt(portal = PATYIA_PORTAL_ID) {
 }
 var PATYIA_PORTAL_ID;
 var init_portalJwtApi = __esm({
-  "js/api/portalJwtApi.ts"() {
+  "src/js/api/portalJwtApi.ts"() {
     init_platform();
     init_patyia();
     PATYIA_PORTAL_ID = "soporte-staging";

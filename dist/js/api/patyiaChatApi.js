@@ -8,51 +8,42 @@ var __esm = (fn, res, err) => function __init() {
   }
 };
 
-// js/api/issListFilter.ts
-function encodeIssListFilterB64(filter) {
-  const json = JSON.stringify(filter);
-  return btoa(unescape(encodeURIComponent(json)));
-}
+// src/js/api/issListFilter.ts
 function buildConversacionesListFilter(input = {}) {
   const limit = Math.min(100, Math.max(1, Math.floor(Number(input.limit) || 10)));
   const offset = Math.max(0, Math.floor(Number(input.offset) || 0));
   const sort = String(input.sort || CONVERSACIONES_LIST_SORT_DEFAULT).trim() || CONVERSACIONES_LIST_SORT_DEFAULT;
   const search = String(input.search ?? "").trim().slice(0, 200);
+  const itercero = String(input.itercero ?? "").trim();
+  const icontacto = String(input.icontacto ?? "").trim();
   return {
     limit,
     offset,
     sort,
-    ...search ? { search } : {}
+    ...search ? { search } : {},
+    ...itercero && icontacto ? { itercero, icontacto } : {}
   };
 }
-function conversacionesListQueryParams(input = {}) {
+function conversacionesListBody(input = {}) {
   const limit = Math.min(100, Math.max(1, Math.floor(Number(input.limit) || 10)));
   const page = Math.max(1, Math.floor(Number(input.page) || 1));
-  const offset = (page - 1) * limit;
-  const qs = new URLSearchParams();
-  qs.set(ISS_LIST_FILTER_QUERY_PARAM, encodeIssListFilterB64(buildConversacionesListFilter({
+  return buildConversacionesListFilter({
     search: input.search,
     limit,
-    offset,
-    sort: input.sort
-  })));
-  const itercero = String(input.itercero ?? "").trim();
-  const icontacto = String(input.icontacto ?? "").trim();
-  if (itercero && icontacto) {
-    qs.set("itercero", itercero);
-    qs.set("icontacto", icontacto);
-  }
-  return qs;
+    offset: (page - 1) * limit,
+    sort: input.sort,
+    itercero: input.itercero,
+    icontacto: input.icontacto
+  });
 }
-var ISS_LIST_FILTER_QUERY_PARAM, CONVERSACIONES_LIST_SORT_DEFAULT;
+var CONVERSACIONES_LIST_SORT_DEFAULT;
 var init_issListFilter = __esm({
-  "js/api/issListFilter.ts"() {
-    ISS_LIST_FILTER_QUERY_PARAM = "f";
+  "src/js/api/issListFilter.ts"() {
     CONVERSACIONES_LIST_SORT_DEFAULT = "-iconversacion";
   }
 });
 
-// js/core/patyia.ts
+// src/js/core/patyia.ts
 function patyiaIssBase() {
   const t = getIssTarget();
   if (t === "local") return PATYIA_ISS_LOCAL.replace(/\/$/, "");
@@ -134,7 +125,7 @@ async function readPatyiaSseStream(response, onEvent) {
 }
 var PATYIA_ISS_URL, PATYIA_ISS_PROD_URL, PATYIA_ISS_LOCAL, PATYIA_ISS_LOCAL_API, PATYIA_ISS_PROD_API, PATYIA_ISS_STAGING_API, PATYIA_ISS_TARGET_LS_KEY, AVATAR_BG_PALETTE;
 var init_patyia = __esm({
-  "js/core/patyia.ts"() {
+  "src/js/core/patyia.ts"() {
     window.ISAFront.migrateLegacyGatewayKeys?.({ "jeff:gateway-local": "", "patyia-apptools:gateway-local": "", "patyia-apptools:lab-local": "" });
     PATYIA_ISS_URL = "https://ayudascp-ia-staging.azurewebsites.net";
     PATYIA_ISS_PROD_URL = "https://ayudascp-ia.azurewebsites.net";
@@ -164,14 +155,14 @@ var init_patyia = __esm({
   }
 });
 
-// js/core/platform.ts
+// src/js/core/platform.ts
 var init_platform = __esm({
-  "js/core/platform.ts"() {
+  "src/js/core/platform.ts"() {
     init_patyia();
   }
 });
 
-// js/api/patyiaTokens.ts
+// src/js/api/patyiaTokens.ts
 function patyAuthHeaders(jwt, extra = {}) {
   return {
     Authorization: `Bearer ${jwt.token}`,
@@ -180,12 +171,12 @@ function patyAuthHeaders(jwt, extra = {}) {
   };
 }
 var init_patyiaTokens = __esm({
-  "js/api/patyiaTokens.ts"() {
+  "src/js/api/patyiaTokens.ts"() {
     init_platform();
   }
 });
 
-// js/api/patyiaChatApi.ts
+// src/js/api/patyiaChatApi.ts
 function authHeaders(jwt, extra = {}) {
   return patyAuthHeaders(jwt, extra);
 }
@@ -230,21 +221,13 @@ async function jsonFetch(path, jwt, init) {
   }
   return {};
 }
-function buildConversacionesListPath(input = {}) {
-  const qs = conversacionesListQueryParams({
-    page: input.page,
-    limit: input.limit,
-    search: input.search,
-    sort: input.sort,
-    itercero: input.itercero,
-    icontacto: input.icontacto
-  });
-  return `/conversaciones?${qs.toString()}`;
-}
 async function listConversaciones(jwt, input = {}) {
   const page = Math.max(1, Math.floor(Number(input.page) || 1));
   const limit = Math.min(100, Math.max(1, Math.floor(Number(input.limit) || 10)));
-  const body = await jsonFetch(buildConversacionesListPath(input), jwt);
+  const body = await jsonFetch("/conversaciones", jwt, {
+    method: "QUERY",
+    body: JSON.stringify(conversacionesListBody(input))
+  });
   const conversaciones = Array.isArray(body.conversaciones) ? body.conversaciones : [];
   const total = Number(body.total ?? 0) || 0;
   const resLimit = Number(body.limit ?? limit) || limit;
@@ -257,6 +240,10 @@ async function getConversacion(jwt, id) {
 }
 async function getConversacionLogs(jwt, id) {
   return jsonFetch(`/conversacion/logs/${id}`, jwt);
+}
+async function getConversacionMcpSession(jwt, id, sessionId) {
+  const q = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
+  return jsonFetch(`/conversacion/${id}/mcp-session${q}`, jwt);
 }
 function convLogFromDetalle(detail, id) {
   const raw = detail?.convLog;
@@ -377,7 +364,7 @@ async function sendConversacionStream(jwt, input, onDelta) {
   };
 }
 var init_patyiaChatApi = __esm({
-  "js/api/patyiaChatApi.ts"() {
+  "src/js/api/patyiaChatApi.ts"() {
     init_issListFilter();
     init_patyiaTokens();
     init_patyia();
@@ -393,6 +380,7 @@ export {
   getConversacion,
   getConversacionLogs,
   getConversacionLogsWithRetry,
+  getConversacionMcpSession,
   listConversaciones,
   postMensajeCalificado,
   resolveChatSendText,
