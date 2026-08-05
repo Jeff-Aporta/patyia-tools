@@ -70,15 +70,16 @@ function endpointsDelFront() {
 const NO_SON_LLAMADAS = new Map([
   ["/api/patyia", "prefijo que el front concatena (/api/patyia + /admin/roles); la ruta real sí existe en el ISS."],
   ["/api/permisos/usuarios", "clave de permiso en permAccessFromMap.js (hasAccess), no una URL que se pida."],
+  // ISS retiró GET list; kanban usa GET /api/patyia/admin/roles (permissionsFromAdminRoles). Quedan strings en catálogo/comentarios.
+  ["/api/system/permisos", "4-ago-2026 cerrado: no es llamada — listado vía admin/roles. Strings residuales en route catalog / JSDoc."],
 ]);
 
 /**
  * Deuda abierta: desalineación real, ya diagnosticada, pendiente de arreglo en el ISS.
  * Si el ISS repone la ruta, el test avisa para borrarla de aquí — si no, la lista miente con el tiempo.
+ * (Vacío a 4-ago tarde: GET /system/permisos migrado a admin/roles en el front.)
  */
-const DEUDA_ABIERTA = new Map([
-  ["/api/system/permisos", "4-ago-2026: el ISS ya no la registra en 01-api.json (su llm.md sí la documenta) y responde 404. El front la pide en contactoLookup.ts dentro de try/catch → los roles nunca cargan, sin error visible. Se repone en el ISS, no acá."],
-]);
+const DEUDA_ABIERTA = new Map([]);
 
 test("ISS-01 — el front no llama endpoints que el ISS no expone", () => {
   const iss = endpointsDelIss();
@@ -121,6 +122,7 @@ const CLAVES_PERMISO_SIN_RUTA = new Map([
   ["/api/permisos/usuarios", "canViewKanban — tiene alternativa (API_PERMISOS), así que el kanban sigue visible."],
   ["/api/system/swagger.json", "canEditSwagger — el ISS sirve /api/system/swagger/config.json. El editor de swagger queda oculto."],
   ["/api/system/permisos/usuarios", "canEditKanbanCards — cubierto por `assign`, así que no bloquea por sí solo."],
+  ["/api/system/permisos", "4-ago tarde: GET list retirado en ISS; kanban usa admin/roles. Clave residual en API_PERMISOS / catálogo."],
 ]);
 
 test("ISS-02 — claves de permiso sin ruta en el ISS (solo las conocidas)", () => {

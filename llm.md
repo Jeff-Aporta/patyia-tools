@@ -1249,11 +1249,11 @@ Test de regresión: `tests/alineacion-iss-y-deploy.test.mjs` (8 casos, verificad
 - **No confiar en que una ruta `/api/...` del front exista en el ISS.** Las llamadas van dentro de `try/catch`: si el ISS no la expone, la función queda muerta **sin error visible**. `ISS-01` compara contra `01-api.json` del ISS y falla ante cualquier desalineación nueva.
 - **No commitear `.git-roto.bak`.** Ya está en `.gitignore`.
 
-### Deuda abierta con el ISS (4-ago-2026)
+### Deuda abierta con el ISS (4-ago-2026) — ACTUALIZADO tarde
 
-`GET /api/system/permisos` responde **404**: el ISS ya no la registra en `01-api.json`, aunque su propio `llm.md` la documenta («roles + usuarios kanban»). El front la pide en `contactoLookup.ts` dentro de `try/catch` → **los roles nunca cargan y nadie ve un error**. Se repone en el ISS, no acá. Anotada en `DEUDA_ABIERTA` del test; cuando el ISS la reponga, `ISS-01` avisa para sacarla de la lista.
+~~`GET /api/system/permisos` 404 / «se repone en el ISS»~~ → **CERRADO.** El ISS no la repone. Front lista kanban con `GET /api/patyia/admin/roles` (`permissionsFromAdminRoles`). `contactoLookup` usa `/permissions/me`. Ver § «Sesión 4-ago-2026 (tarde)» abajo.
 
-Aparte, tres **claves de permiso** de `permAccessFromMap.js` no corresponden a rutas reales del ISS (`ISS-02`). No son llamadas, pero `hasAccess` nunca las concede, así que el control de UI que dependa solo de ellas queda oculto para siempre: `/api/system/swagger.json` (el editor de swagger; el ISS sirve `/api/system/swagger/config.json`), `/api/permisos/usuarios` y `/api/system/permisos/usuarios` (ambas con alternativa, así que hoy no bloquean).
+Aparte, **claves de permiso** de `permAccessFromMap.js` sin ruta real en el ISS (`ISS-02` / `CLAVES_PERMISO_SIN_RUTA`): `/api/system/swagger.json` (ISS sirve `/api/system/swagger/config.json`), `/api/permisos/usuarios`, `/api/system/permisos/usuarios`, y residual `/api/system/permisos` (ya no es llamada de listado).
 
 ### El repo estaba desenganchado
 
@@ -1360,3 +1360,44 @@ Revertido a `cdnVendor: false`. El `index.html` volvió al importmap de `esm.sh`
 |-------|---------------|-----------|
 | Dar por bueno un cambio de carga porque «todos los recursos responden 200» | Los siete archivos del vendor daban 200 y la app igual no arrancaba: el problema era el **contenido** del módulo, no su existencia | Un cambio en cómo carga la app **solo** se valida ejecutándola en el navegador |
 | Cumplir un invariante sin comprobar que lo que exige funcione | VENDOR-01 pedía `cdnVendor:true`; obedecerlo dejaba la app muerta | Un invariante que exige un estado roto está mal escrito: corregir el invariante, no forzar el estado |
+
+
+---
+
+## Sesión 4-ago-2026 (tarde) — Soft reload, kanban sin GET permisos, CDN pin+_dist
+
+Complementa la sección «Alineación / deploy» del mismo día. Commits ref: `9f287d1` `9a099a9`. Backend paralelo en ISS `llm.md` § «Sesión 4-ago-2026 — Portal login…».
+
+### E. Soft reload Config — sin skeleton al guardar OpenAI
+
+| | |
+|--|--|
+| **Síntoma** | Al cambiar un campo OpenAI (`max_num_results`, modelo…), el panel de prompts operativos muestra skeleton. |
+| **Causa** | `putOpenAi` dispara `isa-patyia:openai-config` → prompts hacían `load()` full con `setLoading(true)`. Los modelos ya llegan por props. |
+| **SÍ** | No refetch prompts por evento openai. Auth/refresh: `load({ soft: true })` sin skeleton. Skeleton solo en la 1ª carga. |
+| **NO** | Encadenar recargas full-screen entre secciones hermanas del mismo panel Config. |
+
+### F. Kanban permisos — no llamar `GET /system/permisos`
+
+| | |
+|--|--|
+| **Síntoma** | Consola: `GET /api/system/permisos?limit=10` → 404; roles no cargaban (try/catch silencioso). |
+| **Causa** | ISS retiró el CRUD local `/system/permisos`. El listado vivía ahí. |
+| **SÍ** | `fetchPermisosListRaw` → `fetchPatyiaAdminRoles` → `permissionsFromAdminRoles`. Contacto actual: `GET /permissions/me`. Username kanban puede ser el `icontacto` numérico (ISS `resolveIcontacto` lo acepta). |
+| **NO** | Volver a pedir `GET /system/permisos` «por si acaso». No dejar la deuda «se repone en el ISS» — **no se repone**; el front migró. Actualizar `DEUDA_ABIERTA` / `NO_SON_LLAMADAS` en `tests/alineacion-iss-y-deploy.test.mjs`. |
+
+### G. CDN neon-glass 404
+
+| | |
+|--|--|
+| **Síntoma** | `CSS no cargó: …jsdelivr…/front-shared@f8ce806/cdn/dist/isa/css/kits/neon-glass.min.css`. |
+| **Causa** | Pin `f8ce806` inexistente en GitHub; en HTTP Live Server el vendor no resolvía same-origin y caía a jsDelivr; remoto publica `_dist/`, no `dist/`. |
+| **SÍ** | Pin válido (`0a19d91` en `cdn.mjs` / vendor). Same-origin → raíz vendor (`/dist/isa/` o `/_dist/isa/`). jsDelivr → `/_dist`. Verificar 200 del CSS antes de regenerar HTML. |
+| **NO** | Hardcodear pins muertos. Asumir `cdn/dist/` en jsDelivr. Confiar en fallback remoto sin probar el recurso. |
+
+### Checklist front (Config / permisos / CSS)
+
+1. ¿Cambio OpenAI pisa prompts? → no escuchar `openai-config` para refetch; soft load.
+2. ¿Kanban vacío / 404 permisos? → admin/roles, no GET list legacy.
+3. ¿CSS ISAFront 404? → pin existe + `_dist` remoto + same-origin local.
+4. ¿Tests? → `tests/` **versionado** en este repo (no gitignore). ISS usa `src/utils/health/` porque su `/tests/` sí está ignorado.
