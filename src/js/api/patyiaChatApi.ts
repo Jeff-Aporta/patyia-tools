@@ -228,9 +228,9 @@ export type SendMessageInput = {
    * URLs R2 firmadas (multimedia/...). Subidas en cliente vía POST /api/adjuntos/imagenes.
    * Compatibilidad: data URLs base64 legacy se rechazan (subir antes).
    */
-  imagenes?: string[];
+  imagenes?: Array<string | Record<string, unknown>>;
   /** URLs R2 firmadas (multimedia/...). Subidas en cliente vía POST /api/adjuntos/audios. */
-  audios?: string[];
+  audios?: Array<string | Record<string, unknown>>;
   mode?: string;
   /** Solo enviar si no es openai (default servidor). */
   provider?: string;
@@ -261,15 +261,40 @@ export function coerceConversacionPrompt(prompt: unknown): string {
   return typeof prompt === "string" ? prompt.trim() : "";
 }
 
-/** Cuerpo JSON del POST /conversacion (URLs R2 firmadas; sin base64). */
+function adjuntoUrl(item: unknown): string {
+  if (typeof item === "string") return item.trim();
+  if (item && typeof item === "object") {
+    const o = item as { url?: unknown; dataUrl?: unknown };
+    return String(o.url ?? o.dataUrl ?? "").trim();
+  }
+  return "";
+}
+
+function normalizeAdjuntoWire(item: unknown): string | Record<string, unknown> | null {
+  if (typeof item === "string") {
+    const s = item.trim();
+    return (isHttpUrl(s) || isLegacyDataUrl(s)) ? s : null;
+  }
+  if (!item || typeof item !== "object") return null;
+  const o = item as Record<string, unknown>;
+  const url = adjuntoUrl(o);
+  if (!url || !(isHttpUrl(url) || isLegacyDataUrl(url))) return null;
+  const ifile = String(o.ifile ?? o.IFILE ?? "").trim();
+  if (!ifile) return url;
+  const variants = (o.variants && typeof o.variants === "object") ? o.variants : undefined;
+  return {
+    url,
+    ifile,
+    ...(typeof o.kind === "string" ? { kind: o.kind } : {}),
+    ...(variants ? { variants } : {}),
+  };
+}
+
+/** Cuerpo JSON del POST /conversacion (URLs R2 firmadas + ifile; sin base64). */
 export function buildConversacionPostBody(input: SendMessageInput): Record<string, unknown> {
   const text = coerceConversacionPrompt(input.prompt);
-  const imagenes = (input.imagenes || [])
-    .map((s) => String(s || "").trim())
-    .filter((s) => isHttpUrl(s) || isLegacyDataUrl(s));
-  const audios = (input.audios || [])
-    .map((s) => String(s || "").trim())
-    .filter((s) => isHttpUrl(s) || isLegacyDataUrl(s));
+  const imagenes = (input.imagenes || []).map(normalizeAdjuntoWire).filter((x): x is NonNullable<typeof x> => x != null);
+  const audios = (input.audios || []).map(normalizeAdjuntoWire).filter((x): x is NonNullable<typeof x> => x != null);
   const hasMedia = imagenes.length > 0 || audios.length > 0;
   const body: Record<string, unknown> = {
     prompt: text || (imagenes.length ? "(imagen adjunta)" : audios.length ? "(nota de voz)" : ""),
@@ -305,8 +330,15 @@ export function formatConversacionPostBodyPreview(
     }
     return `${s.slice(0, maxUrl)}…`;
   };
-  if (Array.isArray(clone.imagenes)) clone.imagenes = clone.imagenes.map((img, i) => summarize(img, "img", i));
-  if (Array.isArray(clone.audios)) clone.audios = clone.audios.map((a, i) => summarize(a, "audio", i));
+  const summarizeItem = (item: unknown, label: string, i: number) => {
+    if (item && typeof item === "object") {
+      const o = item as { url?: unknown; ifile?: unknown };
+      return { ...o, url: summarize(o.url, label, i) };
+    }
+    return summarize(item, label, i);
+  };
+  if (Array.isArray(clone.imagenes)) clone.imagenes = clone.imagenes.map((img, i) => summarizeItem(img, "img", i));
+  if (Array.isArray(clone.audios)) clone.audios = clone.audios.map((a, i) => summarizeItem(a, "audio", i));
   return JSON.stringify(clone, null, 2);
 }
 

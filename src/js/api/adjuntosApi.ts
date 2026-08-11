@@ -7,6 +7,8 @@ import { resolveIssApiBase } from "../core/patyia.ts";
 import type { PatyJwtRecord } from "../core/patyia-jwt.ts";
 import { patyAuthHeaders } from "./patyiaTokens.ts";
 
+export type AdjuntoVariantUrls = { thumb?: string; med?: string; original?: string };
+
 export type AdjuntoSubido = {
   key: string;
   url: string;
@@ -14,7 +16,17 @@ export type AdjuntoSubido = {
   bytes: number;
   filename: string;
   ifile?: string;
+  kind?: "imagen" | "audio";
+  variants?: AdjuntoVariantUrls;
   expiresAt?: string;
+};
+
+/** Wire hacia POST /conversacion: URL seguible + ifile FILES_STORAGE. */
+export type AdjuntoChatRef = {
+  url: string;
+  ifile?: string;
+  kind?: "imagen" | "audio";
+  variants?: AdjuntoVariantUrls;
 };
 
 export type UploadAdjuntosInput = {
@@ -32,7 +44,11 @@ type FileUploadRow = {
     kind?: string;
     mime?: string;
     filename?: string;
-    variants?: { original?: { key?: string; url?: string; mime?: string; bytes?: number } };
+    variants?: {
+      thumb?: { key?: string; url?: string; mime?: string; bytes?: number };
+      med?: { key?: string; url?: string; mime?: string; bytes?: number };
+      original?: { key?: string; url?: string; mime?: string; bytes?: number };
+    };
     meta?: { sizeBytes?: number };
   };
 };
@@ -58,16 +74,30 @@ function arrayBufferToBase64(buf: ArrayBuffer): string {
   return btoa(binary);
 }
 
-function rowToAdjunto(row: FileUploadRow, fallbackName: string): AdjuntoSubido {
-  const v = row.jfile?.variants?.original;
-  if (!v?.url) throw new Error("ISS file/upload sin variants.original.url");
+function variantUrl(v: { url?: string } | undefined): string | undefined {
+  const u = String(v?.url || "").trim();
+  return u || undefined;
+}
+
+function rowToAdjunto(row: FileUploadRow, fallbackName: string, kind: "imagen" | "audio"): AdjuntoSubido {
+  const variants = row.jfile?.variants;
+  const original = variants?.original;
+  const url = original?.url || variants?.med?.url;
+  if (!url) throw new Error("ISS file/upload sin variants.original.url");
+  const variantUrls: AdjuntoVariantUrls = {
+    ...(variantUrl(variants?.thumb) ? { thumb: variantUrl(variants?.thumb) } : {}),
+    ...(variantUrl(variants?.med) ? { med: variantUrl(variants?.med) } : {}),
+    ...(variantUrl(original) ? { original: variantUrl(original) } : {}),
+  };
   return {
-    key: String(v.key || ""),
-    url: String(v.url),
-    mime: String(v.mime || row.jfile?.mime || "application/octet-stream"),
-    bytes: Number(v.bytes ?? row.jfile?.meta?.sizeBytes ?? 0),
+    key: String(original?.key || ""),
+    url: String(url),
+    mime: String(original?.mime || row.jfile?.mime || "application/octet-stream"),
+    bytes: Number(original?.bytes ?? row.jfile?.meta?.sizeBytes ?? 0),
     filename: String(row.jfile?.filename || fallbackName),
     ifile: row.ifile ? String(row.ifile) : undefined,
+    kind,
+    ...(Object.keys(variantUrls).length ? { variants: variantUrls } : {}),
   };
 }
 
@@ -99,7 +129,7 @@ async function uploadOneFile(
     throw new Error(typeof err === "string" ? err : JSON.stringify(err));
   }
   const row = unwrapIss<FileUploadRow>(json);
-  return rowToAdjunto(row, file.name || kind);
+  return rowToAdjunto(row, file.name || kind, kind);
 }
 
 async function uploadFiles(
@@ -155,4 +185,17 @@ export async function uploadImagenes(
 /** Recolecta las URLs en el orden de los archivos subidos. */
 export function urlsFromAdjuntos(items: AdjuntoSubido[]): string[] {
   return items.map((i) => i.url).filter(Boolean);
+}
+
+/** Payload chat: objeto con ifile si existe; si no, URL suelta (legacy). */
+export function chatRefsFromAdjuntos(items: AdjuntoSubido[], kind: "imagen" | "audio"): Array<string | AdjuntoChatRef> {
+  return items.map((i) => {
+    if (!i.ifile) return i.url;
+    return {
+      url: i.url,
+      ifile: i.ifile,
+      kind: i.kind || kind,
+      ...(i.variants ? { variants: i.variants } : {}),
+    };
+  }).filter((r) => (typeof r === "string" ? Boolean(r) : Boolean(r.url)));
 }

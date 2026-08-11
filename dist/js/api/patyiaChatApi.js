@@ -295,10 +295,37 @@ function resolveChatSendText(overrideText, draft = "") {
 function coerceConversacionPrompt(prompt) {
   return typeof prompt === "string" ? prompt.trim() : "";
 }
+function adjuntoUrl(item) {
+  if (typeof item === "string") return item.trim();
+  if (item && typeof item === "object") {
+    const o = item;
+    return String(o.url ?? o.dataUrl ?? "").trim();
+  }
+  return "";
+}
+function normalizeAdjuntoWire(item) {
+  if (typeof item === "string") {
+    const s = item.trim();
+    return isHttpUrl(s) || isLegacyDataUrl(s) ? s : null;
+  }
+  if (!item || typeof item !== "object") return null;
+  const o = item;
+  const url = adjuntoUrl(o);
+  if (!url || !(isHttpUrl(url) || isLegacyDataUrl(url))) return null;
+  const ifile = String(o.ifile ?? o.IFILE ?? "").trim();
+  if (!ifile) return url;
+  const variants = o.variants && typeof o.variants === "object" ? o.variants : void 0;
+  return {
+    url,
+    ifile,
+    ...typeof o.kind === "string" ? { kind: o.kind } : {},
+    ...variants ? { variants } : {}
+  };
+}
 function buildConversacionPostBody(input) {
   const text = coerceConversacionPrompt(input.prompt);
-  const imagenes = (input.imagenes || []).map((s) => String(s || "").trim()).filter((s) => isHttpUrl(s) || isLegacyDataUrl(s));
-  const audios = (input.audios || []).map((s) => String(s || "").trim()).filter((s) => isHttpUrl(s) || isLegacyDataUrl(s));
+  const imagenes = (input.imagenes || []).map(normalizeAdjuntoWire).filter((x) => x != null);
+  const audios = (input.audios || []).map(normalizeAdjuntoWire).filter((x) => x != null);
   const hasMedia = imagenes.length > 0 || audios.length > 0;
   const body = {
     prompt: text || (imagenes.length ? "(imagen adjunta)" : audios.length ? "(nota de voz)" : "")
@@ -329,8 +356,15 @@ function formatConversacionPostBodyPreview(body, { maxUrl = 80 } = {}) {
     }
     return `${s.slice(0, maxUrl)}\u2026`;
   };
-  if (Array.isArray(clone.imagenes)) clone.imagenes = clone.imagenes.map((img, i) => summarize(img, "img", i));
-  if (Array.isArray(clone.audios)) clone.audios = clone.audios.map((a, i) => summarize(a, "audio", i));
+  const summarizeItem = (item, label, i) => {
+    if (item && typeof item === "object") {
+      const o = item;
+      return { ...o, url: summarize(o.url, label, i) };
+    }
+    return summarize(item, label, i);
+  };
+  if (Array.isArray(clone.imagenes)) clone.imagenes = clone.imagenes.map((img, i) => summarizeItem(img, "img", i));
+  if (Array.isArray(clone.audios)) clone.audios = clone.audios.map((a, i) => summarizeItem(a, "audio", i));
   return JSON.stringify(clone, null, 2);
 }
 async function sendConversacionStream(jwt, input, onDelta) {

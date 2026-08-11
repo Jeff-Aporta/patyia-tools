@@ -39,6 +39,8 @@ export type ChatMensajeVista = {
   usageStats?: Record<string, unknown>;
   streamFailed?: boolean;
   streamError?: string;
+  /** Fragmento crudo del conv-log (solo modo logs / visor). */
+  logFragment?: Record<string, unknown>;
 };
 
 export type ConvLogSnapshot = {

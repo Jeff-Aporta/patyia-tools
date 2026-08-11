@@ -6,7 +6,7 @@
 import { formatMsgFecha } from "./msgDateFormat.ts";
 
 /** Mensaje conv-log aplanado — campos base + propiedades según rol (user/assistant/operativa). */
-type FlatConvLogMensaje = { ts?: unknown; tokens?: unknown; cost?: unknown; usage?: unknown; latency_ms?: unknown; send?: unknown; receive?: unknown; others?: unknown; text?: string; prompt_text?: string; imagenes?: string[]; audios?: string[]; audios_transcripcion?: string[]; prompt_id?: string; prompt_variables?: unknown; vectorStoreIds?: unknown; vector_store_ids?: unknown; operativa_key?: string; operativa_engine?: string; model?: string; response_text?: string; response_id?: string; engine?: string; itdconsulta?: string; nombre_usuario?: string; stream_ok?: boolean; stream_error?: string; nombre_usado_en_respuesta?: boolean; modelo_configurado?: string; modelo_autoswitch_vision?: boolean; premisas?: string[]; prompt_chars?: number; response_chars?: number; file_search?: unknown; archivos_citados?: string[]; chunks?: unknown[]; chunks_total?: number; clasificador_vector_usado?: string[]; login_url?: string; http_request?: unknown; http_response?: unknown };
+type FlatConvLogMensaje = { ts?: unknown; tokens?: unknown; cost?: unknown; usage?: unknown; latency_ms?: unknown; send?: unknown; receive?: unknown; others?: unknown; text?: string; prompt_text?: string; imagenes?: string[]; audios?: string[]; audios_transcripcion?: string[]; files_adjuntos?: unknown[]; prompt_id?: string; prompt_variables?: unknown; vectorStoreIds?: unknown; vector_store_ids?: unknown; operativa_key?: string; operativa_engine?: string; model?: string; response_text?: string; response_id?: string; engine?: string; itdconsulta?: string; nombre_usuario?: string; stream_ok?: boolean; stream_error?: string; nombre_usado_en_respuesta?: boolean; modelo_configurado?: string; modelo_autoswitch_vision?: boolean; premisas?: string[]; prompt_chars?: number; response_chars?: number; file_search?: unknown; archivos_citados?: string[]; chunks?: unknown[]; chunks_total?: number; clasificador_vector_usado?: string[]; login_url?: string; http_request?: unknown; http_response?: unknown };
 
 type NormalizeMetaOptions = { isUser?: boolean };
 
@@ -472,6 +472,7 @@ function pushImage(images: string[], ref: unknown) {
       flat.clasificador_vector_usado = o.clasificador_vector_usado.map(String);
     }
     if (Array.isArray(o.instrucciones) && o.instrucciones.length) flat.instrucciones = o.instrucciones;
+    if (Array.isArray(o.files_adjuntos) && o.files_adjuntos.length) flat.files_adjuntos = o.files_adjuntos;
     return flat;
   }
 
@@ -766,6 +767,7 @@ function pushImage(images: string[], ref: unknown) {
       login_url: typeof raw.login_url === "string" && raw.login_url.trim() ? raw.login_url.trim() : undefined,
       http_request: raw.http_request && typeof raw.http_request === "object" ? raw.http_request : undefined,
       http_response: raw.http_response && typeof raw.http_response === "object" ? raw.http_response : undefined,
+      files_adjuntos: Array.isArray(raw.files_adjuntos) && raw.files_adjuntos.length ? raw.files_adjuntos : undefined,
     };
   }
 
@@ -827,6 +829,9 @@ function pushImage(images: string[], ref: unknown) {
       return turno * 1000 + seq;
     })();
 
+    let logFragment;
+    try { logFragment = JSON.parse(JSON.stringify(m)); } catch { logFragment = { role, ts: m.ts }; }
+
     return {
       idMsg: logImensaje ? `msg-${logImensaje}` : `${role}-${String(m.seq ?? i)}-${String(m.turno ?? 0)}`,
       rol: esOperativa ? `OP · ${String(opKey ?? "operativa")}` : esUsuario ? "user" : "assistant",
@@ -834,6 +839,7 @@ function pushImage(images: string[], ref: unknown) {
       imagenes: imagenes.length ? imagenes : undefined,
       audios: audios.length ? audios : undefined,
       audiosTranscripcion: audiosTranscripcion.length ? audiosTranscripcion : undefined,
+      logFragment,
       ...(() => {
         const f = formatMsgFecha(m.ts ?? "");
         return { fecha: f.label, fechaIso: f.iso || undefined };

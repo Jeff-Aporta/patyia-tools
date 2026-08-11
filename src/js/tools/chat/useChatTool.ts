@@ -22,7 +22,7 @@ import {
   resolveChatSendText,
   postMensajeCalificado,
 } from "../../api/patyiaChatApi.ts";
-import { uploadAudios, uploadImagenes, type AdjuntoSubido } from "../../api/adjuntosApi.ts";
+import { uploadAudios, uploadImagenes, chatRefsFromAdjuntos, type AdjuntoSubido } from "../../api/adjuntosApi.ts";
 import { CONVERSACIONES_LIST_SORT_DEFAULT } from "../../api/issListFilter.ts";
 import { fetchConvLogById, fetchConvLogByIdWithRetry } from "../../api/apiClient.ts";
 import * as LabSession from "../../api/sessionApi.ts";
@@ -968,8 +968,8 @@ export function useChatTool({ bootChat }: { bootChat?: UseChatToolBoot }) {
           undefined,
         );
       }
-      const imagenesUrls = uploadedImages.map((u) => u.url);
-      const audiosUrls = uploadedAudios.map((u) => u.url);
+      const imagenesWire = chatRefsFromAdjuntos(uploadedImages, "imagen");
+      const audiosWire = chatRefsFromAdjuntos(uploadedAudios, "audio");
       /** Enlace temprano: el ISS ya insertó la fila y manda `iconversacion` en SSE `begin`. */
       const bindSidebarRow = (payload: Record<string, unknown>, opts?: { select?: boolean }) => {
         const id = Number(payload.iconversacion);
@@ -1001,7 +1001,7 @@ export function useChatTool({ bootChat }: { bootChat?: UseChatToolBoot }) {
       let boundEarly = false;
       const result = await sendConversacionStream(
         jwt,
-        { prompt: text, iconversacion: selectedId || undefined, imagenes: imagenesUrls, audios: audiosUrls, mode: chatMode, provider: llmProvider },
+        { prompt: text, iconversacion: selectedId || undefined, imagenes: imagenesWire, audios: audiosWire, mode: chatMode, provider: llmProvider },
         (partial, payload) => {
           if (partial) setStreamText(partial);
           // SSE `begin` ya trae iconversacion (Insert previo) — enlazar sidebar sin esperar `end`.
