@@ -1084,10 +1084,29 @@ function fetchPermisosListRaw(q) {
   if (cached && Date.now() - cached.iat < PERMISOS_LIST_TTL_MS) return Promise.resolve(cached.raw);
   const inflight = PERMISOS_LIST_INFLIGHT.get(q);
   if (inflight) return inflight;
-  const req = jsonFetch(`/system/permisos${q ? `?${q}` : ""}`, { method: "GET", headers: systemApiHeaders() }).catch(async (err) => {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!/not found|404|no (existe|encontr)|HTTP 404/i.test(msg)) throw err;
-    return permissionsFromAdminRoles(await fetchPatyiaAdminRoles());
+  const req = fetchPatyiaAdminRoles().then((admin) => permissionsFromAdminRoles(admin)).then((raw) => {
+    const qs = new URLSearchParams(q);
+    const search = String(qs.get("search") ?? "").trim().toUpperCase();
+    const role = String(qs.get("role") ?? "").trim().toUpperCase();
+    const limitRaw = qs.get("limit");
+    const limit = limitRaw != null && Number.isFinite(Number(limitRaw)) ? Math.min(500, Math.max(1, Math.floor(Number(limitRaw)))) : void 0;
+    let users = Array.isArray(raw.users) ? [...raw.users] : [];
+    if (search) {
+      users = users.filter((u) => {
+        const name = String(u.iusuario ?? "").toUpperCase();
+        const nombre = String(u.permisos?.nombre ?? "").toUpperCase();
+        return name.includes(search) || nombre.includes(search);
+      });
+    }
+    if (role) {
+      users = users.filter((u) => {
+        const roles = u.permisos?.roles;
+        return Array.isArray(roles) && roles.some((r) => String(r).toUpperCase() === role);
+      });
+    }
+    const truncated = limit != null && users.length > limit;
+    if (limit != null) users = users.slice(0, limit);
+    return { ...raw, users, usersTotal: users.length, usersTruncated: truncated };
   }).then((raw) => {
     PERMISOS_LIST_CACHE.set(q, { raw, iat: Date.now() });
     return raw;
@@ -1202,9 +1221,16 @@ init_platform();
 import { jsx } from "react/jsx-runtime";
 var { useEffect, useState } = getReact();
 
-// src/js/ui/GlassDialog.jsx
+// src/js/ui/LogJsonPanel.jsx
 init_platform();
 import { jsx as jsx2, jsxs } from "react/jsx-runtime";
+var { useMemo } = getReact();
+var { Box, Typography, Stack, Chip, Tooltip, IconButton } = getMaterialUI();
+var { Icon } = UI;
+
+// src/js/ui/GlassDialog.jsx
+init_platform();
+import { jsx as jsx3, jsxs as jsxs2 } from "react/jsx-runtime";
 function isaLoginSurface() {
   const fs = globalThis.ISAFront || {};
   return {
@@ -1310,8 +1336,8 @@ function glassDialogActionsSx(extra = {}) {
   };
 }
 function GlassDialogHeader({ icon = "mdi:information-outline", title, subtitle, accent = "#1e90ff", onClose, closeAutoFocus = false }) {
-  const { Box: Box7, Typography: Typography7, IconButton: IconButton2, Stack: Stack6 } = getMaterialUI();
-  const { Icon: Icon3 } = UI;
+  const { Box: Box8, Typography: Typography8, IconButton: IconButton3, Stack: Stack7 } = getMaterialUI();
+  const { Icon: Icon4 } = UI;
   const { loginHeaderBandSx, loginIconBoxSx, loginHeaderTitleSx } = isaLoginSurface();
   const bandSx = loginHeaderBandSx?.(accent) ?? {
     px: { xs: 2, sm: 2.5 },
@@ -1333,16 +1359,16 @@ function GlassDialogHeader({ icon = "mdi:information-outline", title, subtitle, 
     color: "#fff"
   };
   const titleSx = loginHeaderTitleSx?.() ?? { fontWeight: 700, fontSize: "1.35rem", lineHeight: 1.15 };
-  return /* @__PURE__ */ jsxs(Box7, { className: "isa-glass-dialog__header", sx: { position: "relative", flexShrink: 0 }, children: [
-    /* @__PURE__ */ jsx2(Box7, { sx: bandSx, children: /* @__PURE__ */ jsxs(Stack6, { direction: "row", spacing: 1.25, alignItems: "center", sx: { pr: onClose ? 4 : 0 }, children: [
-      /* @__PURE__ */ jsx2(Box7, { sx: iconSx, children: /* @__PURE__ */ jsx2(Icon3, { icon, size: 24 }) }),
-      /* @__PURE__ */ jsxs(Box7, { sx: { flex: 1, minWidth: 0 }, children: [
-        /* @__PURE__ */ jsx2(Typography7, { variant: "h5", component: "h2", sx: titleSx, children: title }),
-        subtitle ? /* @__PURE__ */ jsx2(Typography7, { variant: "caption", color: "text.secondary", display: "block", sx: { mt: 0.35, lineHeight: 1.4 }, children: subtitle }) : null
+  return /* @__PURE__ */ jsxs2(Box8, { className: "isa-glass-dialog__header", sx: { position: "relative", flexShrink: 0 }, children: [
+    /* @__PURE__ */ jsx3(Box8, { sx: bandSx, children: /* @__PURE__ */ jsxs2(Stack7, { direction: "row", spacing: 1.25, alignItems: "center", sx: { pr: onClose ? 4 : 0 }, children: [
+      /* @__PURE__ */ jsx3(Box8, { sx: iconSx, children: /* @__PURE__ */ jsx3(Icon4, { icon, size: 24 }) }),
+      /* @__PURE__ */ jsxs2(Box8, { sx: { flex: 1, minWidth: 0 }, children: [
+        /* @__PURE__ */ jsx3(Typography8, { variant: "h5", component: "h2", sx: titleSx, children: title }),
+        subtitle ? /* @__PURE__ */ jsx3(Typography8, { variant: "caption", color: "text.secondary", display: "block", sx: { mt: 0.35, lineHeight: 1.4 }, children: subtitle }) : null
       ] })
     ] }) }),
-    onClose ? /* @__PURE__ */ jsx2(
-      IconButton2,
+    onClose ? /* @__PURE__ */ jsx3(
+      IconButton3,
       {
         size: "small",
         onClick: onClose,
@@ -1350,7 +1376,7 @@ function GlassDialogHeader({ icon = "mdi:information-outline", title, subtitle, 
         autoFocus: closeAutoFocus,
         className: "isa-glass-dialog__close",
         sx: { position: "absolute", top: 10, right: 10 },
-        children: /* @__PURE__ */ jsx2(Icon3, { icon: "mdi:close", size: 18 })
+        children: /* @__PURE__ */ jsx3(Icon4, { icon: "mdi:close", size: 18 })
       }
     ) : null
   ] });
@@ -1358,21 +1384,21 @@ function GlassDialogHeader({ icon = "mdi:information-outline", title, subtitle, 
 function GlassDialog({ children, header = null, maxWidth, fullWidth, fullScreen, paperMaxWidth, paperSx, paperClassName, slotProps, ...dialogProps }) {
   const { Dialog } = getMaterialUI();
   const props = resolveGlassDialogProps({ maxWidth, fullWidth, fullScreen, paperMaxWidth, paperSx, paperClassName, slotProps, ...dialogProps });
-  return /* @__PURE__ */ jsxs(Dialog, { ...props, children: [
+  return /* @__PURE__ */ jsxs2(Dialog, { ...props, children: [
     header,
     children
   ] });
 }
 
 // src/js/ui/shared.jsx
-import { Fragment, jsx as jsx3, jsxs as jsxs2 } from "react/jsx-runtime";
+import { Fragment, jsx as jsx4, jsxs as jsxs3 } from "react/jsx-runtime";
 function ButtonIconify({ icon, title = "", label = "", onClick, disabled = false, busy = false, color = "", variant = "", className = "", type = "button" }) {
   const shown = busy ? "mdi:loading" : icon;
   const variantCls = variant ? `btn-iconify--${variant}` : "";
   const colorCls = color ? `btn-iconify--${color}` : "";
   const labeledCls = label ? "btn-iconify--labeled" : "";
   const aria = label || title || void 0;
-  return /* @__PURE__ */ jsxs2(
+  return /* @__PURE__ */ jsxs3(
     "button",
     {
       type,
@@ -1382,14 +1408,14 @@ function ButtonIconify({ icon, title = "", label = "", onClick, disabled = false
       onClick,
       disabled: disabled || busy,
       children: [
-        /* @__PURE__ */ jsx3("iconify-icon", { icon: shown, width: "1.15em", height: "1.15em" }),
-        label ? /* @__PURE__ */ jsx3("span", { className: "btn-iconify__lbl", children: label }) : null
+        /* @__PURE__ */ jsx4("iconify-icon", { icon: shown, width: "1.15em", height: "1.15em" }),
+        label ? /* @__PURE__ */ jsx4("span", { className: "btn-iconify__lbl", children: label }) : null
       ]
     }
   );
 }
-var { useState: useState2, useEffect: useEffect2, useMemo } = getReact();
-var { createTheme, Tabs, Tab, Box, Typography, DialogContent, Stack, Chip } = getMaterialUI();
+var { useState: useState2, useEffect: useEffect2, useMemo: useMemo2 } = getReact();
+var { createTheme, Tabs, Tab, Box: Box2, Typography: Typography2, DialogContent, Stack: Stack2, Chip: Chip2 } = getMaterialUI();
 var theme = createTheme({
   palette: {
     mode: "dark",
@@ -1626,7 +1652,7 @@ init_platform();
 
 // src/js/editors/jsonEditor.jsx
 init_platform();
-import { jsx as jsx4 } from "react/jsx-runtime";
+import { jsx as jsx5 } from "react/jsx-runtime";
 
 // src/js/tools/permisosRouteCatalog.js
 var ROUTE_GROUPS = [
@@ -1735,10 +1761,10 @@ function canAddUserToRole({ username } = {}) {
 // src/js/tools/PermisosUserAutocomplete.jsx
 init_platform();
 init_systemConfigApi();
-import { jsx as jsx5 } from "react/jsx-runtime";
+import { jsx as jsx6 } from "react/jsx-runtime";
 import { createElement } from "react";
 var { useState: useState3, useEffect: useEffect3, useRef, useCallback } = getReact();
-var { Autocomplete, TextField, Typography: Typography2, Box: Box2 } = getMaterialUI();
+var { Autocomplete, TextField, Typography: Typography3, Box: Box3 } = getMaterialUI();
 var DEBOUNCE_MS = 300;
 var DEFAULT_LIMIT = 10;
 function optionLabel(row) {
@@ -1817,7 +1843,7 @@ function PermisosUserAutocomplete({
     runSearch("");
   }, [disabled, runSearch]);
   if (disabled) {
-    return /* @__PURE__ */ jsx5(
+    return /* @__PURE__ */ jsx6(
       TextField,
       {
         label,
@@ -1832,7 +1858,7 @@ function PermisosUserAutocomplete({
     );
   }
   const ph = placeholder ?? (toolbar ? "Buscar usuario\u2026" : "Buscar login ISS\u2026");
-  return /* @__PURE__ */ jsx5(
+  return /* @__PURE__ */ jsx6(
     Autocomplete,
     {
       fullWidth: !toolbar,
@@ -1876,8 +1902,8 @@ function PermisosUserAutocomplete({
         onChange(row?.username ?? null);
         setInputValue(row ? optionLabel(row) : "");
       },
-      renderOption: (props, row) => /* @__PURE__ */ createElement(Box2, { component: "li", ...props, key: row.username, sx: { display: "flex", flexDirection: "column", py: 0.75 } }, /* @__PURE__ */ jsx5(Typography2, { variant: "body2", sx: { fontWeight: 600 }, children: row.displayName || row.username }), row.displayName ? /* @__PURE__ */ jsx5(Typography2, { variant: "caption", color: "text.secondary", children: row.username }) : null),
-      renderInput: (params) => /* @__PURE__ */ jsx5(
+      renderOption: (props, row) => /* @__PURE__ */ createElement(Box3, { component: "li", ...props, key: row.username, sx: { display: "flex", flexDirection: "column", py: 0.75 } }, /* @__PURE__ */ jsx6(Typography3, { variant: "body2", sx: { fontWeight: 600 }, children: row.displayName || row.username }), row.displayName ? /* @__PURE__ */ jsx6(Typography3, { variant: "caption", color: "text.secondary", children: row.username }) : null),
+      renderInput: (params) => /* @__PURE__ */ jsx6(
         TextField,
         {
           ...params,
@@ -1910,15 +1936,15 @@ var VISITANTE_DEFAULT_PERMISOS = {
 };
 
 // src/js/tools/permisosRoleConfig.jsx
-import { Fragment as Fragment2, jsx as jsx6, jsxs as jsxs3 } from "react/jsx-runtime";
-var { useState: useState4, useEffect: useEffect4, useMemo: useMemo2 } = getReact();
+import { Fragment as Fragment2, jsx as jsx7, jsxs as jsxs4 } from "react/jsx-runtime";
+var { useState: useState4, useEffect: useEffect4, useMemo: useMemo3 } = getReact();
 var {
-  Typography: Typography3,
+  Typography: Typography4,
   TextField: TextField2,
-  Stack: Stack2,
+  Stack: Stack3,
   Alert,
-  Chip: Chip2,
-  Box: Box3,
+  Chip: Chip3,
+  Box: Box4,
   Checkbox,
   FormControlLabel,
   Divider,
@@ -1934,13 +1960,13 @@ var {
   DialogContent: DialogContent2,
   DialogActions,
   Button,
-  Tooltip,
+  Tooltip: Tooltip2,
   CircularProgress
 } = getMaterialUI();
-var { Icon } = UI;
+var { Icon: Icon2 } = UI;
 function renderImpactLine(text) {
   const parts = String(text ?? "").split(/\*\*(.*?)\*\*/g);
-  return parts.map((part, i) => i % 2 === 1 ? /* @__PURE__ */ jsx6("strong", { children: part }, i) : part);
+  return parts.map((part, i) => i % 2 === 1 ? /* @__PURE__ */ jsx7("strong", { children: part }, i) : part);
 }
 var MODE_LABEL = Object.fromEntries(ACCESS_MODES.map((m) => [m.value, m.label]));
 function RoleDragDialog({ open, pending, busy, sessionUsername, onClose, onConfirm }) {
@@ -1951,7 +1977,7 @@ function RoleDragDialog({ open, pending, busy, sessionUsername, onClose, onConfi
   const isSelf = isSamePermisosUser(username, sessionUsername);
   const leavesDevLead = isTopDevLeadRole(fromRole);
   const moveBullets = moveRoleImpactBullets({ username, fromRoleTitle: fromLabel, toRoleTitle: toLabel, isSelf, leavesDevLead });
-  return /* @__PURE__ */ jsxs3(
+  return /* @__PURE__ */ jsxs4(
     GlassDialog,
     {
       open,
@@ -1959,7 +1985,7 @@ function RoleDragDialog({ open, pending, busy, sessionUsername, onClose, onConfi
       maxWidth: "sm",
       fullWidth: true,
       disableEscapeKeyDown: busy,
-      header: /* @__PURE__ */ jsx6(
+      header: /* @__PURE__ */ jsx7(
         GlassDialogHeader,
         {
           icon: "mdi:alert-outline",
@@ -1970,29 +1996,29 @@ function RoleDragDialog({ open, pending, busy, sessionUsername, onClose, onConfi
         }
       ),
       children: [
-        /* @__PURE__ */ jsxs3(DialogContent2, { sx: glassDialogContentSx({ p: 2.5 }), children: [
-          /* @__PURE__ */ jsxs3(Alert, { severity: "warning", sx: { mb: 2 }, children: [
+        /* @__PURE__ */ jsxs4(DialogContent2, { sx: glassDialogContentSx({ p: 2.5 }), children: [
+          /* @__PURE__ */ jsxs4(Alert, { severity: "warning", sx: { mb: 2 }, children: [
             "Mover implica ",
-            /* @__PURE__ */ jsx6("strong", { children: "quitar" }),
+            /* @__PURE__ */ jsx7("strong", { children: "quitar" }),
             " a ",
             isSelf ? "ti" : username,
             " de ",
-            /* @__PURE__ */ jsx6("strong", { children: fromLabel }),
+            /* @__PURE__ */ jsx7("strong", { children: fromLabel }),
             ". Revisa el impacto antes de confirmar."
           ] }),
-          /* @__PURE__ */ jsxs3(Typography3, { variant: "body2", color: "text.secondary", sx: { mb: 1.5 }, children: [
+          /* @__PURE__ */ jsxs4(Typography4, { variant: "body2", color: "text.secondary", sx: { mb: 1.5 }, children: [
             username,
             " pasar\xE1 de ",
-            /* @__PURE__ */ jsx6("strong", { children: fromLabel }),
+            /* @__PURE__ */ jsx7("strong", { children: fromLabel }),
             " a ",
-            /* @__PURE__ */ jsx6("strong", { children: toLabel }),
+            /* @__PURE__ */ jsx7("strong", { children: toLabel }),
             "."
           ] }),
-          /* @__PURE__ */ jsx6(Box3, { component: "ul", sx: { m: 0, pl: 2.25, color: "text.secondary", fontSize: "0.875rem", "& li": { mb: 0.75 } }, children: moveBullets.map((line) => /* @__PURE__ */ jsx6("li", { children: renderImpactLine(line) }, line)) })
+          /* @__PURE__ */ jsx7(Box4, { component: "ul", sx: { m: 0, pl: 2.25, color: "text.secondary", fontSize: "0.875rem", "& li": { mb: 0.75 } }, children: moveBullets.map((line) => /* @__PURE__ */ jsx7("li", { children: renderImpactLine(line) }, line)) })
         ] }),
-        /* @__PURE__ */ jsxs3(DialogActions, { sx: glassDialogActionsSx(), children: [
-          /* @__PURE__ */ jsx6(Button, { onClick: onClose, disabled: busy, sx: { textTransform: "none" }, children: "Cancelar" }),
-          /* @__PURE__ */ jsx6(
+        /* @__PURE__ */ jsxs4(DialogActions, { sx: glassDialogActionsSx(), children: [
+          /* @__PURE__ */ jsx7(Button, { onClick: onClose, disabled: busy, sx: { textTransform: "none" }, children: "Cancelar" }),
+          /* @__PURE__ */ jsx7(
             Button,
             {
               variant: "contained",
@@ -2002,7 +2028,7 @@ function RoleDragDialog({ open, pending, busy, sessionUsername, onClose, onConfi
                 if (!busy) onConfirm("move");
               },
               sx: { textTransform: "none", minWidth: 140 },
-              startIcon: busy ? /* @__PURE__ */ jsx6(CircularProgress, { size: 16, color: "inherit" }) : /* @__PURE__ */ jsx6(Icon, { icon: "mdi:arrow-right-bold", size: 18 }),
+              startIcon: busy ? /* @__PURE__ */ jsx7(CircularProgress, { size: 16, color: "inherit" }) : /* @__PURE__ */ jsx7(Icon2, { icon: "mdi:arrow-right-bold", size: 18 }),
               children: busy ? "Moviendo\u2026" : "Confirmar movimiento"
             }
           )
@@ -2021,35 +2047,35 @@ function RoleAddDialog({ open, pending, busy, onClose, onConfirm }) {
   const roleLabel2 = roleTitle || role;
   const alreadyInRole = username && existingUsernames?.has(String(username).trim().toUpperCase());
   const addCheck = username && !alreadyInRole ? canAddUserToRole({ username }) : { ok: true };
-  return /* @__PURE__ */ jsxs3(
+  return /* @__PURE__ */ jsxs4(
     GlassDialog,
     {
       open,
       onClose: busy ? void 0 : onClose,
       maxWidth: "sm",
       fullWidth: true,
-      header: /* @__PURE__ */ jsx6(GlassDialogHeader, { icon: "mdi:account-plus-outline", title: "Agregar al rol", subtitle: roleLabel2, accent: "#10b981", onClose: busy ? void 0 : onClose }),
+      header: /* @__PURE__ */ jsx7(GlassDialogHeader, { icon: "mdi:account-plus-outline", title: "Agregar al rol", subtitle: roleLabel2, accent: "#10b981", onClose: busy ? void 0 : onClose }),
       children: [
-        /* @__PURE__ */ jsxs3(DialogContent2, { sx: glassDialogContentSx({ p: 2.5 }), children: [
-          /* @__PURE__ */ jsxs3(Typography3, { variant: "body2", color: "text.secondary", sx: { mb: 2 }, children: [
+        /* @__PURE__ */ jsxs4(DialogContent2, { sx: glassDialogContentSx({ p: 2.5 }), children: [
+          /* @__PURE__ */ jsxs4(Typography4, { variant: "body2", color: "text.secondary", sx: { mb: 2 }, children: [
             "Busque un usuario en permisos ISS o escriba un login nuevo para asignarlo al rol ",
-            /* @__PURE__ */ jsx6("strong", { children: roleLabel2 }),
+            /* @__PURE__ */ jsx7("strong", { children: roleLabel2 }),
             "."
           ] }),
-          /* @__PURE__ */ jsx6(PermisosUserAutocomplete, { value: username, onChange: setUsername, disabled: busy, label: "Usuario" }),
-          alreadyInRole ? /* @__PURE__ */ jsx6(Alert, { severity: "warning", sx: { mt: 1.5 }, children: "Este usuario ya est\xE1 en el rol." }) : null,
-          username && !alreadyInRole && !addCheck.ok ? /* @__PURE__ */ jsx6(Alert, { severity: "warning", sx: { mt: 1.5 }, children: addCheck.reason }) : null
+          /* @__PURE__ */ jsx7(PermisosUserAutocomplete, { value: username, onChange: setUsername, disabled: busy, label: "Usuario" }),
+          alreadyInRole ? /* @__PURE__ */ jsx7(Alert, { severity: "warning", sx: { mt: 1.5 }, children: "Este usuario ya est\xE1 en el rol." }) : null,
+          username && !alreadyInRole && !addCheck.ok ? /* @__PURE__ */ jsx7(Alert, { severity: "warning", sx: { mt: 1.5 }, children: addCheck.reason }) : null
         ] }),
-        /* @__PURE__ */ jsxs3(DialogActions, { sx: glassDialogActionsSx(), children: [
-          /* @__PURE__ */ jsx6(Button, { onClick: onClose, disabled: busy, sx: { textTransform: "none" }, children: "Cancelar" }),
-          /* @__PURE__ */ jsx6(
+        /* @__PURE__ */ jsxs4(DialogActions, { sx: glassDialogActionsSx(), children: [
+          /* @__PURE__ */ jsx7(Button, { onClick: onClose, disabled: busy, sx: { textTransform: "none" }, children: "Cancelar" }),
+          /* @__PURE__ */ jsx7(
             Button,
             {
               variant: "contained",
               disabled: busy || !username || alreadyInRole || !addCheck.ok,
               onClick: () => onConfirm(username),
               sx: { textTransform: "none", minWidth: 120 },
-              startIcon: busy ? /* @__PURE__ */ jsx6(CircularProgress, { size: 16, color: "inherit" }) : /* @__PURE__ */ jsx6(Icon, { icon: "mdi:account-plus-outline", size: 18 }),
+              startIcon: busy ? /* @__PURE__ */ jsx7(CircularProgress, { size: 16, color: "inherit" }) : /* @__PURE__ */ jsx7(Icon2, { icon: "mdi:account-plus-outline", size: 18 }),
               children: busy ? "Agregando\u2026" : "Agregar"
             }
           )
@@ -2065,7 +2091,7 @@ function RoleRemoveDialog({ open, pending, busy, sessionUsername, onClose, onCon
   const isSelf = isSamePermisosUser(username, sessionUsername);
   const isDevLead = isTopDevLeadRole(role);
   const bullets = removeRoleImpactBullets({ username, roleTitle: roleLabel2, isSelf, isDevLead });
-  return /* @__PURE__ */ jsxs3(
+  return /* @__PURE__ */ jsxs4(
     GlassDialog,
     {
       open,
@@ -2073,22 +2099,22 @@ function RoleRemoveDialog({ open, pending, busy, sessionUsername, onClose, onCon
       maxWidth: "sm",
       fullWidth: true,
       disableEscapeKeyDown: busy,
-      header: /* @__PURE__ */ jsx6(GlassDialogHeader, { icon: "mdi:account-remove-outline", title: "Quitar del rol", subtitle: `${username} \xB7 ${roleLabel2}`, accent: "#f59e0b", onClose: busy ? void 0 : onClose }),
+      header: /* @__PURE__ */ jsx7(GlassDialogHeader, { icon: "mdi:account-remove-outline", title: "Quitar del rol", subtitle: `${username} \xB7 ${roleLabel2}`, accent: "#f59e0b", onClose: busy ? void 0 : onClose }),
       children: [
-        /* @__PURE__ */ jsxs3(DialogContent2, { sx: glassDialogContentSx({ p: 2.5 }), children: [
-          /* @__PURE__ */ jsx6(Alert, { severity: "warning", sx: { mb: 2 }, children: isSelf && isDevLead ? "Te quitar\xE1s DEVISS (m\xE1ximo privilegio). Otro DEVISS o un ajuste en BD ser\xE1 necesario para recuperarlo." : "Esta acci\xF3n revoca permisos de forma inmediata. Revise las consecuencias antes de confirmar." }),
-          /* @__PURE__ */ jsxs3(Typography3, { variant: "body2", color: "text.secondary", sx: { mb: 1.5 }, children: [
+        /* @__PURE__ */ jsxs4(DialogContent2, { sx: glassDialogContentSx({ p: 2.5 }), children: [
+          /* @__PURE__ */ jsx7(Alert, { severity: "warning", sx: { mb: 2 }, children: isSelf && isDevLead ? "Te quitar\xE1s DEVISS (m\xE1ximo privilegio). Otro DEVISS o un ajuste en BD ser\xE1 necesario para recuperarlo." : "Esta acci\xF3n revoca permisos de forma inmediata. Revise las consecuencias antes de confirmar." }),
+          /* @__PURE__ */ jsxs4(Typography4, { variant: "body2", color: "text.secondary", sx: { mb: 1.5 }, children: [
             "\xBFQuitar a ",
-            /* @__PURE__ */ jsx6("strong", { children: username }),
+            /* @__PURE__ */ jsx7("strong", { children: username }),
             " del rol ",
-            /* @__PURE__ */ jsx6("strong", { children: roleLabel2 }),
+            /* @__PURE__ */ jsx7("strong", { children: roleLabel2 }),
             "?"
           ] }),
-          /* @__PURE__ */ jsx6(Box3, { component: "ul", sx: { m: 0, pl: 2.25, color: "text.secondary", fontSize: "0.875rem", "& li": { mb: 0.75 } }, children: bullets.map((line) => /* @__PURE__ */ jsx6("li", { children: renderImpactLine(line) }, line)) })
+          /* @__PURE__ */ jsx7(Box4, { component: "ul", sx: { m: 0, pl: 2.25, color: "text.secondary", fontSize: "0.875rem", "& li": { mb: 0.75 } }, children: bullets.map((line) => /* @__PURE__ */ jsx7("li", { children: renderImpactLine(line) }, line)) })
         ] }),
-        /* @__PURE__ */ jsxs3(DialogActions, { sx: glassDialogActionsSx(), children: [
-          /* @__PURE__ */ jsx6(Button, { onClick: onClose, disabled: busy, sx: { textTransform: "none" }, children: "Cancelar" }),
-          /* @__PURE__ */ jsx6(
+        /* @__PURE__ */ jsxs4(DialogActions, { sx: glassDialogActionsSx(), children: [
+          /* @__PURE__ */ jsx7(Button, { onClick: onClose, disabled: busy, sx: { textTransform: "none" }, children: "Cancelar" }),
+          /* @__PURE__ */ jsx7(
             Button,
             {
               variant: "contained",
@@ -2096,7 +2122,7 @@ function RoleRemoveDialog({ open, pending, busy, sessionUsername, onClose, onCon
               disabled: busy,
               onClick: onConfirm,
               sx: { textTransform: "none", minWidth: 120 },
-              startIcon: busy ? /* @__PURE__ */ jsx6(CircularProgress, { size: 16, color: "inherit" }) : /* @__PURE__ */ jsx6(Icon, { icon: "mdi:account-remove-outline", size: 18 }),
+              startIcon: busy ? /* @__PURE__ */ jsx7(CircularProgress, { size: 16, color: "inherit" }) : /* @__PURE__ */ jsx7(Icon2, { icon: "mdi:account-remove-outline", size: 18 }),
               children: busy ? "Quitando\u2026" : "Confirmar"
             }
           )
@@ -2107,11 +2133,11 @@ function RoleRemoveDialog({ open, pending, busy, sessionUsername, onClose, onCon
 }
 
 // src/js/tools/PermisosKanban.jsx
-import { Fragment as Fragment3, jsx as jsx7, jsxs as jsxs4 } from "react/jsx-runtime";
-var { useState: useState5, useMemo: useMemo3, useRef: useRef2, useEffect: useEffect5, memo } = getReact();
+import { Fragment as Fragment3, jsx as jsx8, jsxs as jsxs5 } from "react/jsx-runtime";
+var { useState: useState5, useMemo: useMemo4, useRef: useRef2, useEffect: useEffect5, memo } = getReact();
 var { createPortal } = getReactDOM();
-var { Box: Box4, Paper, Typography: Typography4, Stack: Stack3, Chip: Chip3, IconButton, Tooltip: Tooltip2, CircularProgress: CircularProgress2 } = getMaterialUI();
-var { Icon: Icon2 } = UI;
+var { Box: Box5, Paper, Typography: Typography5, Stack: Stack4, Chip: Chip4, IconButton: IconButton2, Tooltip: Tooltip3, CircularProgress: CircularProgress2 } = getMaterialUI();
+var { Icon: Icon3 } = UI;
 var DRAG_THRESHOLD_PX = 6;
 var UserCard = memo(function UserCard2({ card, columnId, columnTitle, canDragUser, isDragSource, userBusy, isSelected, isDimmed, onPointerDragStart, onRoleRemoveRequest, onUserSelect, onUserSummary, suppressClickRef }) {
   const canDragRole = !!canDragUser && !userBusy;
@@ -2126,7 +2152,7 @@ var UserCard = memo(function UserCard2({ card, columnId, columnTitle, canDragUse
     isSelected ? "paty-permisos-user-card--selected" : "",
     isDimmed ? "paty-permisos-user-card--dimmed" : ""
   ].filter(Boolean).join(" ");
-  return /* @__PURE__ */ jsx7(
+  return /* @__PURE__ */ jsx8(
     Paper,
     {
       className: cardClass,
@@ -2151,16 +2177,16 @@ var UserCard = memo(function UserCard2({ card, columnId, columnTitle, canDragUse
         e.stopPropagation();
         onUserSummary?.(card.username);
       },
-      children: /* @__PURE__ */ jsxs4(Stack3, { direction: "row", alignItems: "center", spacing: 0.25, className: "paty-permisos-user-card__row", sx: { minWidth: 0 }, children: [
-        /* @__PURE__ */ jsx7(Box4, { className: "paty-permisos-user-card__body", sx: { minWidth: 0, flex: 1 }, children: /* @__PURE__ */ jsxs4(Typography4, { className: "paty-todos-card__title", component: "div", variant: "body2", fontWeight: 700, noWrap: true, title: [labels.primary, labels.idsCaption].filter(Boolean).join(" "), children: [
-          /* @__PURE__ */ jsx7("span", { className: "paty-permisos-user-card__name", children: labels.primary }),
-          labels.idsCaption ? /* @__PURE__ */ jsxs4("span", { className: "paty-todos-card__caption paty-permisos-user-card__ids", children: [
+      children: /* @__PURE__ */ jsxs5(Stack4, { direction: "row", alignItems: "center", spacing: 0.25, className: "paty-permisos-user-card__row", sx: { minWidth: 0 }, children: [
+        /* @__PURE__ */ jsx8(Box5, { className: "paty-permisos-user-card__body", sx: { minWidth: 0, flex: 1 }, children: /* @__PURE__ */ jsxs5(Typography5, { className: "paty-todos-card__title", component: "div", variant: "body2", fontWeight: 700, noWrap: true, title: [labels.primary, labels.idsCaption].filter(Boolean).join(" "), children: [
+          /* @__PURE__ */ jsx8("span", { className: "paty-permisos-user-card__name", children: labels.primary }),
+          labels.idsCaption ? /* @__PURE__ */ jsxs5("span", { className: "paty-todos-card__caption paty-permisos-user-card__ids", children: [
             " ",
             labels.idsCaption
           ] }) : null
         ] }) }),
-        userBusy ? /* @__PURE__ */ jsx7(Tooltip2, { title: "Procesando\u2026", children: /* @__PURE__ */ jsx7("span", { className: "paty-permisos-user-card__busy", "aria-label": "Procesando", children: /* @__PURE__ */ jsx7(CircularProgress2, { size: 14, thickness: 5, color: "inherit" }) }) }) : canDragRole ? /* @__PURE__ */ jsx7(Tooltip2, { title: `Quitar de ${columnTitle || columnId}`, children: /* @__PURE__ */ jsx7("span", { className: "paty-permisos-user-card__remove-wrap", children: /* @__PURE__ */ jsx7(
-          IconButton,
+        userBusy ? /* @__PURE__ */ jsx8(Tooltip3, { title: "Procesando\u2026", children: /* @__PURE__ */ jsx8("span", { className: "paty-permisos-user-card__busy", "aria-label": "Procesando", children: /* @__PURE__ */ jsx8(CircularProgress2, { size: 14, thickness: 5, color: "inherit" }) }) }) : canDragRole ? /* @__PURE__ */ jsx8(Tooltip3, { title: `Quitar de ${columnTitle || columnId}`, children: /* @__PURE__ */ jsx8("span", { className: "paty-permisos-user-card__remove-wrap", children: /* @__PURE__ */ jsx8(
+          IconButton2,
           {
             size: "small",
             type: "button",
@@ -2174,7 +2200,7 @@ var UserCard = memo(function UserCard2({ card, columnId, columnTitle, canDragUse
               e.preventDefault();
               onRoleRemoveRequest?.({ cardId: card.id, username: card.username, role: columnId, roleTitle: columnTitle });
             },
-            children: /* @__PURE__ */ jsx7(Icon2, { icon: "mdi:close", size: 14 })
+            children: /* @__PURE__ */ jsx8(Icon3, { icon: "mdi:close", size: 14 })
           }
         ) }) }) : null
       ] })
@@ -2183,16 +2209,16 @@ var UserCard = memo(function UserCard2({ card, columnId, columnTitle, canDragUse
 });
 function DragGhost({ card, column, x, y, width }) {
   if (column) {
-    const node2 = /* @__PURE__ */ jsx7(
+    const node2 = /* @__PURE__ */ jsx8(
       Paper,
       {
         className: "paty-todos-card paty-permisos-column-ghost paty-todos-card--ghost isa-glass-card",
         elevation: 8,
         style: { position: "fixed", left: x, top: y, width, zIndex: 1e4, pointerEvents: "none", margin: 0 },
         "aria-hidden": true,
-        children: /* @__PURE__ */ jsxs4(Stack3, { direction: "row", alignItems: "center", spacing: 0.75, sx: { minWidth: 0 }, children: [
-          /* @__PURE__ */ jsx7(Icon2, { icon: column.icon, size: 16 }),
-          /* @__PURE__ */ jsx7(Typography4, { className: "paty-todos-card__title", variant: "body2", fontWeight: 700, noWrap: true, children: column.title })
+        children: /* @__PURE__ */ jsxs5(Stack4, { direction: "row", alignItems: "center", spacing: 0.75, sx: { minWidth: 0 }, children: [
+          /* @__PURE__ */ jsx8(Icon3, { icon: column.icon, size: 16 }),
+          /* @__PURE__ */ jsx8(Typography5, { className: "paty-todos-card__title", variant: "body2", fontWeight: 700, noWrap: true, children: column.title })
         ] })
       }
     );
@@ -2200,16 +2226,16 @@ function DragGhost({ card, column, x, y, width }) {
   }
   if (!card) return null;
   const labels = card.labels ?? userCardLabels(card.username, card.displayName);
-  const node = /* @__PURE__ */ jsx7(
+  const node = /* @__PURE__ */ jsx8(
     Paper,
     {
       className: "paty-todos-card paty-permisos-user-card paty-permisos-drag-ghost paty-todos-card--ghost isa-glass-card",
       elevation: 8,
       style: { position: "fixed", left: x, top: y, width, zIndex: 1e4, pointerEvents: "none", margin: 0 },
       "aria-hidden": true,
-      children: /* @__PURE__ */ jsxs4(Typography4, { className: "paty-todos-card__title", variant: "body2", fontWeight: 700, noWrap: true, children: [
-        /* @__PURE__ */ jsx7("span", { className: "paty-permisos-user-card__name", children: labels.primary }),
-        labels.idsCaption ? /* @__PURE__ */ jsxs4("span", { className: "paty-todos-card__caption paty-permisos-user-card__ids", children: [
+      children: /* @__PURE__ */ jsxs5(Typography5, { className: "paty-todos-card__title", variant: "body2", fontWeight: 700, noWrap: true, children: [
+        /* @__PURE__ */ jsx8("span", { className: "paty-permisos-user-card__name", children: labels.primary }),
+        labels.idsCaption ? /* @__PURE__ */ jsxs5("span", { className: "paty-todos-card__caption paty-permisos-user-card__ids", children: [
           " ",
           labels.idsCaption
         ] }) : null
@@ -2243,12 +2269,12 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
   const assignEnabled = !!loggedIn && !!canAssignRoles;
   const filterDragEnabled = !!loggedIn && !canAssignRoles;
   const noUsersVisible = !!boardData?.noUsersVisible;
-  const columnIds = useMemo3(() => columns.map((c) => c.id), [columns]);
-  const ghostColumn = useMemo3(() => {
+  const columnIds = useMemo4(() => columns.map((c) => c.id), [columns]);
+  const ghostColumn = useMemo4(() => {
     if (!dragGhost?.columnId) return null;
     return columns.find((c) => c.id === dragGhost.columnId) ?? null;
   }, [dragGhost, columns]);
-  const ghostCard = useMemo3(() => {
+  const ghostCard = useMemo4(() => {
     if (!dragGhost?.cardId) return null;
     for (const col of columns) {
       const hit = col.users.find((u) => u.id === dragGhost.cardId);
@@ -2457,11 +2483,11 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
   const transferBusy = !!processingUserKey;
   const removeBusy = transferBusy && !!removePending;
   const addBusy = !!addingRoleId;
-  return /* @__PURE__ */ jsxs4(Box4, { ref: kanbanWrapRef, className: "paty-todos-kanban-wrap paty-permisos-kanban-wrap", sx: { flex: 1, minHeight: 0, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", p: 0 }, children: [
-    /* @__PURE__ */ jsxs4(Box4, { className: `paty-todos-kanban paty-permisos-kanban${!assignEnabled ? " paty-permisos-kanban--no-assign" : ""}${draggingId ? " paty-todos-kanban--dragging" : ""}${selectedUserKey ? " paty-permisos-kanban--user-selected" : ""}${processingUserKey ? " paty-permisos-kanban--user-busy" : ""}`, sx: { flex: 1, minHeight: 0, maxHeight: "100%", display: "flex", alignItems: "stretch", alignSelf: "stretch", position: "relative" }, children: [
-      dragGhost ? /* @__PURE__ */ jsx7(DragGhost, { card: ghostCard, column: ghostColumn, x: dragGhost.x, y: dragGhost.y, width: dragGhost.width }) : null,
-      noUsersVisible ? /* @__PURE__ */ jsx7(Box4, { sx: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", p: 3, pointerEvents: "none", zIndex: 2 }, children: /* @__PURE__ */ jsx7(Typography4, { variant: "body2", color: "text.secondary", children: "Ning\xFAn usuario coincide con los filtros." }) }) : null,
-      columns.length === 0 ? /* @__PURE__ */ jsx7(Box4, { sx: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", p: 3 }, children: /* @__PURE__ */ jsx7(Typography4, { variant: "body2", color: "text.secondary", children: boardData?.hideEmptyColumns ? "No hay columnas visibles (activa roles o desactiva \xABOcultar vac\xEDos\xBB)." : "No hay roles configurados." }) }) : null,
+  return /* @__PURE__ */ jsxs5(Box5, { ref: kanbanWrapRef, className: "paty-todos-kanban-wrap paty-permisos-kanban-wrap", sx: { flex: 1, minHeight: 0, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", p: 0 }, children: [
+    /* @__PURE__ */ jsxs5(Box5, { className: `paty-todos-kanban paty-permisos-kanban${!assignEnabled ? " paty-permisos-kanban--no-assign" : ""}${draggingId ? " paty-todos-kanban--dragging" : ""}${selectedUserKey ? " paty-permisos-kanban--user-selected" : ""}${processingUserKey ? " paty-permisos-kanban--user-busy" : ""}`, sx: { flex: 1, minHeight: 0, maxHeight: "100%", display: "flex", alignItems: "stretch", alignSelf: "stretch", position: "relative" }, children: [
+      dragGhost ? /* @__PURE__ */ jsx8(DragGhost, { card: ghostCard, column: ghostColumn, x: dragGhost.x, y: dragGhost.y, width: dragGhost.width }) : null,
+      noUsersVisible ? /* @__PURE__ */ jsx8(Box5, { sx: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", p: 3, pointerEvents: "none", zIndex: 2 }, children: /* @__PURE__ */ jsx8(Typography5, { variant: "body2", color: "text.secondary", children: "Ning\xFAn usuario coincide con los filtros." }) }) : null,
+      columns.length === 0 ? /* @__PURE__ */ jsx8(Box5, { sx: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", p: 3 }, children: /* @__PURE__ */ jsx8(Typography5, { variant: "body2", color: "text.secondary", children: boardData?.hideEmptyColumns ? "No hay columnas visibles (activa roles o desactiva \xABOcultar vac\xEDos\xBB)." : "No hay roles configurados." }) }) : null,
       columns.map((col) => {
         const canManageCol = assignEnabled;
         const canDropOnCol = canManageCol;
@@ -2479,8 +2505,8 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
           draggingId && !String(draggingId).startsWith("col:") && !isOver && assignEnabled && !canDropOnCol ? "paty-permisos-column--drop-forbidden" : "",
           draggingId && !String(draggingId).startsWith("col:") && !isOver ? "paty-permisos-column--drag-idle" : ""
         ].filter(Boolean).join(" ");
-        return /* @__PURE__ */ jsxs4(
-          Box4,
+        return /* @__PURE__ */ jsxs5(
+          Box5,
           {
             ref: (el) => {
               columnRefs.current[col.id] = el;
@@ -2489,8 +2515,8 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
             style: { "--col-accent": col.accent },
             sx: { display: "flex", flexDirection: "column", minHeight: 0, height: "100%", alignSelf: "stretch" },
             children: [
-              /* @__PURE__ */ jsxs4(
-                Stack3,
+              /* @__PURE__ */ jsxs5(
+                Stack4,
                 {
                   direction: "row",
                   alignItems: "center",
@@ -2500,15 +2526,15 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
                   sx: { flexShrink: 0, px: 1.75, py: 1.25, pb: 1, cursor: filterDragEnabled ? "grab" : "default" },
                   onPointerDown: (e) => handleColumnHeadDragStart(col, e),
                   children: [
-                    /* @__PURE__ */ jsxs4(Stack3, { direction: "row", alignItems: "center", spacing: 0.75, className: "paty-todos-column__title", sx: { minWidth: 0, flex: 1 }, children: [
-                      /* @__PURE__ */ jsx7(Icon2, { icon: col.icon, size: 16 }),
-                      /* @__PURE__ */ jsxs4(Box4, { sx: { minWidth: 0 }, children: [
-                        /* @__PURE__ */ jsx7(Stack3, { direction: "row", alignItems: "baseline", spacing: 0.75, sx: { minWidth: 0 }, children: /* @__PURE__ */ jsx7(Box4, { component: "span", sx: { display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }, title: col.roleName && col.title !== col.roleName ? `${col.title} (${col.roleName})` : col.title, children: col.title }) }),
-                        col.descripcion ? /* @__PURE__ */ jsx7(Typography4, { variant: "caption", color: "text.secondary", sx: { display: "block", lineHeight: 1.3, mt: 0.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: col.descripcion, children: col.descripcion }) : null
+                    /* @__PURE__ */ jsxs5(Stack4, { direction: "row", alignItems: "center", spacing: 0.75, className: "paty-todos-column__title", sx: { minWidth: 0, flex: 1 }, children: [
+                      /* @__PURE__ */ jsx8(Icon3, { icon: col.icon, size: 16 }),
+                      /* @__PURE__ */ jsxs5(Box5, { sx: { minWidth: 0 }, children: [
+                        /* @__PURE__ */ jsx8(Stack4, { direction: "row", alignItems: "baseline", spacing: 0.75, sx: { minWidth: 0 }, children: /* @__PURE__ */ jsx8(Box5, { component: "span", sx: { display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }, title: col.roleName && col.title !== col.roleName ? `${col.title} (${col.roleName})` : col.title, children: col.title }) }),
+                        col.descripcion ? /* @__PURE__ */ jsx8(Typography5, { variant: "caption", color: "text.secondary", sx: { display: "block", lineHeight: 1.3, mt: 0.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: col.descripcion, children: col.descripcion }) : null
                       ] })
                     ] }),
-                    /* @__PURE__ */ jsx7(Stack3, { direction: "row", alignItems: "center", spacing: 0.5, sx: { flexShrink: 0 }, children: canManageCol ? /* @__PURE__ */ jsx7(Tooltip2, { title: addBusy && addingRoleId === col.id ? "Agregando\u2026" : "Agregar usuario", children: /* @__PURE__ */ jsx7("span", { className: "paty-permisos-column__add-wrap", children: /* @__PURE__ */ jsx7(
-                      IconButton,
+                    /* @__PURE__ */ jsx8(Stack4, { direction: "row", alignItems: "center", spacing: 0.5, sx: { flexShrink: 0 }, children: canManageCol ? /* @__PURE__ */ jsx8(Tooltip3, { title: addBusy && addingRoleId === col.id ? "Agregando\u2026" : "Agregar usuario", children: /* @__PURE__ */ jsx8("span", { className: "paty-permisos-column__add-wrap", children: /* @__PURE__ */ jsx8(
+                      IconButton2,
                       {
                         size: "small",
                         className: "paty-permisos-column__add",
@@ -2523,14 +2549,14 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
                             existingUsernames: new Set(col.users.map((u) => u.username))
                           });
                         },
-                        children: addBusy && addingRoleId === col.id ? /* @__PURE__ */ jsx7(CircularProgress2, { size: 14, thickness: 5 }) : /* @__PURE__ */ jsx7(Icon2, { icon: "mdi:plus", size: 16 })
+                        children: addBusy && addingRoleId === col.id ? /* @__PURE__ */ jsx8(CircularProgress2, { size: 14, thickness: 5 }) : /* @__PURE__ */ jsx8(Icon3, { icon: "mdi:plus", size: 16 })
                       }
                     ) }) }) : null })
                   ]
                 }
               ),
-              /* @__PURE__ */ jsxs4(
-                Box4,
+              /* @__PURE__ */ jsxs5(
+                Box5,
                 {
                   ref: (el) => {
                     listRefs.current[col.id] = el;
@@ -2545,7 +2571,7 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
                       const isSelected = selectedUserKey === cardUserKey;
                       const isDimmed = !!selectedUserKey && !isSelected;
                       const canDragUser = canAssignRoles && !readOnly;
-                      return /* @__PURE__ */ jsx7(
+                      return /* @__PURE__ */ jsx8(
                         UserCard,
                         {
                           card,
@@ -2565,7 +2591,7 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
                         card.id
                       );
                     }),
-                    !col.users.length ? /* @__PURE__ */ jsx7(Typography4, { variant: "caption", color: "text.secondary", sx: { px: 0.5, py: 1 }, children: "Sin usuarios" }) : null
+                    !col.users.length ? /* @__PURE__ */ jsx8(Typography5, { variant: "caption", color: "text.secondary", sx: { px: 0.5, py: 1 }, children: "Sin usuarios" }) : null
                   ]
                 }
               )
@@ -2575,8 +2601,8 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
         );
       })
     ] }),
-    typeof document !== "undefined" ? createPortal(/* @__PURE__ */ jsxs4(Fragment3, { children: [
-      /* @__PURE__ */ jsx7(
+    typeof document !== "undefined" ? createPortal(/* @__PURE__ */ jsxs5(Fragment3, { children: [
+      /* @__PURE__ */ jsx8(
         RoleDragDialog,
         {
           open: !!dragPending,
@@ -2589,7 +2615,7 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
           onConfirm: handleDragConfirm
         }
       ),
-      /* @__PURE__ */ jsx7(
+      /* @__PURE__ */ jsx8(
         RoleRemoveDialog,
         {
           open: !!removePending,
@@ -2602,7 +2628,7 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
           onConfirm: handleRemoveConfirm
         }
       ),
-      /* @__PURE__ */ jsx7(
+      /* @__PURE__ */ jsx8(
         RoleAddDialog,
         {
           open: !!addPending,
@@ -2620,11 +2646,11 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
 
 // src/js/tools/PermisosRoleFilterAutocomplete.jsx
 init_platform();
-import { jsx as jsx8 } from "react/jsx-runtime";
-var { Autocomplete: Autocomplete2, TextField: TextField3, Chip: Chip4 } = getMaterialUI();
+import { jsx as jsx9 } from "react/jsx-runtime";
+var { Autocomplete: Autocomplete2, TextField: TextField3, Chip: Chip5 } = getMaterialUI();
 function PermisosRoleFilterAutocomplete({ options, value, onChange, disabled = false }) {
   const selected = options.filter((o) => value.includes(o.id));
-  return /* @__PURE__ */ jsx8(
+  return /* @__PURE__ */ jsx9(
     Autocomplete2,
     {
       multiple: true,
@@ -2640,9 +2666,9 @@ function PermisosRoleFilterAutocomplete({ options, value, onChange, disabled = f
       limitTags: 2,
       renderTags: (tagValue, getTagProps) => tagValue.map((option, index) => {
         const { key, ...chipProps } = getTagProps({ index });
-        return /* @__PURE__ */ jsx8(Chip4, { ...chipProps, label: option.label, size: "small", className: "isa-neon-glass-chip" }, key);
+        return /* @__PURE__ */ jsx9(Chip5, { ...chipProps, label: option.label, size: "small", className: "isa-neon-glass-chip" }, key);
       }),
-      renderInput: (params) => /* @__PURE__ */ jsx8(
+      renderInput: (params) => /* @__PURE__ */ jsx9(
         TextField3,
         {
           ...params,
@@ -2664,9 +2690,9 @@ function PermisosRoleFilterAutocomplete({ options, value, onChange, disabled = f
 
 // src/js/tools/UserPermissionsSummaryDialog.jsx
 init_platform();
-import { Fragment as Fragment4, jsx as jsx9, jsxs as jsxs5 } from "react/jsx-runtime";
-var { Typography: Typography5, Stack: Stack4, Box: Box5, Chip: Chip5, Divider: Divider2, CircularProgress: CircularProgress3 } = getMaterialUI();
-var { useMemo: useMemo4 } = getReact();
+import { Fragment as Fragment4, jsx as jsx10, jsxs as jsxs6 } from "react/jsx-runtime";
+var { Typography: Typography6, Stack: Stack5, Box: Box6, Chip: Chip6, Divider: Divider2, CircularProgress: CircularProgress3 } = getMaterialUI();
+var { useMemo: useMemo5 } = getReact();
 var ROLE_KEYS_OMIT = /* @__PURE__ */ new Set(["descripcion", "namedisplay", "roles", "jerarquia", "accent", "color", "icon"]);
 function getRoleEntry(roles, roleName) {
   const key = String(roleName ?? "").trim().toUpperCase();
@@ -2708,9 +2734,9 @@ function summarizePerms(perms) {
 function RoleCard({ roleName, roles }) {
   const entry = getRoleEntry(roles, roleName);
   const title = roleTitleFromEntry(entry) || roleName;
-  return /* @__PURE__ */ jsx9(Box5, { className: "isa-glass-card paty-permisos-summary__role", sx: { p: 1.25, borderRadius: 1.5 }, children: /* @__PURE__ */ jsxs5(Stack4, { direction: "row", alignItems: "center", spacing: 0.75, children: [
-    /* @__PURE__ */ jsx9(
-      Chip5,
+  return /* @__PURE__ */ jsx10(Box6, { className: "isa-glass-card paty-permisos-summary__role", sx: { p: 1.25, borderRadius: 1.5 }, children: /* @__PURE__ */ jsxs6(Stack5, { direction: "row", alignItems: "center", spacing: 0.75, children: [
+    /* @__PURE__ */ jsx10(
+      Chip6,
       {
         size: "small",
         color: "primary",
@@ -2719,24 +2745,24 @@ function RoleCard({ roleName, roles }) {
         title: roleName
       }
     ),
-    title !== roleName ? /* @__PURE__ */ jsx9(Typography5, { variant: "caption", color: "text.secondary", sx: { fontFamily: "monospace" }, children: roleName }) : null
+    title !== roleName ? /* @__PURE__ */ jsx10(Typography6, { variant: "caption", color: "text.secondary", sx: { fontFamily: "monospace" }, children: roleName }) : null
   ] }) });
 }
 function PermList({ title, items, kind }) {
   if (!items.length) return null;
-  return /* @__PURE__ */ jsxs5(Box5, { sx: { mt: 1 }, children: [
-    /* @__PURE__ */ jsxs5(Typography5, { variant: "overline", color: "text.secondary", sx: { letterSpacing: 1 }, children: [
+  return /* @__PURE__ */ jsxs6(Box6, { sx: { mt: 1 }, children: [
+    /* @__PURE__ */ jsxs6(Typography6, { variant: "overline", color: "text.secondary", sx: { letterSpacing: 1 }, children: [
       title,
       " (",
       items.length,
       ")"
     ] }),
-    /* @__PURE__ */ jsxs5(Box5, { sx: { display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.5 }, children: [
+    /* @__PURE__ */ jsxs6(Box6, { sx: { display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.5 }, children: [
       items.slice(0, kind === "filter" ? 50 : 100).map((it, i) => {
         if (kind === "filter") {
           const fSummary = Object.entries(it.filter ?? {}).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", ");
-          return /* @__PURE__ */ jsx9(
-            Chip5,
+          return /* @__PURE__ */ jsx10(
+            Chip6,
             {
               size: "small",
               variant: "outlined",
@@ -2749,8 +2775,8 @@ function PermList({ title, items, kind }) {
           );
         }
         if (kind === "allow") {
-          return /* @__PURE__ */ jsx9(
-            Chip5,
+          return /* @__PURE__ */ jsx10(
+            Chip6,
             {
               size: "small",
               color: "success",
@@ -2762,8 +2788,8 @@ function PermList({ title, items, kind }) {
             it
           );
         }
-        return /* @__PURE__ */ jsx9(
-          Chip5,
+        return /* @__PURE__ */ jsx10(
+          Chip6,
           {
             size: "small",
             variant: "outlined",
@@ -2774,12 +2800,12 @@ function PermList({ title, items, kind }) {
           `${it.key}-${i}`
         );
       }),
-      items.length > (kind === "filter" ? 50 : 100) ? /* @__PURE__ */ jsx9(Chip5, { size: "small", label: `+${items.length - (kind === "filter" ? 50 : 100)} m\xE1s`, sx: { fontFamily: "monospace", fontSize: 11 } }) : null
+      items.length > (kind === "filter" ? 50 : 100) ? /* @__PURE__ */ jsx10(Chip6, { size: "small", label: `+${items.length - (kind === "filter" ? 50 : 100)} m\xE1s`, sx: { fontFamily: "monospace", fontSize: 11 } }) : null
     ] })
   ] });
 }
 function UserPermissionsSummaryDialog({ open, onClose, username, users, roles }) {
-  const data = useMemo4(() => {
+  const data = useMemo5(() => {
     if (!open || !username) return null;
     const targetUser = (users ?? []).find((u) => String(u?.iusuario ?? "").trim().toUpperCase() === username.toUpperCase());
     if (!targetUser) return null;
@@ -2788,7 +2814,7 @@ function UserPermissionsSummaryDialog({ open, onClose, username, users, roles })
     const { allows, filters, others } = summarizePerms(targetUser.permisos);
     return { targetUser, directRoles, activeRoles: active, allows, filters, others };
   }, [open, username, users, roles]);
-  return /* @__PURE__ */ jsxs5(
+  return /* @__PURE__ */ jsxs6(
     GlassDialog,
     {
       open,
@@ -2796,7 +2822,7 @@ function UserPermissionsSummaryDialog({ open, onClose, username, users, roles })
       maxWidth: "md",
       fullWidth: true,
       paperClassName: "permisos-user-summary-dialog",
-      header: /* @__PURE__ */ jsx9(
+      header: /* @__PURE__ */ jsx10(
         GlassDialogHeader,
         {
           icon: "mdi:shield-account-outline",
@@ -2807,33 +2833,33 @@ function UserPermissionsSummaryDialog({ open, onClose, username, users, roles })
         }
       ),
       children: [
-        /* @__PURE__ */ jsx9(Box5, { sx: { ...glassDialogContentSx(), minHeight: 360 }, children: !username ? /* @__PURE__ */ jsx9(Typography5, { color: "text.secondary", children: "Sin usuario seleccionado." }) : !data ? /* @__PURE__ */ jsxs5(Stack4, { direction: "row", spacing: 1.5, alignItems: "center", children: [
-          /* @__PURE__ */ jsx9(CircularProgress3, { size: 20 }),
-          /* @__PURE__ */ jsx9(Typography5, { color: "text.secondary", children: "Usuario no encontrado en los datos cargados." })
-        ] }) : /* @__PURE__ */ jsxs5(Fragment4, { children: [
-          /* @__PURE__ */ jsxs5(Box5, { children: [
-            /* @__PURE__ */ jsx9(Typography5, { variant: "overline", color: "text.secondary", children: "Usuario" }),
-            /* @__PURE__ */ jsx9(Typography5, { variant: "h6", fontWeight: 700, children: data.targetUser.iusuario }),
-            data.targetUser.permisos?.nombre || data.targetUser.permisos?.namedisplay ? /* @__PURE__ */ jsx9(Typography5, { variant: "body2", color: "text.secondary", children: data.targetUser.permisos.nombre || data.targetUser.permisos.namedisplay }) : null
+        /* @__PURE__ */ jsx10(Box6, { sx: { ...glassDialogContentSx(), minHeight: 360 }, children: !username ? /* @__PURE__ */ jsx10(Typography6, { color: "text.secondary", children: "Sin usuario seleccionado." }) : !data ? /* @__PURE__ */ jsxs6(Stack5, { direction: "row", spacing: 1.5, alignItems: "center", children: [
+          /* @__PURE__ */ jsx10(CircularProgress3, { size: 20 }),
+          /* @__PURE__ */ jsx10(Typography6, { color: "text.secondary", children: "Usuario no encontrado en los datos cargados." })
+        ] }) : /* @__PURE__ */ jsxs6(Fragment4, { children: [
+          /* @__PURE__ */ jsxs6(Box6, { children: [
+            /* @__PURE__ */ jsx10(Typography6, { variant: "overline", color: "text.secondary", children: "Usuario" }),
+            /* @__PURE__ */ jsx10(Typography6, { variant: "h6", fontWeight: 700, children: data.targetUser.iusuario }),
+            data.targetUser.permisos?.nombre || data.targetUser.permisos?.namedisplay ? /* @__PURE__ */ jsx10(Typography6, { variant: "body2", color: "text.secondary", children: data.targetUser.permisos.nombre || data.targetUser.permisos.namedisplay }) : null
           ] }),
-          /* @__PURE__ */ jsx9(Divider2, { sx: { my: 1.5 } }),
-          /* @__PURE__ */ jsxs5(Typography5, { variant: "overline", color: "text.secondary", children: [
+          /* @__PURE__ */ jsx10(Divider2, { sx: { my: 1.5 } }),
+          /* @__PURE__ */ jsxs6(Typography6, { variant: "overline", color: "text.secondary", children: [
             "Roles asignados ",
             data.directRoles.length ? `(${data.directRoles.length})` : ""
           ] }),
-          data.directRoles.length === 0 ? /* @__PURE__ */ jsx9(Typography5, { variant: "body2", color: "text.secondary", sx: { mt: 0.5 }, children: "El usuario no tiene roles asignados. Permisos efectivos = USR por defecto." }) : /* @__PURE__ */ jsx9(Stack4, { spacing: 1, sx: { mt: 1 }, children: data.directRoles.map((rn) => /* @__PURE__ */ jsx9(RoleCard, { roleName: rn, roles: data.activeRoles }, rn)) }),
-          /* @__PURE__ */ jsx9(Divider2, { sx: { my: 1.5 } }),
-          /* @__PURE__ */ jsx9(Typography5, { variant: "overline", color: "text.secondary", children: "Permisos efectivos del usuario" }),
-          /* @__PURE__ */ jsx9(Typography5, { variant: "caption", color: "text.secondary", sx: { display: "block", mt: 0.25 }, children: "Calculados a partir de sus roles directos (sin herencia jer\xE1rquica)." }),
-          data.allows.length === 0 && data.filters.length === 0 && data.others.length === 0 ? /* @__PURE__ */ jsx9(Typography5, { variant: "body2", color: "text.secondary", sx: { mt: 1 }, children: "Sin permisos materializados m\xE1s all\xE1 del USR por defecto." }) : /* @__PURE__ */ jsxs5(Fragment4, { children: [
-            /* @__PURE__ */ jsx9(PermList, { title: "Permitidos", items: data.allows, kind: "allow" }),
-            /* @__PURE__ */ jsx9(PermList, { title: "Con filtro fijo", items: data.filters, kind: "filter" }),
-            /* @__PURE__ */ jsx9(PermList, { title: "Otros", items: data.others, kind: "other" })
+          data.directRoles.length === 0 ? /* @__PURE__ */ jsx10(Typography6, { variant: "body2", color: "text.secondary", sx: { mt: 0.5 }, children: "El usuario no tiene roles asignados. Permisos efectivos = USR por defecto." }) : /* @__PURE__ */ jsx10(Stack5, { spacing: 1, sx: { mt: 1 }, children: data.directRoles.map((rn) => /* @__PURE__ */ jsx10(RoleCard, { roleName: rn, roles: data.activeRoles }, rn)) }),
+          /* @__PURE__ */ jsx10(Divider2, { sx: { my: 1.5 } }),
+          /* @__PURE__ */ jsx10(Typography6, { variant: "overline", color: "text.secondary", children: "Permisos efectivos del usuario" }),
+          /* @__PURE__ */ jsx10(Typography6, { variant: "caption", color: "text.secondary", sx: { display: "block", mt: 0.25 }, children: "Calculados a partir de sus roles directos (sin herencia jer\xE1rquica)." }),
+          data.allows.length === 0 && data.filters.length === 0 && data.others.length === 0 ? /* @__PURE__ */ jsx10(Typography6, { variant: "body2", color: "text.secondary", sx: { mt: 1 }, children: "Sin permisos materializados m\xE1s all\xE1 del USR por defecto." }) : /* @__PURE__ */ jsxs6(Fragment4, { children: [
+            /* @__PURE__ */ jsx10(PermList, { title: "Permitidos", items: data.allows, kind: "allow" }),
+            /* @__PURE__ */ jsx10(PermList, { title: "Con filtro fijo", items: data.filters, kind: "filter" }),
+            /* @__PURE__ */ jsx10(PermList, { title: "Otros", items: data.others, kind: "other" })
           ] }),
-          /* @__PURE__ */ jsx9(Divider2, { sx: { my: 1.5 } }),
-          /* @__PURE__ */ jsx9(Typography5, { variant: "caption", color: "text.secondary", children: "Los detalles completos por rol se obtienen al abrir cada columna. Este resumen es de solo lectura y se actualiza al recargar el panel." })
+          /* @__PURE__ */ jsx10(Divider2, { sx: { my: 1.5 } }),
+          /* @__PURE__ */ jsx10(Typography6, { variant: "caption", color: "text.secondary", children: "Los detalles completos por rol se obtienen al abrir cada columna. Este resumen es de solo lectura y se actualiza al recargar el panel." })
         ] }) }),
-        /* @__PURE__ */ jsx9(Box5, { sx: glassDialogActionsSx(), children: /* @__PURE__ */ jsx9(
+        /* @__PURE__ */ jsx10(Box6, { sx: glassDialogActionsSx(), children: /* @__PURE__ */ jsx10(
           "button",
           {
             type: "button",
@@ -3091,9 +3117,9 @@ function persistPermisosHideEmpty(hide) {
 }
 
 // src/js/tools/PermisosPanel.jsx
-import { jsx as jsx10, jsxs as jsxs6 } from "react/jsx-runtime";
-var { useState: useState6, useEffect: useEffect6, useCallback: useCallback2, useMemo: useMemo5, useRef: useRef3 } = getReact();
-var { Typography: Typography6, Stack: Stack5, Alert: Alert2, CircularProgress: CircularProgress4, Box: Box6, Chip: Chip6, DialogContent: DialogContent3, DialogActions: DialogActions2, Button: Button2, FormControlLabel: FormControlLabel2, Switch } = getMaterialUI();
+import { jsx as jsx11, jsxs as jsxs7 } from "react/jsx-runtime";
+var { useState: useState6, useEffect: useEffect6, useCallback: useCallback2, useMemo: useMemo6, useRef: useRef3 } = getReact();
+var { Typography: Typography7, Stack: Stack6, Alert: Alert2, CircularProgress: CircularProgress4, Box: Box7, Chip: Chip7, DialogContent: DialogContent3, DialogActions: DialogActions2, Button: Button2, FormControlLabel: FormControlLabel2, Switch } = getMaterialUI();
 function PermisosPanel({ onNeedLogin }) {
   const [loading, setLoading] = useState6(true);
   const [busy, setBusy] = useState6(false);
@@ -3101,8 +3127,8 @@ function PermisosPanel({ onNeedLogin }) {
   const [canAssignUserRoles, setCanAssignUserRoles] = useState6(false);
   const [canEditRoleDescriptions, setCanEditRoleDescriptions] = useState6(false);
   const [authTick, setAuthTick] = useState6(0);
-  const loggedIn = useMemo5(() => !!Session?.isLoggedIn?.(), [authTick]);
-  const sessionUsername = useMemo5(() => String(Session.username?.() ?? "").trim().toUpperCase(), [authTick]);
+  const loggedIn = useMemo6(() => !!Session?.isLoggedIn?.(), [authTick]);
+  const sessionUsername = useMemo6(() => String(Session.username?.() ?? "").trim().toUpperCase(), [authTick]);
   const [err, setErr] = useState6("");
   const [data, setData] = useState6({ roles: [], users: [], contactos: {} });
   const [userSearch, setUserSearch] = useState6("");
@@ -3202,7 +3228,7 @@ function PermisosPanel({ onNeedLogin }) {
     setHideEmptyStacks(hide);
     persistPermisosHideEmpty(hide);
   }, []);
-  const userDirectory = useMemo5(() => buildUserDirectoryFromPermisos(data.users), [data.users]);
+  const userDirectory = useMemo6(() => buildUserDirectoryFromPermisos(data.users), [data.users]);
   useEffect6(() => {
     Assets.ensureTodosCss();
     const onAuth = () => {
@@ -3327,11 +3353,11 @@ function PermisosPanel({ onNeedLogin }) {
     }, 320);
     return () => window.clearTimeout(t);
   }, [userSearch, usersPaginated, fetchPermisosWithSearch]);
-  const roleOptions = useMemo5(
+  const roleOptions = useMemo6(
     () => (data.roles || []).map((r) => ({ id: roleNameFromEntry(r), label: roleTitleFromEntry(r) })).filter((r) => r.id && r.id !== USR_ROLE),
     [data.roles]
   );
-  const boardData = useMemo5(
+  const boardData = useMemo6(
     () => buildPermisosBoard(data, { userSearch, roleFilters, userDirectory, hideEmptyColumns: hideEmptyStacks, contactos: data.contactos }),
     [data, userSearch, roleFilters, userDirectory, hideEmptyStacks]
   );
@@ -3360,11 +3386,11 @@ function PermisosPanel({ onNeedLogin }) {
     }
   }, [editRoleMeta, onNeedLogin, managePermisos, applyFlags]);
   if (loading) {
-    return /* @__PURE__ */ jsx10(Box6, { className: "config-permisos-loading", children: /* @__PURE__ */ jsx10(CircularProgress4, { size: 26 }) });
+    return /* @__PURE__ */ jsx11(Box7, { className: "config-permisos-loading", children: /* @__PURE__ */ jsx11(CircularProgress4, { size: 26 }) });
   }
-  return /* @__PURE__ */ jsxs6(Box6, { className: "paty-permisos-shell", sx: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }, children: [
-    /* @__PURE__ */ jsx10(Box6, { ref: filterToolbarRef, className: "config-permisos-toolbar-wrap", sx: { flexShrink: 0 }, children: /* @__PURE__ */ jsxs6(GlassToolbar, { className: `config-permisos-toolbar${dragOverFilter ? " config-permisos-toolbar--filter-drop" : ""}`, sx: { borderRadius: 0, mb: 0, flexShrink: 0, gap: 0.75, px: { xs: 1.25, sm: 1.75 }, py: 0.5, alignItems: "center", minHeight: 40 }, children: [
-      /* @__PURE__ */ jsx10(
+  return /* @__PURE__ */ jsxs7(Box7, { className: "paty-permisos-shell", sx: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }, children: [
+    /* @__PURE__ */ jsx11(Box7, { ref: filterToolbarRef, className: "config-permisos-toolbar-wrap", sx: { flexShrink: 0 }, children: /* @__PURE__ */ jsxs7(GlassToolbar, { className: `config-permisos-toolbar${dragOverFilter ? " config-permisos-toolbar--filter-drop" : ""}`, sx: { borderRadius: 0, mb: 0, flexShrink: 0, gap: 0.75, px: { xs: 1.25, sm: 1.75 }, py: 0.5, alignItems: "center", minHeight: 40 }, children: [
+      /* @__PURE__ */ jsx11(
         PermisosUserAutocomplete,
         {
           variant: "toolbar",
@@ -3379,9 +3405,9 @@ function PermisosPanel({ onNeedLogin }) {
           className: "config-permisos-toolbar__field config-permisos-toolbar__field--search"
         }
       ),
-      /* @__PURE__ */ jsx10(PermisosRoleFilterAutocomplete, { options: roleOptions, value: roleFilters, onChange: setRoleFilters, disabled: filterBusy }),
-      filtersActive ? /* @__PURE__ */ jsx10(
-        Chip6,
+      /* @__PURE__ */ jsx11(PermisosRoleFilterAutocomplete, { options: roleOptions, value: roleFilters, onChange: setRoleFilters, disabled: filterBusy }),
+      filtersActive ? /* @__PURE__ */ jsx11(
+        Chip7,
         {
           size: "small",
           variant: "outlined",
@@ -3391,23 +3417,23 @@ function PermisosPanel({ onNeedLogin }) {
           disabled: filterBusy
         }
       ) : null,
-      /* @__PURE__ */ jsx10(
+      /* @__PURE__ */ jsx11(
         FormControlLabel2,
         {
           className: "config-permisos-toolbar__hide-empty",
-          control: /* @__PURE__ */ jsx10(Switch, { size: "small", checked: hideEmptyStacks, onChange: (e) => setHideEmptyStacksPersist(e.target.checked), disabled: filterBusy }),
+          control: /* @__PURE__ */ jsx11(Switch, { size: "small", checked: hideEmptyStacks, onChange: (e) => setHideEmptyStacksPersist(e.target.checked), disabled: filterBusy }),
           label: "Ocultar vac\xEDos",
           sx: { mr: 0, ml: 0.25, flexShrink: 0, "& .MuiFormControlLabel-label": { fontSize: "0.75rem", whiteSpace: "nowrap" } }
         }
       ),
-      /* @__PURE__ */ jsx10(Box6, { sx: { flex: 1, minWidth: 8 } }),
-      /* @__PURE__ */ jsxs6(Stack5, { direction: "row", spacing: 0.5, alignItems: "center", className: "config-form-section__actions config-permisos-toolbar__actions", children: [
-        /* @__PURE__ */ jsx10(ButtonIconify, { icon: "mdi:shield-account", title: "Roles planos PatyIA", onClick: () => void loadPatyia(), disabled: busy || filterBusy || patyiaBusy }),
-        /* @__PURE__ */ jsx10(ButtonIconify, { icon: "mdi:refresh", title: "Recargar", onClick: load, disabled: busy || filterBusy })
+      /* @__PURE__ */ jsx11(Box7, { sx: { flex: 1, minWidth: 8 } }),
+      /* @__PURE__ */ jsxs7(Stack6, { direction: "row", spacing: 0.5, alignItems: "center", className: "config-form-section__actions config-permisos-toolbar__actions", children: [
+        /* @__PURE__ */ jsx11(ButtonIconify, { icon: "mdi:shield-account", title: "Roles planos PatyIA", onClick: () => void loadPatyia(), disabled: busy || filterBusy || patyiaBusy }),
+        /* @__PURE__ */ jsx11(ButtonIconify, { icon: "mdi:refresh", title: "Recargar", onClick: load, disabled: busy || filterBusy })
       ] })
     ] }) }),
-    err ? /* @__PURE__ */ jsx10(Alert2, { severity: "warning", className: "config-form-alert config-permisos-alert", children: err }) : null,
-    /* @__PURE__ */ jsx10(
+    err ? /* @__PURE__ */ jsx11(Alert2, { severity: "warning", className: "config-form-alert config-permisos-alert", children: err }) : null,
+    /* @__PURE__ */ jsx11(
       PermisosKanban,
       {
         boardData,
@@ -3431,7 +3457,7 @@ function PermisosPanel({ onNeedLogin }) {
         onRoleAdd: handleRoleAdd
       }
     ),
-    /* @__PURE__ */ jsx10(
+    /* @__PURE__ */ jsx11(
       UserPermissionsSummaryDialog,
       {
         open: !!summaryUsername,
