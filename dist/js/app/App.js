@@ -477,7 +477,7 @@ async function ensureSwaggerViewer(base = swaggerViewerBase()) {
 var PIN, isDevHost2, JSDELIVR_CDN, CDN, asset, LIGHTBOX_ZOOM_REF, SWAGGER_VIEWER_REF;
 var init_cdn = __esm({
   "src/js/boot/cdn.mjs"() {
-    PIN = "f8ce806";
+    PIN = "0a19d91";
     isDevHost2 = typeof location !== "undefined" && /localhost|127\.0\.0\.1|\[::1\]/.test(location.hostname);
     JSDELIVR_CDN = `https://cdn.jsdelivr.net/gh/Jeff-Aporta/front-shared@${PIN}/cdn/`;
     CDN = !isDevHost2 ? vendorCdnBase() : useLocalMonorepoCdn() ? frontSharedCdnBase() : typeof location !== "undefined" && new URLSearchParams(location.search).get("isa_cdn") === "remote" ? JSDELIVR_CDN : vendorCdnBase();
@@ -913,10 +913,37 @@ function resolveChatSendText(overrideText, draft = "") {
 function coerceConversacionPrompt(prompt) {
   return typeof prompt === "string" ? prompt.trim() : "";
 }
+function adjuntoUrl(item) {
+  if (typeof item === "string") return item.trim();
+  if (item && typeof item === "object") {
+    const o = item;
+    return String(o.url ?? o.dataUrl ?? "").trim();
+  }
+  return "";
+}
+function normalizeAdjuntoWire(item) {
+  if (typeof item === "string") {
+    const s = item.trim();
+    return isHttpUrl(s) || isLegacyDataUrl(s) ? s : null;
+  }
+  if (!item || typeof item !== "object") return null;
+  const o = item;
+  const url = adjuntoUrl(o);
+  if (!url || !(isHttpUrl(url) || isLegacyDataUrl(url))) return null;
+  const ifile = String(o.ifile ?? o.IFILE ?? "").trim();
+  if (!ifile) return url;
+  const variants = o.variants && typeof o.variants === "object" ? o.variants : void 0;
+  return {
+    url,
+    ifile,
+    ...typeof o.kind === "string" ? { kind: o.kind } : {},
+    ...variants ? { variants } : {}
+  };
+}
 function buildConversacionPostBody(input) {
   const text = coerceConversacionPrompt(input.prompt);
-  const imagenes = (input.imagenes || []).map((s) => String(s || "").trim()).filter((s) => isHttpUrl(s) || isLegacyDataUrl(s));
-  const audios = (input.audios || []).map((s) => String(s || "").trim()).filter((s) => isHttpUrl(s) || isLegacyDataUrl(s));
+  const imagenes = (input.imagenes || []).map(normalizeAdjuntoWire).filter((x) => x != null);
+  const audios = (input.audios || []).map(normalizeAdjuntoWire).filter((x) => x != null);
   const hasMedia = imagenes.length > 0 || audios.length > 0;
   const body = {
     prompt: text || (imagenes.length ? "(imagen adjunta)" : audios.length ? "(nota de voz)" : "")
@@ -947,8 +974,15 @@ function formatConversacionPostBodyPreview(body, { maxUrl = 80 } = {}) {
     }
     return `${s.slice(0, maxUrl)}\u2026`;
   };
-  if (Array.isArray(clone.imagenes)) clone.imagenes = clone.imagenes.map((img, i) => summarize(img, "img", i));
-  if (Array.isArray(clone.audios)) clone.audios = clone.audios.map((a, i) => summarize(a, "audio", i));
+  const summarizeItem = (item, label, i) => {
+    if (item && typeof item === "object") {
+      const o = item;
+      return { ...o, url: summarize(o.url, label, i) };
+    }
+    return summarize(item, label, i);
+  };
+  if (Array.isArray(clone.imagenes)) clone.imagenes = clone.imagenes.map((img, i) => summarizeItem(img, "img", i));
+  if (Array.isArray(clone.audios)) clone.audios = clone.audios.map((a, i) => summarizeItem(a, "audio", i));
   return JSON.stringify(clone, null, 2);
 }
 async function sendConversacionStream(jwt, input, onDelta) {
@@ -1406,10 +1440,29 @@ function fetchPermisosListRaw(q) {
   if (cached && Date.now() - cached.iat < PERMISOS_LIST_TTL_MS) return Promise.resolve(cached.raw);
   const inflight = PERMISOS_LIST_INFLIGHT.get(q);
   if (inflight) return inflight;
-  const req = jsonFetch2(`/system/permisos${q ? `?${q}` : ""}`, { method: "GET", headers: systemApiHeaders() }).catch(async (err) => {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!/not found|404|no (existe|encontr)|HTTP 404/i.test(msg)) throw err;
-    return permissionsFromAdminRoles(await fetchPatyiaAdminRoles());
+  const req = fetchPatyiaAdminRoles().then((admin) => permissionsFromAdminRoles(admin)).then((raw) => {
+    const qs3 = new URLSearchParams(q);
+    const search = String(qs3.get("search") ?? "").trim().toUpperCase();
+    const role = String(qs3.get("role") ?? "").trim().toUpperCase();
+    const limitRaw = qs3.get("limit");
+    const limit = limitRaw != null && Number.isFinite(Number(limitRaw)) ? Math.min(500, Math.max(1, Math.floor(Number(limitRaw)))) : void 0;
+    let users = Array.isArray(raw.users) ? [...raw.users] : [];
+    if (search) {
+      users = users.filter((u) => {
+        const name = String(u.iusuario ?? "").toUpperCase();
+        const nombre = String(u.permisos?.nombre ?? "").toUpperCase();
+        return name.includes(search) || nombre.includes(search);
+      });
+    }
+    if (role) {
+      users = users.filter((u) => {
+        const roles = u.permisos?.roles;
+        return Array.isArray(roles) && roles.some((r) => String(r).toUpperCase() === role);
+      });
+    }
+    const truncated = limit != null && users.length > limit;
+    if (limit != null) users = users.slice(0, limit);
+    return { ...raw, users, usersTotal: users.length, usersTruncated: truncated };
   }).then((raw) => {
     PERMISOS_LIST_CACHE.set(q, { raw, iat: Date.now() });
     return raw;
@@ -2279,12 +2332,12 @@ var init_sysValuesCopy = __esm({
 });
 
 // src/js/components/CopySysValuesModal.jsx
-var MUI, React, Icon23;
+var MUI, React, Icon24;
 var init_CopySysValuesModal = __esm({
   "src/js/components/CopySysValuesModal.jsx"() {
     MUI = window.MaterialUI;
     React = window.React;
-    Icon23 = window.ISA?.UI?.Icon;
+    Icon24 = window.ISA?.UI?.Icon;
   }
 });
 
@@ -2311,7 +2364,7 @@ function TargetMenuItem({ t, selected, onClick, value }) {
       onClick,
       title: url
     },
-    Icon24 ? React2.createElement(MUI2.ListItemIcon, { sx: { minWidth: 32 } }, React2.createElement(Icon24, { icon: t.icon, size: 18 })) : null,
+    Icon25 ? React2.createElement(MUI2.ListItemIcon, { sx: { minWidth: 32 } }, React2.createElement(Icon25, { icon: t.icon, size: 18 })) : null,
     React2.createElement(MUI2.ListItemText, {
       primary: t.label,
       secondary: url,
@@ -2358,7 +2411,7 @@ function IssTargetChip() {
           color: meta.color,
           variant: "outlined",
           className: `iss-target-chip iss-target-chip--${meta.id}`,
-          icon: Icon24 ? React2.createElement(Icon24, { icon: meta.icon, size: 16 }) : void 0,
+          icon: Icon25 ? React2.createElement(Icon25, { icon: meta.icon, size: 16 }) : void 0,
           label: meta.label,
           onClick: (e) => setAnchor(e.currentTarget),
           "aria-haspopup": "true",
@@ -2390,7 +2443,7 @@ function IssTargetChip() {
     )
   );
 }
-var MUI2, React2, Icon24, TARGETS_DEV, TARGETS_WEB;
+var MUI2, React2, Icon25, TARGETS_DEV, TARGETS_WEB;
 var init_IssTargetSwitch = __esm({
   "src/js/components/IssTargetSwitch.jsx"() {
     init_patyia();
@@ -2398,7 +2451,7 @@ var init_IssTargetSwitch = __esm({
     init_CopySysValuesModal();
     MUI2 = window.MaterialUI;
     React2 = window.React;
-    Icon24 = window.ISA?.UI?.Icon;
+    Icon25 = window.ISA?.UI?.Icon;
     TARGETS_DEV = [
       { id: "production", label: "Producci\xF3n", icon: "mdi:server", color: "success" },
       { id: "staging", label: "Staging", icon: "mdi:test-tube", color: "primary" },
@@ -2808,7 +2861,7 @@ function isDisplayableImageRef(ref) {
 function isDisplayableAudioRef(ref) {
   const n = String(ref ?? "").trim();
   if (!n) return false;
-  return n.startsWith("data:audio/") || /^https?:\/\/.+\.(webm|mp3|m4a|wav|ogg)/i.test(n);
+  return n.startsWith("data:audio/") || /^https?:\/\//i.test(n);
 }
 function stripOmittedVisionFromText(texto) {
   return String(texto ?? "").split("\n").filter((line) => {
@@ -3169,6 +3222,7 @@ function flattenConvLogMensaje(m) {
     flat.clasificador_vector_usado = o.clasificador_vector_usado.map(String);
   }
   if (Array.isArray(o.instrucciones) && o.instrucciones.length) flat.instrucciones = o.instrucciones;
+  if (Array.isArray(o.files_adjuntos) && o.files_adjuntos.length) flat.files_adjuntos = o.files_adjuntos;
   return flat;
 }
 function normalizeCost(cost) {
@@ -3407,7 +3461,8 @@ ${fromRes}`;
     clasificador_vector_usado: Array.isArray(raw.clasificador_vector_usado) && raw.clasificador_vector_usado.length ? raw.clasificador_vector_usado.map(String) : void 0,
     login_url: typeof raw.login_url === "string" && raw.login_url.trim() ? raw.login_url.trim() : void 0,
     http_request: raw.http_request && typeof raw.http_request === "object" ? raw.http_request : void 0,
-    http_response: raw.http_response && typeof raw.http_response === "object" ? raw.http_response : void 0
+    http_response: raw.http_response && typeof raw.http_response === "object" ? raw.http_response : void 0,
+    files_adjuntos: Array.isArray(raw.files_adjuntos) && raw.files_adjuntos.length ? raw.files_adjuntos : void 0
   };
 }
 function convLogToMsgVista(m, i, userSendForTurn, userVectorStoreIds) {
@@ -3454,6 +3509,12 @@ function convLogToMsgVista(m, i, userSendForTurn, userVectorStoreIds) {
     if (!Number.isFinite(turno) || turno <= 0 || !Number.isFinite(seq) || seq <= 0) return void 0;
     return turno * 1e3 + seq;
   })();
+  let logFragment;
+  try {
+    logFragment = JSON.parse(JSON.stringify(m));
+  } catch {
+    logFragment = { role, ts: m.ts };
+  }
   return {
     idMsg: logImensaje ? `msg-${logImensaje}` : `${role}-${String(m.seq ?? i)}-${String(m.turno ?? 0)}`,
     rol: esOperativa ? `OP \xB7 ${String(opKey ?? "operativa")}` : esUsuario ? "user" : "assistant",
@@ -3461,6 +3522,7 @@ function convLogToMsgVista(m, i, userSendForTurn, userVectorStoreIds) {
     imagenes: imagenes.length ? imagenes : void 0,
     audios: audios.length ? audios : void 0,
     audiosTranscripcion: audiosTranscripcion.length ? audiosTranscripcion : void 0,
+    logFragment,
     ...(() => {
       const f = formatMsgFecha(m.ts ?? "");
       return { fecha: f.label, fechaIso: f.iso || void 0 };
@@ -3563,17 +3625,117 @@ function ImageLightboxDialog(props) {
   }, [open, ready]);
   if (!open) return null;
   if (loadError) {
-    const { Typography: Typography28, Box: Box33 } = getMaterialUI();
-    return /* @__PURE__ */ jsx(Box33, { sx: { p: 2, textAlign: "center" }, children: /* @__PURE__ */ jsx(Typography28, { variant: "body2", color: "error", children: "No se pudo cargar el visor de im\xE1genes. Recargue sin cach\xE9 (Ctrl+Shift+R)." }) });
+    const { Typography: Typography29, Box: Box34 } = getMaterialUI();
+    return /* @__PURE__ */ jsx(Box34, { sx: { p: 2, textAlign: "center" }, children: /* @__PURE__ */ jsx(Typography29, { variant: "body2", color: "error", children: "No se pudo cargar el visor de im\xE1genes. Recargue sin cach\xE9 (Ctrl+Shift+R)." }) });
   }
   if (!ready) return null;
   const Comp = Lightbox.ImageLightboxDialog;
   return /* @__PURE__ */ jsx(Comp, { ns: "ISA", ...props, onClose });
 }
 
-// src/js/ui/GlassDialog.jsx
+// src/js/ui/LogJsonPanel.jsx
 init_platform();
 import { jsx as jsx2, jsxs } from "react/jsx-runtime";
+var { useMemo } = getReact();
+var { Box, Typography, Stack, Chip, Tooltip, IconButton } = getMaterialUI();
+var { Icon } = UI;
+var URL_RE = /https?:\/\/[^\s"'<>\\]+/gi;
+function escapeHtml(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function linkifyJson(raw) {
+  const src = String(raw ?? "");
+  const parts = [];
+  let last = 0;
+  URL_RE.lastIndex = 0;
+  let m = URL_RE.exec(src);
+  while (m) {
+    if (m.index > last) parts.push(escapeHtml(src.slice(last, m.index)));
+    const href = m[0].replace(/[),.;]+$/, "");
+    const trail = m[0].slice(href.length);
+    parts.push(
+      `<a class="log-json-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(href)}</a>${escapeHtml(trail)}`
+    );
+    last = m.index + m[0].length;
+    m = URL_RE.exec(src);
+  }
+  if (last < src.length) parts.push(escapeHtml(src.slice(last)));
+  return parts.join("");
+}
+function asFileRefs(list) {
+  if (!Array.isArray(list)) return [];
+  return list.map((item) => {
+    if (!item || typeof item !== "object") return null;
+    const o = item;
+    const ifile = String(o.ifile ?? "").trim();
+    const url = String(o.url ?? o.variants?.original ?? "").trim();
+    if (!ifile && !url) return null;
+    return {
+      ifile,
+      kind: String(o.kind || "file"),
+      url,
+      variants: o.variants && typeof o.variants === "object" ? o.variants : {}
+    };
+  }).filter(Boolean);
+}
+function MetaFilesStrip({ files, title = "Adjuntos FILES_STORAGE" }) {
+  const items = asFileRefs(files);
+  if (!items.length) return null;
+  return /* @__PURE__ */ jsxs(Box, { className: "meta-files-strip", children: [
+    /* @__PURE__ */ jsxs(Stack, { direction: "row", alignItems: "center", spacing: 0.75, sx: { mb: 0.75 }, children: [
+      /* @__PURE__ */ jsx2("iconify-icon", { icon: "mdi:cloud-outline", width: "16", height: "16" }),
+      /* @__PURE__ */ jsx2(Typography, { variant: "subtitle2", sx: { fontWeight: 700 }, children: title })
+    ] }),
+    /* @__PURE__ */ jsx2(Stack, { spacing: 0.75, children: items.map((f, i) => /* @__PURE__ */ jsx2(Box, { className: "meta-files-strip__row", children: /* @__PURE__ */ jsxs(Stack, { direction: "row", spacing: 0.5, alignItems: "center", flexWrap: "wrap", useFlexGap: true, children: [
+      f.ifile ? /* @__PURE__ */ jsx2(Chip, { size: "small", className: "meta-files-strip__ifile", label: `ifile ${f.ifile}` }) : null,
+      /* @__PURE__ */ jsx2(Chip, { size: "small", variant: "outlined", label: f.kind }),
+      ["original", "med", "thumb"].filter((k) => f.variants?.[k] || k === "original" && f.url).map((k) => {
+        const href = f.variants?.[k] || (k === "original" ? f.url : "");
+        if (!href) return null;
+        return /* @__PURE__ */ jsx2("a", { className: "meta-files-strip__link", href, target: "_blank", rel: "noopener noreferrer", children: k }, k);
+      })
+    ] }) }, `${f.ifile || f.url}-${i}`)) })
+  ] });
+}
+function LogJsonPanel({ value, files = null, onCopy }) {
+  const json = useMemo(() => {
+    if (value == null) return "";
+    if (typeof value === "string") return value;
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }, [value]);
+  const html = useMemo(() => linkifyJson(json), [json]);
+  return /* @__PURE__ */ jsxs(Box, { className: "log-json-panel", children: [
+    /* @__PURE__ */ jsxs(Stack, { direction: "row", alignItems: "center", spacing: 0.75, sx: { mb: 0.85 }, children: [
+      /* @__PURE__ */ jsx2("iconify-icon", { icon: "mdi:code-json", width: "18", height: "18" }),
+      /* @__PURE__ */ jsx2(Typography, { variant: "subtitle1", sx: { flex: 1, fontWeight: 700 }, children: "Fragmento conv-log" }),
+      /* @__PURE__ */ jsx2(Tooltip, { title: "Copiar JSON", arrow: true, children: /* @__PURE__ */ jsx2(
+        IconButton,
+        {
+          size: "small",
+          "aria-label": "Copiar JSON del log",
+          onClick: () => {
+            try {
+              onCopy?.(json);
+              navigator.clipboard?.writeText?.(json);
+            } catch {
+            }
+          },
+          children: /* @__PURE__ */ jsx2(Icon, { icon: "mdi:content-copy", size: 16 })
+        }
+      ) })
+    ] }),
+    /* @__PURE__ */ jsx2(MetaFilesStrip, { files }),
+    /* @__PURE__ */ jsx2("pre", { className: "log-json-panel__pre custom-scrollbar", dangerouslySetInnerHTML: { __html: html } })
+  ] });
+}
+
+// src/js/ui/GlassDialog.jsx
+init_platform();
+import { jsx as jsx3, jsxs as jsxs2 } from "react/jsx-runtime";
 function isaLoginSurface() {
   const fs = globalThis.ISAFront || {};
   return {
@@ -3698,11 +3860,11 @@ function glassDialogActionsSx(extra = {}) {
 }
 function GlassDialogCloseActions({ onClose, label = "Cerrar" }) {
   const { DialogActions: DialogActions13, Button: Button21 } = getMaterialUI();
-  return /* @__PURE__ */ jsx2(DialogActions13, { sx: glassDialogActionsSx(), children: /* @__PURE__ */ jsx2(Button21, { onClick: onClose, sx: { textTransform: "none", fontWeight: 600, minWidth: 72 }, children: label }) });
+  return /* @__PURE__ */ jsx3(DialogActions13, { sx: glassDialogActionsSx(), children: /* @__PURE__ */ jsx3(Button21, { onClick: onClose, sx: { textTransform: "none", fontWeight: 600, minWidth: 72 }, children: label }) });
 }
 function GlassDialogHeader({ icon = "mdi:information-outline", title, subtitle, accent = "#1e90ff", onClose, closeAutoFocus = false }) {
-  const { Box: Box33, Typography: Typography28, IconButton: IconButton14, Stack: Stack26 } = getMaterialUI();
-  const { Icon: Icon26 } = UI;
+  const { Box: Box34, Typography: Typography29, IconButton: IconButton15, Stack: Stack27 } = getMaterialUI();
+  const { Icon: Icon27 } = UI;
   const { loginHeaderBandSx, loginIconBoxSx, loginHeaderTitleSx } = isaLoginSurface();
   const bandSx = loginHeaderBandSx?.(accent) ?? {
     px: { xs: 2, sm: 2.5 },
@@ -3724,16 +3886,16 @@ function GlassDialogHeader({ icon = "mdi:information-outline", title, subtitle, 
     color: "#fff"
   };
   const titleSx = loginHeaderTitleSx?.() ?? { fontWeight: 700, fontSize: "1.35rem", lineHeight: 1.15 };
-  return /* @__PURE__ */ jsxs(Box33, { className: "isa-glass-dialog__header", sx: { position: "relative", flexShrink: 0 }, children: [
-    /* @__PURE__ */ jsx2(Box33, { sx: bandSx, children: /* @__PURE__ */ jsxs(Stack26, { direction: "row", spacing: 1.25, alignItems: "center", sx: { pr: onClose ? 4 : 0 }, children: [
-      /* @__PURE__ */ jsx2(Box33, { sx: iconSx, children: /* @__PURE__ */ jsx2(Icon26, { icon, size: 24 }) }),
-      /* @__PURE__ */ jsxs(Box33, { sx: { flex: 1, minWidth: 0 }, children: [
-        /* @__PURE__ */ jsx2(Typography28, { variant: "h5", component: "h2", sx: titleSx, children: title }),
-        subtitle ? /* @__PURE__ */ jsx2(Typography28, { variant: "caption", color: "text.secondary", display: "block", sx: { mt: 0.35, lineHeight: 1.4 }, children: subtitle }) : null
+  return /* @__PURE__ */ jsxs2(Box34, { className: "isa-glass-dialog__header", sx: { position: "relative", flexShrink: 0 }, children: [
+    /* @__PURE__ */ jsx3(Box34, { sx: bandSx, children: /* @__PURE__ */ jsxs2(Stack27, { direction: "row", spacing: 1.25, alignItems: "center", sx: { pr: onClose ? 4 : 0 }, children: [
+      /* @__PURE__ */ jsx3(Box34, { sx: iconSx, children: /* @__PURE__ */ jsx3(Icon27, { icon, size: 24 }) }),
+      /* @__PURE__ */ jsxs2(Box34, { sx: { flex: 1, minWidth: 0 }, children: [
+        /* @__PURE__ */ jsx3(Typography29, { variant: "h5", component: "h2", sx: titleSx, children: title }),
+        subtitle ? /* @__PURE__ */ jsx3(Typography29, { variant: "caption", color: "text.secondary", display: "block", sx: { mt: 0.35, lineHeight: 1.4 }, children: subtitle }) : null
       ] })
     ] }) }),
-    onClose ? /* @__PURE__ */ jsx2(
-      IconButton14,
+    onClose ? /* @__PURE__ */ jsx3(
+      IconButton15,
       {
         size: "small",
         onClick: onClose,
@@ -3741,7 +3903,7 @@ function GlassDialogHeader({ icon = "mdi:information-outline", title, subtitle, 
         autoFocus: closeAutoFocus,
         className: "isa-glass-dialog__close",
         sx: { position: "absolute", top: 10, right: 10 },
-        children: /* @__PURE__ */ jsx2(Icon26, { icon: "mdi:close", size: 18 })
+        children: /* @__PURE__ */ jsx3(Icon27, { icon: "mdi:close", size: 18 })
       }
     ) : null
   ] });
@@ -3749,7 +3911,7 @@ function GlassDialogHeader({ icon = "mdi:information-outline", title, subtitle, 
 function GlassDialog({ children, header = null, maxWidth, fullWidth, fullScreen, paperMaxWidth, paperSx, paperClassName, slotProps, ...dialogProps }) {
   const { Dialog: Dialog9 } = getMaterialUI();
   const props = resolveGlassDialogProps({ maxWidth, fullWidth, fullScreen, paperMaxWidth, paperSx, paperClassName, slotProps, ...dialogProps });
-  return /* @__PURE__ */ jsxs(Dialog9, { ...props, children: [
+  return /* @__PURE__ */ jsxs2(Dialog9, { ...props, children: [
     header,
     children
   ] });
@@ -3939,14 +4101,14 @@ function compactFileChipLabel(filename, maxLen = 28) {
 }
 
 // src/js/ui/shared.jsx
-import { Fragment, jsx as jsx3, jsxs as jsxs2 } from "react/jsx-runtime";
+import { Fragment, jsx as jsx4, jsxs as jsxs3 } from "react/jsx-runtime";
 function ButtonIconify({ icon, title = "", label = "", onClick, disabled = false, busy = false, color = "", variant = "", className = "", type = "button" }) {
   const shown = busy ? "mdi:loading" : icon;
   const variantCls = variant ? `btn-iconify--${variant}` : "";
   const colorCls = color ? `btn-iconify--${color}` : "";
   const labeledCls = label ? "btn-iconify--labeled" : "";
   const aria = label || title || void 0;
-  return /* @__PURE__ */ jsxs2(
+  return /* @__PURE__ */ jsxs3(
     "button",
     {
       type,
@@ -3956,14 +4118,14 @@ function ButtonIconify({ icon, title = "", label = "", onClick, disabled = false
       onClick,
       disabled: disabled || busy,
       children: [
-        /* @__PURE__ */ jsx3("iconify-icon", { icon: shown, width: "1.15em", height: "1.15em" }),
-        label ? /* @__PURE__ */ jsx3("span", { className: "btn-iconify__lbl", children: label }) : null
+        /* @__PURE__ */ jsx4("iconify-icon", { icon: shown, width: "1.15em", height: "1.15em" }),
+        label ? /* @__PURE__ */ jsx4("span", { className: "btn-iconify__lbl", children: label }) : null
       ]
     }
   );
 }
-var { useState: useState2, useEffect: useEffect2, useMemo } = getReact();
-var { createTheme, Tabs, Tab, Box, Typography, DialogContent, Stack, Chip } = getMaterialUI();
+var { useState: useState2, useEffect: useEffect2, useMemo: useMemo2 } = getReact();
+var { createTheme, Tabs, Tab, Box: Box2, Typography: Typography2, DialogContent, Stack: Stack2, Chip: Chip2 } = getMaterialUI();
 function isOpenAiPmptId(id) {
   return /^pmpt_/i.test(String(id ?? "").trim());
 }
@@ -3999,10 +4161,11 @@ function buildUsageRowMetrics(tokens, cost) {
 function UsageMetricCell({ tok, usd, showUsd = true }) {
   const tokLabel = formatUsageTokens(tok);
   const usdLabel = showUsd ? formatUsageUsd(usd) : null;
-  const empty = tokLabel === "\u2014" && (!showUsd || usdLabel === "\u2014");
-  return /* @__PURE__ */ jsxs2("span", { className: `meta-prompt-stat__usage-grid-cell${empty ? " meta-prompt-stat__usage-grid-cell--empty" : ""}`, children: [
-    /* @__PURE__ */ jsx3("span", { className: "meta-prompt-stat__usage-tok", children: tokLabel }),
-    showUsd ? /* @__PURE__ */ jsx3("span", { className: "meta-prompt-stat__usage-usd", children: usdLabel }) : null
+  const showMoney = Boolean(showUsd && usdLabel && usdLabel !== "\u2014");
+  const empty = tokLabel === "\u2014" && !showMoney;
+  return /* @__PURE__ */ jsxs3("span", { className: `meta-prompt-stat__usage-grid-cell${empty ? " meta-prompt-stat__usage-grid-cell--empty" : ""}`, children: [
+    /* @__PURE__ */ jsx4("span", { className: "meta-prompt-stat__usage-tok", children: tokLabel }),
+    showMoney ? /* @__PURE__ */ jsx4("span", { className: "meta-prompt-stat__usage-usd", children: usdLabel }) : null
   ] });
 }
 function MetaUsageGrid({ sections, hideRowLabels = false, className = "" }) {
@@ -4016,17 +4179,17 @@ function MetaUsageGrid({ sections, hideRowLabels = false, className = "" }) {
   if (!visibleCols.length) return null;
   const gridTemplateColumns = hideRowLabels ? `repeat(${visibleCols.length}, minmax(5.5rem, 1fr))` : `5.75rem repeat(${visibleCols.length}, minmax(5.5rem, 1fr))`;
   const gridStyle = { display: "grid", gridTemplateColumns };
-  return /* @__PURE__ */ jsxs2("div", { className: `meta-prompt-stat__usage-grid ${className}`.trim(), children: [
-    /* @__PURE__ */ jsxs2("div", { className: "meta-prompt-stat__usage-grid-head", style: gridStyle, children: [
-      !hideRowLabels ? /* @__PURE__ */ jsx3("span", { className: "meta-prompt-stat__usage-grid-corner", "aria-hidden": "true" }) : null,
-      visibleCols.map((col) => /* @__PURE__ */ jsx3("span", { className: "meta-prompt-stat__usage-grid-col-h", children: col.label }, col.key))
+  return /* @__PURE__ */ jsxs3("div", { className: `meta-prompt-stat__usage-grid ${className}`.trim(), children: [
+    /* @__PURE__ */ jsxs3("div", { className: "meta-prompt-stat__usage-grid-head", style: gridStyle, children: [
+      !hideRowLabels ? /* @__PURE__ */ jsx4("span", { className: "meta-prompt-stat__usage-grid-corner", "aria-hidden": "true" }) : null,
+      visibleCols.map((col) => /* @__PURE__ */ jsx4("span", { className: "meta-prompt-stat__usage-grid-col-h", children: col.label }, col.key))
     ] }),
-    rows.map((row) => /* @__PURE__ */ jsxs2("div", { className: `meta-prompt-stat__usage-grid-row meta-prompt-stat__usage-grid-row--${row.key}`, style: gridStyle, children: [
-      !hideRowLabels ? /* @__PURE__ */ jsx3("span", { className: `meta-prompt-stat__usage-group-label meta-prompt-stat__usage-group-label--${row.key}`, children: row.label }) : null,
+    rows.map((row) => /* @__PURE__ */ jsxs3("div", { className: `meta-prompt-stat__usage-grid-row meta-prompt-stat__usage-grid-row--${row.key}`, style: gridStyle, children: [
+      !hideRowLabels ? /* @__PURE__ */ jsx4("span", { className: `meta-prompt-stat__usage-group-label meta-prompt-stat__usage-group-label--${row.key}`, children: row.label }) : null,
       visibleCols.map((col) => {
         const metric = row.metrics.find((m) => m.key === col.key);
         const usd = col.key === "reason" ? 0 : metric?.usd ?? 0;
-        return /* @__PURE__ */ jsx3(
+        return /* @__PURE__ */ jsx4(
           UsageMetricCell,
           {
             tok: metric?.tok ?? 0,
@@ -4052,19 +4215,19 @@ function filterDisplayableImages(list) {
 function MetaDialogImages({ items, onImageClick, topGap = 0 }) {
   const renderable = filterDisplayableImages(items);
   if (!renderable.length) return null;
-  return /* @__PURE__ */ jsx3(
-    Box,
+  return /* @__PURE__ */ jsx4(
+    Box2,
     {
       className: "conv-msg-images conv-msg-images--left meta-dialog-images",
       sx: { display: "flex", flexWrap: "wrap", gap: 1, mt: topGap },
-      children: renderable.map((src, idx) => /* @__PURE__ */ jsx3(
+      children: renderable.map((src, idx) => /* @__PURE__ */ jsx4(
         "button",
         {
           type: "button",
           className: "conv-msg-image-lightbox-btn",
           "aria-label": `Ver imagen adjunta ${idx + 1} en tama\xF1o completo`,
           onClick: () => onImageClick?.(src),
-          children: /* @__PURE__ */ jsx3("img", { src, alt: `Adjunto ${idx + 1}`, loading: "lazy" })
+          children: /* @__PURE__ */ jsx4("img", { src, alt: `Adjunto ${idx + 1}`, loading: "lazy" })
         },
         `${idx}-${src.slice(0, 32)}`
       ))
@@ -4099,9 +4262,9 @@ function PromptSummaryCard({ meta, tokens, usageStats, isUserMessage = false }) 
   ].filter((s) => s.show) : [{ key: "msg", label: "Mensaje", tokens: currentTokens, cost: currentCost, show: usageHasData(currentTokens, currentCost) }];
   const hasUsage = usageSections.some((s) => usageHasData(s.tokens, s.cost));
   const hasCharStats = charStats.length > 0;
-  return /* @__PURE__ */ jsxs2(Box, { className: "meta-prompt-summary", children: [
-    hasCharStats || hasUsage ? /* @__PURE__ */ jsxs2(Stack, { direction: "row", alignItems: "center", spacing: 0.75, className: "meta-prompt-summary__head", children: [
-      /* @__PURE__ */ jsx3(
+  return /* @__PURE__ */ jsxs3(Box2, { className: "meta-prompt-summary", children: [
+    hasCharStats || hasUsage ? /* @__PURE__ */ jsxs3(Stack2, { direction: "row", alignItems: "center", spacing: 0.75, className: "meta-prompt-summary__head", children: [
+      /* @__PURE__ */ jsx4(
         "iconify-icon",
         {
           icon: isUserMessage ? "mdi:message-text-outline" : "mdi:file-document-edit-outline",
@@ -4109,25 +4272,25 @@ function PromptSummaryCard({ meta, tokens, usageStats, isUserMessage = false }) 
           height: "18"
         }
       ),
-      /* @__PURE__ */ jsx3(Typography, { variant: "subtitle2", className: "meta-prompt-summary__title", sx: { flex: 1, fontWeight: 700 }, children: isUserMessage ? "Resumen de la consulta" : "Resumen del prompt" }),
-      hasUsage ? /* @__PURE__ */ jsx3(
-        Chip,
+      /* @__PURE__ */ jsx4(Typography2, { variant: "subtitle2", className: "meta-prompt-summary__title", sx: { flex: 1, fontWeight: 700 }, children: isUserMessage ? "Resumen de la consulta" : "Resumen del prompt" }),
+      hasUsage ? /* @__PURE__ */ jsx4(
+        Chip2,
         {
           size: "small",
           className: "meta-prompt-summary__badge",
           label: isUserMessage ? "tokens + costo" : "tokens + costo",
-          icon: /* @__PURE__ */ jsx3("iconify-icon", { icon: "mdi:finance", width: "13", height: "13" })
+          icon: /* @__PURE__ */ jsx4("iconify-icon", { icon: "mdi:finance", width: "13", height: "13" })
         }
       ) : null
     ] }) : null,
-    /* @__PURE__ */ jsxs2("div", { className: "meta-prompt-summary__grid", children: [
-      charStats.map((s) => /* @__PURE__ */ jsxs2("div", { className: `meta-prompt-stat meta-prompt-stat--${s.tone || "neutral"}`, children: [
-        /* @__PURE__ */ jsx3("span", { className: "meta-prompt-stat__k", children: s.label }),
-        /* @__PURE__ */ jsx3("span", { className: "meta-prompt-stat__v", children: s.value })
+    /* @__PURE__ */ jsxs3("div", { className: "meta-prompt-summary__grid", children: [
+      charStats.map((s) => /* @__PURE__ */ jsxs3("div", { className: `meta-prompt-stat meta-prompt-stat--${s.tone || "neutral"}`, children: [
+        /* @__PURE__ */ jsx4("span", { className: "meta-prompt-stat__k", children: s.label }),
+        /* @__PURE__ */ jsx4("span", { className: "meta-prompt-stat__v", children: s.value })
       ] }, s.key)),
-      hasUsage ? /* @__PURE__ */ jsxs2("div", { className: "meta-prompt-stat meta-prompt-stat--usage", children: [
-        /* @__PURE__ */ jsx3("span", { className: "meta-prompt-stat__k", children: "Tokens y costo" }),
-        /* @__PURE__ */ jsx3("div", { className: "meta-prompt-stat__usage-body", children: /* @__PURE__ */ jsx3(MetaUsageGrid, { sections: usageSections }) })
+      hasUsage ? /* @__PURE__ */ jsxs3("div", { className: "meta-prompt-stat meta-prompt-stat--usage", children: [
+        /* @__PURE__ */ jsx4("span", { className: "meta-prompt-stat__k", children: "Tokens y costo" }),
+        /* @__PURE__ */ jsx4("div", { className: "meta-prompt-stat__usage-body", children: /* @__PURE__ */ jsx4(MetaUsageGrid, { sections: usageSections }) })
       ] }) : null
     ] })
   ] });
@@ -4172,6 +4335,7 @@ function metaWorthDialog(meta, isUser) {
   if (Array.isArray(meta.archivos_citados) && meta.archivos_citados.length) return true;
   if (Array.isArray(meta.file_search) && meta.file_search.length) return true;
   if (meta.file_search && typeof meta.file_search === "object" && !Array.isArray(meta.file_search)) return true;
+  if (Array.isArray(meta.files_adjuntos) && meta.files_adjuntos.length) return true;
   if (Array.isArray(meta.vector_store_ids) && meta.vector_store_ids.length) return true;
   const pv = meta.prompt_variables;
   if (pv && typeof pv === "object") {
@@ -4180,28 +4344,28 @@ function metaWorthDialog(meta, isUser) {
   return false;
 }
 function FileSearchMetaSection({ meta }) {
-  const { Typography: Typography28, Box: Box33, Stack: Stack26, Chip: Chip19, IconButton: IconButton14, Tooltip: Tooltip15 } = getMaterialUI();
-  const { useState: useState34, useMemo: useMemo21 } = getReact();
+  const { Typography: Typography29, Box: Box34, Stack: Stack27, Chip: Chip20, IconButton: IconButton15, Tooltip: Tooltip16 } = getMaterialUI();
+  const { useState: useState34, useMemo: useMemo22 } = getReact();
   const trace = fileSearchFromMeta(meta);
   const archivos = archivosCitadosFromMeta(meta);
-  const chunks = useMemo21(() => chunksFromMeta(meta), [meta]);
-  const vectorStores = useMemo21(() => vectorStoresFromMeta(meta), [meta]);
+  const chunks = useMemo22(() => chunksFromMeta(meta), [meta]);
+  const vectorStores = useMemo22(() => vectorStoresFromMeta(meta), [meta]);
   const [expandedKey, setExpandedKey] = useState34(null);
   const [openChunk, setOpenChunk] = useState34(null);
   if (!trace?.length && !archivos.length && !chunks.length && !vectorStores.length) return null;
   function toggleChunk(key) {
     setExpandedKey((prev) => prev === key ? null : key);
   }
-  return /* @__PURE__ */ jsxs2(Box33, { className: "meta-file-search", sx: { mt: 1.5 }, children: [
-    vectorStores.length ? /* @__PURE__ */ jsxs2(Box33, { className: "meta-file-search__vector-stores", sx: { mb: 1.5 }, children: [
-      /* @__PURE__ */ jsx3(Typography28, { variant: "subtitle2", fontWeight: 700, sx: { mb: 0.75 }, children: "Vector stores consultados" }),
-      /* @__PURE__ */ jsxs2(Typography28, { variant: "caption", color: "text.secondary", display: "block", sx: { mb: 0.75 }, children: [
+  return /* @__PURE__ */ jsxs3(Box34, { className: "meta-file-search", sx: { mt: 1.5 }, children: [
+    vectorStores.length ? /* @__PURE__ */ jsxs3(Box34, { className: "meta-file-search__vector-stores meta-vs-card", sx: { mb: 1.5 }, children: [
+      /* @__PURE__ */ jsx4(Typography29, { variant: "subtitle2", fontWeight: 700, sx: { mb: 0.5 }, children: "Vector stores" }),
+      /* @__PURE__ */ jsxs3(Typography29, { variant: "caption", color: "text.secondary", display: "block", sx: { mb: 0.85, lineHeight: 1.45 }, children: [
         "\xCDndice = posici\xF3n en ",
-        /* @__PURE__ */ jsx3("code", { children: "vector_store_ids" }),
-        " enviado al modelo (0 = primero). Usa el ID completo para verificar en OpenAI/BD."
+        /* @__PURE__ */ jsx4("code", { children: "vector_store_ids" }),
+        " (0 = primero). Copia el ID para verificar en OpenAI o BD."
       ] }),
-      /* @__PURE__ */ jsx3(Stack26, { spacing: 0.5, children: vectorStores.map((vs) => /* @__PURE__ */ jsxs2(
-        Box33,
+      /* @__PURE__ */ jsx4(Stack27, { spacing: 0.5, children: vectorStores.map((vs) => /* @__PURE__ */ jsxs3(
+        Box34,
         {
           className: "meta-file-search__vs-row",
           sx: {
@@ -4212,36 +4376,36 @@ function FileSearchMetaSection({ meta }) {
             fontSize: "0.82rem"
           },
           children: [
-            /* @__PURE__ */ jsx3(Chip19, { size: "small", variant: "outlined", label: `\xEDndice ${vs.index}`, className: "meta-file-search__vs-index" }),
-            /* @__PURE__ */ jsx3(Typography28, { component: "code", variant: "body2", sx: { wordBreak: "break-all", fontFamily: "monospace" }, children: vs.id })
+            /* @__PURE__ */ jsx4(Chip20, { size: "small", variant: "outlined", label: `\xEDndice ${vs.index}`, className: "meta-file-search__vs-index" }),
+            /* @__PURE__ */ jsx4(Typography29, { component: "code", variant: "body2", sx: { wordBreak: "break-all", fontFamily: "monospace" }, children: vs.id })
           ]
         },
         vs.id
       )) })
     ] }) : null,
-    /* @__PURE__ */ jsx3(Typography28, { variant: "subtitle2", fontWeight: 700, sx: { mb: 0.75 }, children: "File Search (archivos citados)" }),
-    archivos.length ? /* @__PURE__ */ jsx3(Stack26, { direction: "row", spacing: 0.5, flexWrap: "wrap", useFlexGap: true, sx: { mb: chunks.length ? 1 : 0 }, children: archivos.map((name) => /* @__PURE__ */ jsx3(
-      Chip19,
+    /* @__PURE__ */ jsx4(Typography29, { variant: "subtitle2", fontWeight: 700, sx: { mb: 0.75 }, children: "File Search (archivos citados)" }),
+    archivos.length ? /* @__PURE__ */ jsx4(Stack27, { direction: "row", spacing: 0.5, flexWrap: "wrap", useFlexGap: true, sx: { mb: chunks.length ? 1 : 0 }, children: archivos.map((name) => /* @__PURE__ */ jsx4(
+      Chip20,
       {
         size: "small",
         variant: "outlined",
-        icon: /* @__PURE__ */ jsx3("iconify-icon", { icon: "mdi:file-document-outline", width: "14", height: "14" }),
+        icon: /* @__PURE__ */ jsx4("iconify-icon", { icon: "mdi:file-document-outline", width: "14", height: "14" }),
         label: name,
         title: name
       },
       name
     )) }) : null,
-    chunks.length ? /* @__PURE__ */ jsx3(Stack26, { spacing: 0.5, className: "meta-file-search__chunk-list", children: chunks.map((c) => {
+    chunks.length ? /* @__PURE__ */ jsx4(Stack27, { spacing: 0.5, className: "meta-file-search__chunk-list", children: chunks.map((c) => {
       const expanded = expandedKey === c.key;
       const vsIdx = c.vectorStoreId ? vectorStoreIndexLabel(vectorStores, c.vectorStoreId) : null;
       const label = c.filename || c.fileId || "fragmento";
-      return /* @__PURE__ */ jsxs2(
-        Box33,
+      return /* @__PURE__ */ jsxs3(
+        Box34,
         {
           className: `meta-file-search__chunk${expanded ? " meta-file-search__chunk--expanded" : ""}`,
           children: [
-            /* @__PURE__ */ jsxs2(
-              Box33,
+            /* @__PURE__ */ jsxs3(
+              Box34,
               {
                 className: "meta-file-search__chunk-summary",
                 role: "button",
@@ -4256,10 +4420,10 @@ function FileSearchMetaSection({ meta }) {
                   }
                 },
                 children: [
-                  /* @__PURE__ */ jsx3("iconify-icon", { icon: "mdi:text-box-search-outline", width: "15", height: "15", "aria-hidden": true }),
-                  /* @__PURE__ */ jsx3(Typography28, { variant: "body2", fontWeight: 600, noWrap: true, className: "meta-file-search__chunk-title", children: label }),
-                  vsIdx != null ? /* @__PURE__ */ jsx3(
-                    Chip19,
+                  /* @__PURE__ */ jsx4("iconify-icon", { icon: "mdi:text-box-search-outline", width: "15", height: "15", "aria-hidden": true }),
+                  /* @__PURE__ */ jsx4(Typography29, { variant: "body2", fontWeight: 600, noWrap: true, className: "meta-file-search__chunk-title", children: label }),
+                  vsIdx != null ? /* @__PURE__ */ jsx4(
+                    Chip20,
                     {
                       size: "small",
                       variant: "outlined",
@@ -4268,8 +4432,8 @@ function FileSearchMetaSection({ meta }) {
                       className: "meta-file-search__vs-chip"
                     }
                   ) : null,
-                  c.score != null ? /* @__PURE__ */ jsx3(
-                    Chip19,
+                  c.score != null ? /* @__PURE__ */ jsx4(
+                    Chip20,
                     {
                       size: "small",
                       variant: "outlined",
@@ -4277,8 +4441,8 @@ function FileSearchMetaSection({ meta }) {
                       className: "meta-file-search__score"
                     }
                   ) : null,
-                  /* @__PURE__ */ jsx3(Tooltip15, { title: "Ver en pantalla completa", children: /* @__PURE__ */ jsx3(
-                    IconButton14,
+                  /* @__PURE__ */ jsx4(Tooltip16, { title: "Ver en pantalla completa", children: /* @__PURE__ */ jsx4(
+                    IconButton15,
                     {
                       size: "small",
                       "aria-label": `Ver fragmento de ${label}`,
@@ -4287,10 +4451,10 @@ function FileSearchMetaSection({ meta }) {
                         e.stopPropagation();
                         setOpenChunk(c);
                       },
-                      children: /* @__PURE__ */ jsx3("iconify-icon", { icon: "mdi:fullscreen", width: "15", height: "15" })
+                      children: /* @__PURE__ */ jsx4("iconify-icon", { icon: "mdi:fullscreen", width: "15", height: "15" })
                     }
                   ) }),
-                  /* @__PURE__ */ jsx3(
+                  /* @__PURE__ */ jsx4(
                     "iconify-icon",
                     {
                       icon: "mdi:chevron-down",
@@ -4303,19 +4467,19 @@ function FileSearchMetaSection({ meta }) {
                 ]
               }
             ),
-            expanded ? /* @__PURE__ */ jsxs2(Box33, { className: "meta-file-search__chunk-body", children: [
-              c.queries?.length ? /* @__PURE__ */ jsxs2(Typography28, { variant: "caption", color: "text.secondary", display: "block", className: "meta-file-search__queries", children: [
+            expanded ? /* @__PURE__ */ jsxs3(Box34, { className: "meta-file-search__chunk-body", children: [
+              c.queries?.length ? /* @__PURE__ */ jsxs3(Typography29, { variant: "caption", color: "text.secondary", display: "block", className: "meta-file-search__queries", children: [
                 "Queries: ",
                 c.queries.join(" \xB7 ")
               ] }) : null,
-              /* @__PURE__ */ jsx3(MdRenderer, { source: c.text || "", className: "meta-file-search__md" })
+              /* @__PURE__ */ jsx4(MdRenderer, { source: c.text || "", className: "meta-file-search__md" })
             ] }) : null
           ]
         },
         c.key
       );
     }) }) : null,
-    /* @__PURE__ */ jsx3(
+    /* @__PURE__ */ jsx4(
       MdFullPageDialog,
       {
         open: Boolean(openChunk),
@@ -4337,8 +4501,8 @@ function FileSearchDialog({ open, onClose, meta, title = "File Search", subtitle
   const { DialogContent: DialogContent15 } = getMaterialUI();
   if (!meta || !metaHasFileSearch(meta)) return null;
   const headerMeta = resolveMetaDialogHeader(title, false);
-  return /* @__PURE__ */ jsxs2(GlassDialog, { open, onClose, maxWidth: "md", fullWidth: true, children: [
-    /* @__PURE__ */ jsx3(
+  return /* @__PURE__ */ jsxs3(GlassDialog, { open, onClose, maxWidth: "md", fullWidth: true, children: [
+    /* @__PURE__ */ jsx4(
       GlassDialogHeader,
       {
         icon: headerMeta.icon,
@@ -4348,8 +4512,8 @@ function FileSearchDialog({ open, onClose, meta, title = "File Search", subtitle
         onClose
       }
     ),
-    /* @__PURE__ */ jsx3(DialogContent15, { dividers: true, sx: glassDialogContentSx(), children: /* @__PURE__ */ jsx3(FileSearchMetaSection, { meta }) }),
-    /* @__PURE__ */ jsx3(GlassDialogCloseActions, { onClose })
+    /* @__PURE__ */ jsx4(DialogContent15, { dividers: true, sx: glassDialogContentSx(), children: /* @__PURE__ */ jsx4(FileSearchMetaSection, { meta }) }),
+    /* @__PURE__ */ jsx4(GlassDialogCloseActions, { onClose })
   ] });
 }
 function MetaDialog({
@@ -4360,11 +4524,13 @@ function MetaDialog({
   isUserMessage = false,
   usageStats = null,
   userContent = "",
-  imagenes = null
+  imagenes = null,
+  logFragment = null,
+  showLog = false
 }) {
   const [tab, setTab] = useState2(0);
   const [lightboxSrc, setLightboxSrc] = useState2(null);
-  const resolvedMeta = useMemo(() => {
+  const resolvedMeta = useMemo2(() => {
     if (!meta) return null;
     if (!isUserMessage) return meta;
     const text = String(meta.prompt_markdown || userContent || "").trim();
@@ -4383,61 +4549,67 @@ function MetaDialog({
   const isMcpOperativa = /^contapymeMcp(Login|Session|Unavailable)$/i.test(iinstruccion) || String(resolvedMeta?.extra?.operativa_engine || "").toLowerCase() === "mcp" || Boolean(resolvedMeta?.http_request?.session_id || resolvedMeta?.http_request?.login_url || resolvedMeta?.http_response?.tools);
   const hasPrompt = Boolean(promptMarkdown) || Boolean(iinstruccion) || userImagenes.length > 0;
   const promptTabLabel = isUserMessage ? "Consulta" : isMcpOperativa ? "Payload MCP" : "Prompt";
+  const filesAdjuntos = Array.isArray(resolvedMeta?.files_adjuntos) && resolvedMeta.files_adjuntos.length ? resolvedMeta.files_adjuntos : logFragment?.others?.files_adjuntos || null;
+  const canShowLog = Boolean(showLog && logFragment);
+  const tabCount = (hasPrompt ? 2 : 1) + (canShowLog ? 1 : 0);
   useEffect2(() => {
     if (open) setTab(0);
   }, [open, resolvedMeta?.ts, resolvedMeta?.prompt_id, promptMarkdown, userImagenes.length]);
   useEffect2(() => {
     if (!open) setLightboxSrc(null);
   }, [open]);
-  if (!resolvedMeta) return null;
-  const tk = resolvedMeta.tokens?.total ? resolvedMeta.tokens : tokensFromUsage(resolvedMeta.usage);
-  const httpReq = resolvedMeta.http_request && typeof resolvedMeta.http_request === "object" ? resolvedMeta.http_request : null;
-  const httpRes = resolvedMeta.http_response && typeof resolvedMeta.http_response === "object" ? resolvedMeta.http_response : null;
+  if (!resolvedMeta && !(showLog && logFragment)) return null;
+  const tk = resolvedMeta?.tokens?.total ? resolvedMeta.tokens : tokensFromUsage(resolvedMeta?.usage);
+  const httpReq = resolvedMeta?.http_request && typeof resolvedMeta.http_request === "object" ? resolvedMeta.http_request : null;
+  const httpRes = resolvedMeta?.http_response && typeof resolvedMeta.http_response === "object" ? resolvedMeta.http_response : null;
   function renderMetaGrid() {
-    return /* @__PURE__ */ jsxs2("div", { className: "meta-grid meta-dialog-panel", children: [
-      resolvedMeta.nombre_usuario && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
-        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "nombre" }),
-        /* @__PURE__ */ jsx3("span", { className: "meta-v", children: /* @__PURE__ */ jsx3("strong", { children: resolvedMeta.nombre_usuario }) })
+    if (!resolvedMeta) {
+      return /* @__PURE__ */ jsx4("div", { className: "meta-grid meta-dialog-panel", children: /* @__PURE__ */ jsx4(Typography2, { variant: "body2", color: "text.secondary", children: "Sin trazabilidad en este mensaje. Abre la pesta\xF1a Log." }) });
+    }
+    return /* @__PURE__ */ jsxs3("div", { className: "meta-grid meta-dialog-panel", children: [
+      resolvedMeta.nombre_usuario && /* @__PURE__ */ jsxs3("div", { className: "meta-row", children: [
+        /* @__PURE__ */ jsx4("span", { className: "meta-k", children: "Nombre" }),
+        /* @__PURE__ */ jsx4("span", { className: "meta-v", children: /* @__PURE__ */ jsx4("strong", { children: resolvedMeta.nombre_usuario }) })
       ] }),
-      resolvedMeta.itdconsulta && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
-        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "itdconsulta" }),
-        /* @__PURE__ */ jsx3("span", { className: "meta-v", children: /* @__PURE__ */ jsx3("span", { className: "badge badge-itd", children: resolvedMeta.itdconsulta }) })
+      resolvedMeta.itdconsulta && /* @__PURE__ */ jsxs3("div", { className: "meta-row", children: [
+        /* @__PURE__ */ jsx4("span", { className: "meta-k", children: "Consulta" }),
+        /* @__PURE__ */ jsx4("span", { className: "meta-v", children: /* @__PURE__ */ jsx4("span", { className: "badge badge-itd", children: resolvedMeta.itdconsulta }) })
       ] }),
-      !isUserMessage && iinstruccion && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
-        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: isMcpOperativa ? "operativa" : "iinstruccion" }),
-        /* @__PURE__ */ jsx3("span", { className: "meta-v", children: /* @__PURE__ */ jsx3("code", { children: iinstruccion }) })
+      !isUserMessage && iinstruccion && /* @__PURE__ */ jsxs3("div", { className: "meta-row", children: [
+        /* @__PURE__ */ jsx4("span", { className: "meta-k", children: isMcpOperativa ? "Operativa" : "Instrucci\xF3n" }),
+        /* @__PURE__ */ jsx4("span", { className: "meta-v", children: /* @__PURE__ */ jsx4("code", { children: iinstruccion }) })
       ] }),
-      isMcpOperativa && resolvedMeta.extra?.operativa_engine && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
-        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "engine" }),
-        /* @__PURE__ */ jsx3("span", { className: "meta-v", children: /* @__PURE__ */ jsx3("code", { children: String(resolvedMeta.extra.operativa_engine) }) })
+      isMcpOperativa && resolvedMeta.extra?.operativa_engine && /* @__PURE__ */ jsxs3("div", { className: "meta-row", children: [
+        /* @__PURE__ */ jsx4("span", { className: "meta-k", children: "Engine" }),
+        /* @__PURE__ */ jsx4("span", { className: "meta-v", children: /* @__PURE__ */ jsx4("code", { children: String(resolvedMeta.extra.operativa_engine) }) })
       ] }),
-      isMcpOperativa && httpReq?.session_id && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
-        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "session_id" }),
-        /* @__PURE__ */ jsx3("span", { className: "meta-v", children: /* @__PURE__ */ jsx3("code", { children: String(httpReq.session_id) }) })
+      isMcpOperativa && httpReq?.session_id && /* @__PURE__ */ jsxs3("div", { className: "meta-row", children: [
+        /* @__PURE__ */ jsx4("span", { className: "meta-k", children: "Session" }),
+        /* @__PURE__ */ jsx4("span", { className: "meta-v", children: /* @__PURE__ */ jsx4("code", { children: String(httpReq.session_id) }) })
       ] }),
-      isMcpOperativa && httpReq?.transport && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
-        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "transport" }),
-        /* @__PURE__ */ jsx3("span", { className: "meta-v", children: /* @__PURE__ */ jsx3("code", { children: String(httpReq.transport) }) })
+      isMcpOperativa && httpReq?.transport && /* @__PURE__ */ jsxs3("div", { className: "meta-row", children: [
+        /* @__PURE__ */ jsx4("span", { className: "meta-k", children: "Transport" }),
+        /* @__PURE__ */ jsx4("span", { className: "meta-v", children: /* @__PURE__ */ jsx4("code", { children: String(httpReq.transport) }) })
       ] }),
-      isMcpOperativa && httpRes?.kind && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
-        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "kind" }),
-        /* @__PURE__ */ jsx3("span", { className: "meta-v", children: /* @__PURE__ */ jsx3("span", { className: "badge badge-itd", children: String(httpRes.kind) }) })
+      isMcpOperativa && httpRes?.kind && /* @__PURE__ */ jsxs3("div", { className: "meta-row", children: [
+        /* @__PURE__ */ jsx4("span", { className: "meta-k", children: "Kind" }),
+        /* @__PURE__ */ jsx4("span", { className: "meta-v", children: /* @__PURE__ */ jsx4("span", { className: "badge badge-itd", children: String(httpRes.kind) }) })
       ] }),
-      isMcpOperativa && Array.isArray(httpRes?.tools) && httpRes.tools.length > 0 && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
-        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "tools" }),
-        /* @__PURE__ */ jsx3("span", { className: "meta-v", children: httpRes.tools.map((t) => String(t?.name ?? "tool")).filter(Boolean).join(", ") })
+      isMcpOperativa && Array.isArray(httpRes?.tools) && httpRes.tools.length > 0 && /* @__PURE__ */ jsxs3("div", { className: "meta-row", children: [
+        /* @__PURE__ */ jsx4("span", { className: "meta-k", children: "Tools" }),
+        /* @__PURE__ */ jsx4("span", { className: "meta-v", children: httpRes.tools.map((t) => String(t?.name ?? "tool")).filter(Boolean).join(", ") })
       ] }),
-      isMcpOperativa && resolvedMeta.login_url && /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
-        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "login_url" }),
-        /* @__PURE__ */ jsx3("span", { className: "meta-v", style: { wordBreak: "break-all" }, children: String(resolvedMeta.login_url) })
+      isMcpOperativa && resolvedMeta.login_url && /* @__PURE__ */ jsxs3("div", { className: "meta-row", children: [
+        /* @__PURE__ */ jsx4("span", { className: "meta-k", children: "Login" }),
+        /* @__PURE__ */ jsx4("span", { className: "meta-v", style: { wordBreak: "break-all" }, children: String(resolvedMeta.login_url) })
       ] }),
-      resolvedMeta.premisas?.length ? /* @__PURE__ */ jsxs2("div", { className: "meta-row", children: [
-        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "premisas" }),
-        /* @__PURE__ */ jsx3("span", { className: "meta-v", children: resolvedMeta.premisas.join(", ") })
+      resolvedMeta.premisas?.length ? /* @__PURE__ */ jsxs3("div", { className: "meta-row", children: [
+        /* @__PURE__ */ jsx4("span", { className: "meta-k", children: "Premisas" }),
+        /* @__PURE__ */ jsx4("span", { className: "meta-v", children: resolvedMeta.premisas.join(", ") })
       ] }) : null,
-      resolvedMeta.usage && /* @__PURE__ */ jsxs2("div", { className: "meta-row meta-row--block", children: [
-        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "usage" }),
-        /* @__PURE__ */ jsx3("span", { className: "meta-v meta-v--full", children: /* @__PURE__ */ jsx3(
+      resolvedMeta.usage && /* @__PURE__ */ jsxs3("div", { className: "meta-row meta-row--block", children: [
+        /* @__PURE__ */ jsx4("span", { className: "meta-k", children: "usage" }),
+        /* @__PURE__ */ jsx4("span", { className: "meta-v meta-v--full", children: /* @__PURE__ */ jsx4(
           CodeMirrorPanel,
           {
             value: JSON.stringify(resolvedMeta.usage, null, 2),
@@ -4449,9 +4621,9 @@ function MetaDialog({
           }
         ) })
       ] }),
-      isMcpOperativa && httpReq && /* @__PURE__ */ jsxs2("div", { className: "meta-row meta-row--block", children: [
-        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "http_request" }),
-        /* @__PURE__ */ jsx3("span", { className: "meta-v meta-v--full", children: /* @__PURE__ */ jsx3(
+      isMcpOperativa && httpReq && /* @__PURE__ */ jsxs3("div", { className: "meta-row meta-row--block", children: [
+        /* @__PURE__ */ jsx4("span", { className: "meta-k", children: "http_request" }),
+        /* @__PURE__ */ jsx4("span", { className: "meta-v meta-v--full", children: /* @__PURE__ */ jsx4(
           CodeMirrorPanel,
           {
             value: JSON.stringify(httpReq, null, 2),
@@ -4463,9 +4635,9 @@ function MetaDialog({
           }
         ) })
       ] }),
-      isMcpOperativa && httpRes && /* @__PURE__ */ jsxs2("div", { className: "meta-row meta-row--block", children: [
-        /* @__PURE__ */ jsx3("span", { className: "meta-k", children: "http_response" }),
-        /* @__PURE__ */ jsx3("span", { className: "meta-v meta-v--full", children: /* @__PURE__ */ jsx3(
+      isMcpOperativa && httpRes && /* @__PURE__ */ jsxs3("div", { className: "meta-row meta-row--block", children: [
+        /* @__PURE__ */ jsx4("span", { className: "meta-k", children: "http_response" }),
+        /* @__PURE__ */ jsx4("span", { className: "meta-v meta-v--full", children: /* @__PURE__ */ jsx4(
           CodeMirrorPanel,
           {
             value: JSON.stringify(httpRes, null, 2),
@@ -4477,19 +4649,20 @@ function MetaDialog({
           }
         ) })
       ] }),
-      /* @__PURE__ */ jsx3(FileSearchMetaSection, { meta: resolvedMeta })
+      filesAdjuntos?.length ? /* @__PURE__ */ jsx4(MetaFilesStrip, { files: filesAdjuntos }) : null,
+      /* @__PURE__ */ jsx4(FileSearchMetaSection, { meta: resolvedMeta })
     ] });
   }
   const headerMeta = resolveMetaDialogHeader(title, isUserMessage);
-  return /* @__PURE__ */ jsxs2(Fragment, { children: [
-    /* @__PURE__ */ jsxs2(
+  return /* @__PURE__ */ jsxs3(Fragment, { children: [
+    /* @__PURE__ */ jsxs3(
       GlassDialog,
       {
         open,
         onClose,
         maxWidth: "md",
         fullWidth: true,
-        header: /* @__PURE__ */ jsx3(
+        header: /* @__PURE__ */ jsx4(
           GlassDialogHeader,
           {
             icon: headerMeta.icon,
@@ -4500,13 +4673,14 @@ function MetaDialog({
           }
         ),
         children: [
-          hasPrompt && /* @__PURE__ */ jsxs2(Tabs, { value: tab, onChange: (_, next) => setTab(next), sx: glassDialogTabsSx(), children: [
-            /* @__PURE__ */ jsx3(Tab, { label: "Trazabilidad" }),
-            /* @__PURE__ */ jsx3(Tab, { label: promptTabLabel })
+          (hasPrompt || canShowLog) && /* @__PURE__ */ jsxs3(Tabs, { value: tab, onChange: (_, next) => setTab(next), sx: glassDialogTabsSx(), children: [
+            /* @__PURE__ */ jsx4(Tab, { label: "Trazabilidad" }),
+            hasPrompt ? /* @__PURE__ */ jsx4(Tab, { label: promptTabLabel }) : null,
+            canShowLog ? /* @__PURE__ */ jsx4(Tab, { label: "Log" }) : null
           ] }),
-          /* @__PURE__ */ jsxs2(DialogContent, { dividers: true, sx: glassDialogContentSx(), children: [
-            /* @__PURE__ */ jsx3(Box, { sx: { display: tab === 0 || !hasPrompt ? "block" : "none", minHeight: 0 }, children: renderMetaGrid() }),
-            hasPrompt && /* @__PURE__ */ jsx3(Box, { sx: { display: tab === 1 ? "block" : "none", minHeight: 0, flex: 1 }, children: /* @__PURE__ */ jsx3(
+          /* @__PURE__ */ jsxs3(DialogContent, { dividers: true, sx: glassDialogContentSx(), children: [
+            /* @__PURE__ */ jsx4(Box2, { sx: { display: tab === 0 || tabCount <= 1 ? "block" : "none", minHeight: 0 }, children: renderMetaGrid() }),
+            hasPrompt && /* @__PURE__ */ jsx4(Box2, { sx: { display: tab === 1 ? "block" : "none", minHeight: 0, flex: 1 }, children: /* @__PURE__ */ jsx4(
               PromptPanelBody,
               {
                 resolvedMeta,
@@ -4520,13 +4694,14 @@ function MetaDialog({
                 dialogTitle: headerMeta.subtitle || headerMeta.title,
                 isMcpOperativa
               }
-            ) })
+            ) }),
+            canShowLog && /* @__PURE__ */ jsx4(Box2, { sx: { display: tab === (hasPrompt ? 2 : 1) ? "block" : "none", minHeight: 0 }, children: /* @__PURE__ */ jsx4("div", { className: "meta-prompt-panel custom-scrollbar", children: /* @__PURE__ */ jsx4(LogJsonPanel, { value: logFragment, files: filesAdjuntos }) }) })
           ] }),
-          /* @__PURE__ */ jsx3(GlassDialogCloseActions, { onClose })
+          /* @__PURE__ */ jsx4(GlassDialogCloseActions, { onClose })
         ]
       }
     ),
-    /* @__PURE__ */ jsx3(ImageLightboxDialog, { open: Boolean(lightboxSrc), src: lightboxSrc, onClose: () => setLightboxSrc(null) })
+    /* @__PURE__ */ jsx4(ImageLightboxDialog, { open: Boolean(lightboxSrc), src: lightboxSrc, onClose: () => setLightboxSrc(null) })
   ] });
 }
 function PromptPanelBody({
@@ -4544,25 +4719,25 @@ function PromptPanelBody({
   const [fullPage, setFullPage] = useState2(false);
   const exactTitle = isUserMessage ? "Consulta \xB7 texto exacto" : isMcpOperativa ? "Payload MCP \xB7 request / respuesta" : "Prompt \xB7 texto exacto";
   const emptyCopy = isUserMessage ? "Sin texto ni im\xE1genes en el log de este mensaje." : isMcpOperativa ? "Sin payload MCP (input / session_id / tools) en el log de este turno." : "Sin texto de instrucciones en el log de este turno.";
-  return /* @__PURE__ */ jsxs2("div", { className: "meta-prompt-panel custom-scrollbar", children: [
-    /* @__PURE__ */ jsx3(PromptSummaryCard, { meta: resolvedMeta, tokens: tk, usageStats, isUserMessage }),
-    promptMarkdown ? /* @__PURE__ */ jsxs2(Box, { className: "meta-prompt-exact-wrap", children: [
-      /* @__PURE__ */ jsxs2(Stack, { direction: "row", alignItems: "center", spacing: 0.75, sx: { mb: 0.75 }, children: [
-        /* @__PURE__ */ jsx3("iconify-icon", { icon: isMcpOperativa ? "mdi:api" : "mdi:file-document-outline", width: "18", height: "18" }),
-        /* @__PURE__ */ jsx3(Typography, { variant: "subtitle1", sx: { flex: 1, fontWeight: 700 }, children: exactTitle }),
-        /* @__PURE__ */ jsx3(
-          Chip,
+  return /* @__PURE__ */ jsxs3("div", { className: "meta-prompt-panel custom-scrollbar", children: [
+    /* @__PURE__ */ jsx4(PromptSummaryCard, { meta: resolvedMeta, tokens: tk, usageStats, isUserMessage }),
+    promptMarkdown ? /* @__PURE__ */ jsxs3(Box2, { className: "meta-prompt-exact-wrap", children: [
+      /* @__PURE__ */ jsxs3(Stack2, { direction: "row", alignItems: "center", spacing: 0.75, sx: { mb: 0.75 }, children: [
+        /* @__PURE__ */ jsx4("iconify-icon", { icon: isMcpOperativa ? "mdi:api" : "mdi:file-document-outline", width: "18", height: "18" }),
+        /* @__PURE__ */ jsx4(Typography2, { variant: "subtitle1", sx: { flex: 1, fontWeight: 700 }, children: exactTitle }),
+        /* @__PURE__ */ jsx4(
+          Chip2,
           {
             size: "small",
             clickable: true,
             onClick: () => setFullPage(true),
             className: "meta-prompt-exact-preview__open",
             label: "Ver full-page",
-            icon: /* @__PURE__ */ jsx3("iconify-icon", { icon: "mdi:fullscreen", width: "14", height: "14" })
+            icon: /* @__PURE__ */ jsx4("iconify-icon", { icon: "mdi:fullscreen", width: "14", height: "14" })
           }
         ),
-        /* @__PURE__ */ jsx3(
-          Chip,
+        /* @__PURE__ */ jsx4(
+          Chip2,
           {
             size: "small",
             clickable: true,
@@ -4574,12 +4749,12 @@ function PromptPanelBody({
             },
             className: "meta-prompt-exact-preview__copy",
             label: "Copiar",
-            icon: /* @__PURE__ */ jsx3("iconify-icon", { icon: "mdi:content-copy", width: "14", height: "14" })
+            icon: /* @__PURE__ */ jsx4("iconify-icon", { icon: "mdi:content-copy", width: "14", height: "14" })
           }
         )
       ] }),
-      /* @__PURE__ */ jsx3(Box, { className: "meta-prompt-exact-preview__body isa-md-content", children: /* @__PURE__ */ jsx3(MdRenderer, { source: promptMarkdown }) }),
-      /* @__PURE__ */ jsx3(
+      /* @__PURE__ */ jsx4(Box2, { className: "meta-prompt-exact-preview__body isa-md-content", children: /* @__PURE__ */ jsx4(MdRenderer, { source: promptMarkdown }) }),
+      /* @__PURE__ */ jsx4(
         MdFullPageDialog,
         {
           open: fullPage,
@@ -4592,13 +4767,13 @@ function PromptPanelBody({
         }
       )
     ] }) : null,
-    userImagenes.length ? /* @__PURE__ */ jsx3(MetaDialogImages, { items: userImagenes, onImageClick: setLightboxSrc, topGap: promptMarkdown ? 1.25 : 0 }) : null,
-    !promptMarkdown && !userImagenes.length ? /* @__PURE__ */ jsx3(Typography, { variant: "body2", color: "text.secondary", children: emptyCopy }) : null
+    userImagenes.length ? /* @__PURE__ */ jsx4(MetaDialogImages, { items: userImagenes, onImageClick: setLightboxSrc, topGap: promptMarkdown ? 1.25 : 0 }) : null,
+    !promptMarkdown && !userImagenes.length ? /* @__PURE__ */ jsx4(Typography2, { variant: "body2", color: "text.secondary", children: emptyCopy }) : null
   ] });
 }
 function MdRenderer({ source, className = "" }) {
   const html = mdToHtml(String(source ?? ""));
-  return /* @__PURE__ */ jsx3(
+  return /* @__PURE__ */ jsx4(
     "div",
     {
       className: `md-renderer isa-md-content ${className}`.trim(),
@@ -4615,10 +4790,10 @@ function MdFullPageDialog({
   accent = "#1e90ff",
   icon = "mdi:file-document-outline"
 }) {
-  const { Dialog: Dialog9, DialogTitle: DialogTitle9, DialogContent: DialogContent15, IconButton: IconButton14, Typography: Typography28, Box: Box33 } = getMaterialUI();
-  const { Icon: Icon26 } = UI;
+  const { Dialog: Dialog9, DialogTitle: DialogTitle9, DialogContent: DialogContent15, IconButton: IconButton15, Typography: Typography29, Box: Box34 } = getMaterialUI();
+  const { Icon: Icon27 } = UI;
   const html = mdToHtml(String(source ?? ""));
-  return /* @__PURE__ */ jsxs2(
+  return /* @__PURE__ */ jsxs3(
     Dialog9,
     {
       open: Boolean(open),
@@ -4632,7 +4807,7 @@ function MdFullPageDialog({
         }
       },
       children: [
-        /* @__PURE__ */ jsxs2(
+        /* @__PURE__ */ jsxs3(
           DialogTitle9,
           {
             className: "md-full-page-dialog__head",
@@ -4647,8 +4822,8 @@ function MdFullPageDialog({
               minHeight: 0
             },
             children: [
-              /* @__PURE__ */ jsx3(
-                Box33,
+              /* @__PURE__ */ jsx4(
+                Box34,
                 {
                   sx: {
                     width: 28,
@@ -4662,18 +4837,18 @@ function MdFullPageDialog({
                     flexShrink: 0,
                     boxShadow: `0 2px 8px ${accent}44`
                   },
-                  children: /* @__PURE__ */ jsx3(Icon26, { icon, size: 16 })
+                  children: /* @__PURE__ */ jsx4(Icon27, { icon, size: 16 })
                 }
               ),
-              /* @__PURE__ */ jsxs2(Box33, { sx: { flex: 1, minWidth: 0, lineHeight: 1.2 }, children: [
-                /* @__PURE__ */ jsx3(Typography28, { variant: "subtitle1", fontWeight: 700, noWrap: true, sx: { lineHeight: 1.25, fontSize: "0.95rem" }, children: title }),
-                subtitle ? /* @__PURE__ */ jsx3(Typography28, { variant: "caption", color: "text.secondary", noWrap: true, sx: { display: "block", lineHeight: 1.3, mt: 0.15, fontSize: "0.72rem" }, children: subtitle }) : null
+              /* @__PURE__ */ jsxs3(Box34, { sx: { flex: 1, minWidth: 0, lineHeight: 1.2 }, children: [
+                /* @__PURE__ */ jsx4(Typography29, { variant: "subtitle1", fontWeight: 700, noWrap: true, sx: { lineHeight: 1.25, fontSize: "0.95rem" }, children: title }),
+                subtitle ? /* @__PURE__ */ jsx4(Typography29, { variant: "caption", color: "text.secondary", noWrap: true, sx: { display: "block", lineHeight: 1.3, mt: 0.15, fontSize: "0.72rem" }, children: subtitle }) : null
               ] }),
-              /* @__PURE__ */ jsx3(IconButton14, { onClick: onClose, "aria-label": "Cerrar visor", size: "small", sx: { p: 0.5 }, children: /* @__PURE__ */ jsx3("iconify-icon", { icon: "mdi:close", width: "16", height: "16" }) })
+              /* @__PURE__ */ jsx4(IconButton15, { onClick: onClose, "aria-label": "Cerrar visor", size: "small", sx: { p: 0.5 }, children: /* @__PURE__ */ jsx4("iconify-icon", { icon: "mdi:close", width: "16", height: "16" }) })
             ]
           }
         ),
-        /* @__PURE__ */ jsx3(
+        /* @__PURE__ */ jsx4(
           DialogContent15,
           {
             dividers: true,
@@ -4684,7 +4859,7 @@ function MdFullPageDialog({
               maxWidth: "100%",
               boxSizing: "border-box"
             },
-            children: /* @__PURE__ */ jsx3(
+            children: /* @__PURE__ */ jsx4(
               "div",
               {
                 className: "md-full-page-dialog__body isa-md-content",
@@ -4700,9 +4875,9 @@ function MdFullPageDialog({
 
 // src/js/editors/jsonEditor.jsx
 init_platform();
-import { jsx as jsx4 } from "react/jsx-runtime";
+import { jsx as jsx5 } from "react/jsx-runtime";
 function JsonCodeEditor({ value = "", onChange, placeholder = "", toolbarExtra = null, readOnly = false }) {
-  return /* @__PURE__ */ jsx4(
+  return /* @__PURE__ */ jsx5(
     CodeMirrorPanel,
     {
       value,
@@ -4726,8 +4901,8 @@ init_platform();
 init_platform();
 init_platform();
 init_platform();
-import { Fragment as Fragment2, jsx as jsx5, jsxs as jsxs3 } from "react/jsx-runtime";
-var { useMemo: useMemo2, useState: useState3, useRef, useEffect: useEffect3, memo } = getReact();
+import { Fragment as Fragment2, jsx as jsx6, jsxs as jsxs4 } from "react/jsx-runtime";
+var { useMemo: useMemo3, useState: useState3, useRef, useEffect: useEffect3, memo } = getReact();
 function useOperativaEnterIds(mensajes, threadKey, { enabled = true } = {}) {
   const seenIdsRef = useRef(/* @__PURE__ */ new Set());
   const primedKeyRef = useRef(null);
@@ -4806,13 +4981,13 @@ function roleUserCaption(msg, chatUserNick) {
   return fromMsg && !/\s/.test(fromMsg) ? fromMsg : "";
 }
 function SectionCard({ icon, title, titleCaption, accent, children, id, onMeta, metaChips, align = "left", muted = false, operativa = false, fecha, fechaIso, streaming = false, footerExtra = null, compact = false }) {
-  const { Paper: Paper6, Stack: Stack26, Typography: Typography28, Box: Box33, IconButton: IconButton14, Tooltip: Tooltip15 } = getMaterialUI();
-  const { Icon: Icon26 } = UI;
+  const { Paper: Paper6, Stack: Stack27, Typography: Typography29, Box: Box34, IconButton: IconButton15, Tooltip: Tooltip16 } = getMaterialUI();
+  const { Icon: Icon27 } = UI;
   const color = accent || "#1e90ff";
   const isRight = align === "right";
   const softMuted = muted && !operativa;
   const fullNeon = !compact;
-  return /* @__PURE__ */ jsxs3(
+  return /* @__PURE__ */ jsxs4(
     Paper6,
     {
       id,
@@ -4873,8 +5048,8 @@ function SectionCard({ icon, title, titleCaption, accent, children, id, onMeta, 
         };
       },
       children: [
-        /* @__PURE__ */ jsxs3(
-          Box33,
+        /* @__PURE__ */ jsxs4(
+          Box34,
           {
             className: "conv-msg-card__header",
             sx: (theme2) => {
@@ -4922,8 +5097,8 @@ function SectionCard({ icon, title, titleCaption, accent, children, id, onMeta, 
               };
             },
             children: [
-              /* @__PURE__ */ jsxs3(
-                Stack26,
+              /* @__PURE__ */ jsxs4(
+                Stack27,
                 {
                   direction: "row",
                   spacing: 1.25,
@@ -4932,16 +5107,16 @@ function SectionCard({ icon, title, titleCaption, accent, children, id, onMeta, 
                   useFlexGap: true,
                   sx: { flexDirection: isRight ? "row-reverse" : "row" },
                   children: [
-                    /* @__PURE__ */ jsxs3(
-                      Stack26,
+                    /* @__PURE__ */ jsxs4(
+                      Stack27,
                       {
                         direction: "row",
                         spacing: 1.25,
                         alignItems: "flex-start",
                         sx: { flex: 1, minWidth: 0, flexDirection: isRight ? "row-reverse" : "row" },
                         children: [
-                          /* @__PURE__ */ jsx5(
-                            Box33,
+                          /* @__PURE__ */ jsx6(
+                            Box34,
                             {
                               className: "conv-msg-card__icon",
                               sx: (theme2) => {
@@ -4960,11 +5135,11 @@ function SectionCard({ icon, title, titleCaption, accent, children, id, onMeta, 
                                   mt: 0.1
                                 };
                               },
-                              children: /* @__PURE__ */ jsx5(Icon26, { icon, size: 18 })
+                              children: /* @__PURE__ */ jsx6(Icon27, { icon, size: 18 })
                             }
                           ),
-                          /* @__PURE__ */ jsxs3(
-                            Box33,
+                          /* @__PURE__ */ jsxs4(
+                            Box34,
                             {
                               className: isRight ? "conv-msg-card__title conv-msg-card__title--right" : "conv-msg-card__title",
                               sx: {
@@ -4973,8 +5148,8 @@ function SectionCard({ icon, title, titleCaption, accent, children, id, onMeta, 
                                 ...isRight ? { pr: 1.25, textAlign: "right" } : { pl: 0 }
                               },
                               children: [
-                                /* @__PURE__ */ jsx5(
-                                  Typography28,
+                                /* @__PURE__ */ jsx6(
+                                  Typography29,
                                   {
                                     variant: compact ? "body2" : "subtitle1",
                                     sx: {
@@ -4989,8 +5164,8 @@ function SectionCard({ icon, title, titleCaption, accent, children, id, onMeta, 
                                     children: title
                                   }
                                 ),
-                                titleCaption ? /* @__PURE__ */ jsx5(
-                                  Typography28,
+                                titleCaption ? /* @__PURE__ */ jsx6(
+                                  Typography29,
                                   {
                                     variant: "caption",
                                     color: "text.secondary",
@@ -5013,17 +5188,17 @@ function SectionCard({ icon, title, titleCaption, accent, children, id, onMeta, 
                         ]
                       }
                     ),
-                    onMeta && /* @__PURE__ */ jsx5(Tooltip15, { title: "Trazabilidad del mensaje", arrow: true, children: /* @__PURE__ */ jsx5(IconButton14, { size: "small", onClick: onMeta, "aria-label": "Ver trazabilidad", sx: { alignSelf: "flex-start", mt: -0.25 }, children: /* @__PURE__ */ jsx5(Icon26, { icon: "mdi:information-outline", size: 20 }) }) })
+                    onMeta && /* @__PURE__ */ jsx6(Tooltip16, { title: "Trazabilidad del mensaje", arrow: true, children: /* @__PURE__ */ jsx6(IconButton15, { size: "small", onClick: onMeta, "aria-label": "Ver trazabilidad", sx: { alignSelf: "flex-start", mt: -0.25 }, children: /* @__PURE__ */ jsx6(Icon27, { icon: "mdi:information-outline", size: 20 }) }) })
                   ]
                 }
               ),
-              metaChips ? /* @__PURE__ */ jsx5(Box33, { className: `conv-msg-card__meta-row${isRight ? " conv-msg-card__meta-row--right" : ""}`, children: metaChips }) : null
+              metaChips ? /* @__PURE__ */ jsx6(Box34, { className: `conv-msg-card__meta-row${isRight ? " conv-msg-card__meta-row--right" : ""}`, children: metaChips }) : null
             ]
           }
         ),
-        /* @__PURE__ */ jsx5(Box33, { sx: { p: compact ? { xs: 1.25, sm: 1.5 } : { xs: 2, sm: 2.5 } }, children }),
-        fecha || footerExtra ? /* @__PURE__ */ jsx5(
-          Box33,
+        /* @__PURE__ */ jsx6(Box34, { sx: { p: compact ? { xs: 1.25, sm: 1.5 } : { xs: 2, sm: 2.5 } }, children }),
+        fecha || footerExtra ? /* @__PURE__ */ jsx6(
+          Box34,
           {
             className: "conv-msg-card__footer",
             sx: {
@@ -5033,8 +5208,8 @@ function SectionCard({ icon, title, titleCaption, accent, children, id, onMeta, 
               borderColor: "divider",
               bgcolor: softMuted ? "action.hover" : "transparent"
             },
-            children: /* @__PURE__ */ jsxs3(
-              Stack26,
+            children: /* @__PURE__ */ jsxs4(
+              Stack27,
               {
                 direction: "row",
                 alignItems: "center",
@@ -5045,8 +5220,8 @@ function SectionCard({ icon, title, titleCaption, accent, children, id, onMeta, 
                 sx: { flexDirection: align === "right" ? "row-reverse" : "row" },
                 children: [
                   footerExtra,
-                  fecha ? /* @__PURE__ */ jsx5(
-                    Typography28,
+                  fecha ? /* @__PURE__ */ jsx6(
+                    Typography29,
                     {
                       component: "time",
                       dateTime: fechaIso || void 0,
@@ -5060,7 +5235,7 @@ function SectionCard({ icon, title, titleCaption, accent, children, id, onMeta, 
                         mr: align === "right" ? "auto" : 0,
                         textAlign: align === "right" ? "right" : "left"
                       },
-                      children: /* @__PURE__ */ jsx5("span", { className: "conv-msg-card__fecha", children: fecha })
+                      children: /* @__PURE__ */ jsx6("span", { className: "conv-msg-card__fecha", children: fecha })
                     }
                   ) : null
                 ]
@@ -5235,7 +5410,7 @@ function MetaBadge({ tag, label, tone = "neutral", title, onClick }) {
   const toneClass = META_CHIP_TONE_CLASS[tone] || "";
   const clickable = typeof onClick === "function";
   const chipLabel = tone === "files" ? compactFileChipLabel(label) : compactMetaLabel(label);
-  return /* @__PURE__ */ jsx5(
+  return /* @__PURE__ */ jsx6(
     UsageSummaryChip,
     {
       tag,
@@ -5321,9 +5496,9 @@ function MetaChipRow({ meta, isUser = false, hideUsageMetrics = false, hideClass
     }
   }
   if (!chips.length) return null;
-  const { Stack: Stack26 } = getMaterialUI();
-  return /* @__PURE__ */ jsx5(
-    Stack26,
+  const { Stack: Stack27 } = getMaterialUI();
+  return /* @__PURE__ */ jsx6(
+    Stack27,
     {
       direction: "row",
       spacing: 0.25,
@@ -5331,7 +5506,7 @@ function MetaChipRow({ meta, isUser = false, hideUsageMetrics = false, hideClass
       useFlexGap: true,
       className: "conv-msg-meta-chips",
       sx: { justifyContent: align === "right" ? "flex-end" : "flex-start" },
-      children: chips.map((c) => /* @__PURE__ */ jsx5(MetaBadge, { tag: c.tag, label: c.label, tone: c.tone, title: c.title, onClick: c.onClick }, c.key))
+      children: chips.map((c) => /* @__PURE__ */ jsx6(MetaBadge, { tag: c.tag, label: c.label, tone: c.tone, title: c.title, onClick: c.onClick }, c.key))
     }
   );
 }
@@ -5370,8 +5545,8 @@ function scheduleIframeRepaint(iframe, delaysMs = [0, 80, 200, 500, 1e3, 2e3, 4e
   return () => timers.forEach((id) => window.clearTimeout(id));
 }
 function ContapymeLoginEmbed({ url, onLoginDone }) {
-  const { Stack: Stack26, Button: Button21, Dialog: Dialog9, DialogContent: DialogContent15 } = getMaterialUI();
-  const { Icon: Icon26 } = UI;
+  const { Stack: Stack27, Button: Button21, Dialog: Dialog9, DialogContent: DialogContent15 } = getMaterialUI();
+  const { Icon: Icon27 } = UI;
   const [open, setOpen] = useState3(false);
   const [hostReady, setHostReady] = useState3(false);
   const [geomNudge, setGeomNudge] = useState3(0);
@@ -5470,9 +5645,9 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [url]);
   if (!url) return null;
-  return /* @__PURE__ */ jsxs3(Fragment2, { children: [
-    /* @__PURE__ */ jsxs3(
-      Stack26,
+  return /* @__PURE__ */ jsxs4(Fragment2, { children: [
+    /* @__PURE__ */ jsxs4(
+      Stack27,
       {
         className: "contapyme-login-embed",
         direction: { xs: "column", sm: "row" },
@@ -5480,7 +5655,7 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
         useFlexGap: true,
         sx: { mt: 1.5, alignItems: { xs: "stretch", sm: "center" } },
         children: [
-          /* @__PURE__ */ jsx5(
+          /* @__PURE__ */ jsx6(
             Button21,
             {
               variant: "contained",
@@ -5490,12 +5665,12 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
                 e.currentTarget.blur();
                 setOpen(true);
               },
-              startIcon: /* @__PURE__ */ jsx5(Icon26, { icon: "mdi:login-variant", size: 18 }),
+              startIcon: /* @__PURE__ */ jsx6(Icon27, { icon: "mdi:login-variant", size: 18 }),
               sx: { textTransform: "none", fontWeight: 700, alignSelf: { sm: "flex-start" } },
               children: "Iniciar sesi\xF3n ContaPyme\xAE"
             }
           ),
-          /* @__PURE__ */ jsx5(
+          /* @__PURE__ */ jsx6(
             Button21,
             {
               href: url,
@@ -5513,7 +5688,7 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
         ]
       }
     ),
-    /* @__PURE__ */ jsxs3(
+    /* @__PURE__ */ jsxs4(
       Dialog9,
       {
         open,
@@ -5554,7 +5729,7 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
           }
         },
         children: [
-          /* @__PURE__ */ jsx5(
+          /* @__PURE__ */ jsx6(
             GlassDialogHeader,
             {
               title: "Conectar ContaPyme\xAE",
@@ -5565,7 +5740,7 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
               closeAutoFocus: true
             }
           ),
-          /* @__PURE__ */ jsx5(
+          /* @__PURE__ */ jsx6(
             DialogContent15,
             {
               ref: contentRef,
@@ -5583,7 +5758,7 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
                 backgroundImage: "none",
                 borderTop: 0
               },
-              children: hostReady ? /* @__PURE__ */ jsx5(
+              children: hostReady ? /* @__PURE__ */ jsx6(
                 "iframe",
                 {
                   ref: iframeRef,
@@ -5602,22 +5777,31 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
     )
   ] });
 }
+function formatOperativaContenidoForLog(msg, text) {
+  if (!msg?.esOperativa) return text;
+  const key = String(msg.meta?.extra?.operativa_key ?? msg.rol ?? "");
+  if (!/validarTranscripcionAudio|VALIDAR_TRANSCRIPCION_AUDIO/i.test(key)) return text;
+  const t = String(text ?? "").trim();
+  if (t === "0") return "0 = false";
+  if (t === "1") return "1 = true";
+  return text;
+}
 function MsgBody({ text, imagenes, audios, audiosTranscripcion, align = "left", onImageClick, streaming = false, loginUrl: loginUrlProp, disableLoginEmbed = false, onContapymeLoginDone }) {
-  const { Typography: Typography28, Box: Box33 } = getMaterialUI();
+  const { Typography: Typography29, Box: Box34 } = getMaterialUI();
   const raw = String(text || "");
   const placeholderOnly = /^\((?:imagen adjunta|nota de voz)\)$/i.test(raw.trim());
   const hasText = Boolean(raw.trim()) && !placeholderOnly;
   const loginUrl = disableLoginEmbed ? null : extractContapymeLoginUrl(raw, loginUrlProp);
   const displayRaw = disableLoginEmbed ? scrubContapymeLoginFromText(raw) : loginUrl ? raw.replace(loginUrl, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim() : raw;
   const html = mdToHtml(displayRaw || (loginUrl ? "Inicia sesi\xF3n en ContaPyme\xAE con el bot\xF3n de abajo." : ""));
-  return /* @__PURE__ */ jsxs3(Fragment2, { children: [
-    streaming && !hasText && !audios?.length ? /* @__PURE__ */ jsxs3(Box33, { className: "conv-stream-typing", "aria-label": "PatyIA est\xE1 escribiendo", role: "status", children: [
-      /* @__PURE__ */ jsx5("span", {}),
-      /* @__PURE__ */ jsx5("span", {}),
-      /* @__PURE__ */ jsx5("span", {})
-    ] }) : /* @__PURE__ */ jsxs3(Box33, { className: `conv-msg-body-wrap${streaming ? " conv-msg-body-wrap--streaming" : ""}`, children: [
-      displayRaw || !loginUrl ? /* @__PURE__ */ jsx5(
-        Typography28,
+  return /* @__PURE__ */ jsxs4(Fragment2, { children: [
+    streaming && !hasText && !audios?.length ? /* @__PURE__ */ jsxs4(Box34, { className: "conv-stream-typing", "aria-label": "PatyIA est\xE1 escribiendo", role: "status", children: [
+      /* @__PURE__ */ jsx6("span", {}),
+      /* @__PURE__ */ jsx6("span", {}),
+      /* @__PURE__ */ jsx6("span", {})
+    ] }) : /* @__PURE__ */ jsxs4(Box34, { className: `conv-msg-body-wrap${streaming ? " conv-msg-body-wrap--streaming" : ""}`, children: [
+      displayRaw || !loginUrl ? /* @__PURE__ */ jsx6(
+        Typography29,
         {
           component: "div",
           variant: "body1",
@@ -5653,19 +5837,19 @@ function MsgBody({ text, imagenes, audios, audiosTranscripcion, align = "left", 
           }
         }
       ) : null,
-      streaming && hasText ? /* @__PURE__ */ jsx5(Box33, { component: "span", className: "conv-stream-cursor", "aria-hidden": true }) : null,
-      loginUrl ? /* @__PURE__ */ jsx5(ContapymeLoginEmbed, { url: loginUrl, onLoginDone: streaming ? void 0 : onContapymeLoginDone }) : null
+      streaming && hasText ? /* @__PURE__ */ jsx6(Box34, { component: "span", className: "conv-stream-cursor", "aria-hidden": true }) : null,
+      loginUrl ? /* @__PURE__ */ jsx6(ContapymeLoginEmbed, { url: loginUrl, onLoginDone: streaming ? void 0 : onContapymeLoginDone }) : null
     ] }),
-    imagenes?.length > 0 && /* @__PURE__ */ jsx5(ConvMsgImages, { items: imagenes, align, onImageClick }),
-    audios?.length > 0 && /* @__PURE__ */ jsx5(ConvMsgAudios, { items: audios, transcriptions: audiosTranscripcion, align })
+    imagenes?.length > 0 && /* @__PURE__ */ jsx6(ConvMsgImages, { items: imagenes, align, onImageClick }),
+    audios?.length > 0 && /* @__PURE__ */ jsx6(ConvMsgAudios, { items: audios, transcriptions: audiosTranscripcion, align })
   ] });
 }
 function ConvMsgAudios({ items, transcriptions, align = "right" }) {
-  const { Box: Box33, Typography: Typography28 } = getMaterialUI();
+  const { Box: Box34, Typography: Typography29 } = getMaterialUI();
   const renderable = (items || []).filter((src) => String(src || "").trim().startsWith("data:audio/") || /^https?:\/\//i.test(String(src || "").trim()));
   if (!renderable.length) return null;
-  return /* @__PURE__ */ jsx5(
-    Box33,
+  return /* @__PURE__ */ jsx6(
+    Box34,
     {
       className: `conv-msg-audios conv-msg-audios--${align}`,
       sx: {
@@ -5675,23 +5859,23 @@ function ConvMsgAudios({ items, transcriptions, align = "right" }) {
         mt: 1.25,
         alignItems: align === "right" ? "flex-end" : "flex-start"
       },
-      children: renderable.map((src, idx) => /* @__PURE__ */ jsxs3(Box33, { className: "conv-msg-audio-item", children: [
-        /* @__PURE__ */ jsx5("audio", { controls: true, preload: "metadata", src, "aria-label": `Nota de voz ${idx + 1}` }),
-        transcriptions?.[idx] ? /* @__PURE__ */ jsx5(Typography28, { variant: "caption", component: "p", className: "conv-msg-audio-transcript", sx: { mt: 0.5, opacity: 0.85 }, children: transcriptions[idx] }) : null
+      children: renderable.map((src, idx) => /* @__PURE__ */ jsxs4(Box34, { className: "conv-msg-audio-item", children: [
+        /* @__PURE__ */ jsx6("audio", { controls: true, preload: "metadata", src, "aria-label": `Nota de voz ${idx + 1}` }),
+        transcriptions?.[idx] ? /* @__PURE__ */ jsx6(Typography29, { variant: "caption", component: "p", className: "conv-msg-audio-transcript", sx: { mt: 0.5, opacity: 0.85 }, children: transcriptions[idx] }) : null
       ] }, `${idx}-${String(src).slice(0, 32)}`))
     }
   );
 }
 function ConvMsgImages({ items, align = "right", onImageClick }) {
-  const { Box: Box33 } = getMaterialUI();
+  const { Box: Box34 } = getMaterialUI();
   const renderable = (items || []).filter((src) => {
     const s = String(src || "").trim();
     if (/^\[file_id:/i.test(s)) return false;
     return s.startsWith("data:image/") || s.startsWith("http://") || s.startsWith("https://");
   });
   if (!renderable.length) return null;
-  return /* @__PURE__ */ jsx5(
-    Box33,
+  return /* @__PURE__ */ jsx6(
+    Box34,
     {
       className: `conv-msg-images conv-msg-images--${align}`,
       sx: {
@@ -5701,14 +5885,14 @@ function ConvMsgImages({ items, align = "right", onImageClick }) {
         mt: 1.25,
         justifyContent: align === "right" ? "flex-end" : "flex-start"
       },
-      children: renderable.map((src, idx) => /* @__PURE__ */ jsx5(
+      children: renderable.map((src, idx) => /* @__PURE__ */ jsx6(
         "button",
         {
           type: "button",
           className: "conv-msg-image-lightbox-btn",
           "aria-label": `Ver imagen adjunta ${idx + 1} en tama\xF1o completo`,
           onClick: () => onImageClick?.(src),
-          children: /* @__PURE__ */ jsx5("img", { src, alt: `Adjunto ${idx + 1}`, loading: "lazy" })
+          children: /* @__PURE__ */ jsx6("img", { src, alt: `Adjunto ${idx + 1}`, loading: "lazy" })
         },
         `${idx}-${src.slice(0, 32)}`
       ))
@@ -5724,7 +5908,7 @@ function UsageSummaryChip({ label, className = "", title, tag, onClick, role, ta
       onClick(e);
     }
   } : void 0;
-  return /* @__PURE__ */ jsx5(
+  return /* @__PURE__ */ jsx6(
     "span",
     {
       className: className || "conv-msg-usage-chip",
@@ -5733,9 +5917,9 @@ function UsageSummaryChip({ label, className = "", title, tag, onClick, role, ta
       onKeyDown: handleKeyDown,
       role,
       tabIndex,
-      children: /* @__PURE__ */ jsxs3("span", { className: "conv-msg-usage-chip__inner", children: [
-        tag ? /* @__PURE__ */ jsx5("span", { className: "conv-msg-usage-chip__key", children: tag }) : null,
-        showVal ? /* @__PURE__ */ jsx5("span", { className: "conv-msg-usage-chip__val", children: label }) : null
+      children: /* @__PURE__ */ jsxs4("span", { className: "conv-msg-usage-chip__inner", children: [
+        tag ? /* @__PURE__ */ jsx6("span", { className: "conv-msg-usage-chip__key", children: tag }) : null,
+        showVal ? /* @__PURE__ */ jsx6("span", { className: "conv-msg-usage-chip__val", children: label }) : null
       ] })
     }
   );
@@ -5750,20 +5934,20 @@ function isContapymeMcpMeta(meta) {
   return /CONTAPYME|MCP|contapymeMcp/i.test(hay);
 }
 function UsageDialogMetaPanel({ meta }) {
-  const { Box: Box33 } = getMaterialUI();
-  const { Icon: Icon26 } = UI;
+  const { Box: Box34 } = getMaterialUI();
+  const { Icon: Icon27 } = UI;
   const ctxItems = buildUsageDialogCtxItems(meta);
   if (!ctxItems.length) return null;
   const isMcp = isContapymeMcpMeta(meta);
-  return /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__meta conv-usage-dialog__meta--ctx", children: [
-    /* @__PURE__ */ jsxs3("div", { className: "conv-usage-dialog__meta-head", children: [
-      /* @__PURE__ */ jsx5("span", { className: "conv-usage-dialog__meta-eyebrow", children: "Contexto del turno" }),
-      isMcp ? /* @__PURE__ */ jsxs3("span", { className: "conv-usage-dialog__meta-badge conv-usage-dialog__meta-badge--mcp", children: [
-        /* @__PURE__ */ jsx5(Icon26, { icon: "mdi:api", size: 14 }),
+  return /* @__PURE__ */ jsxs4(Box34, { className: "conv-usage-dialog__meta conv-usage-dialog__meta--ctx", children: [
+    /* @__PURE__ */ jsxs4("div", { className: "conv-usage-dialog__meta-head", children: [
+      /* @__PURE__ */ jsx6("span", { className: "conv-usage-dialog__meta-eyebrow", children: "Contexto del turno" }),
+      isMcp ? /* @__PURE__ */ jsxs4("span", { className: "conv-usage-dialog__meta-badge conv-usage-dialog__meta-badge--mcp", children: [
+        /* @__PURE__ */ jsx6(Icon27, { icon: "mdi:api", size: 14 }),
         "Sin costo LLM"
       ] }) : null
     ] }),
-    /* @__PURE__ */ jsx5("div", { className: "conv-usage-dialog__ctx-grid", children: ctxItems.map((item) => /* @__PURE__ */ jsxs3(
+    /* @__PURE__ */ jsx6("div", { className: "conv-usage-dialog__ctx-grid", children: ctxItems.map((item) => /* @__PURE__ */ jsxs4(
       "div",
       {
         className: [
@@ -5772,10 +5956,10 @@ function UsageDialogMetaPanel({ meta }) {
           item.vision ? "conv-usage-dialog__ctx-item--vision" : ""
         ].filter(Boolean).join(" ") || void 0,
         children: [
-          /* @__PURE__ */ jsx5("span", { className: "conv-usage-dialog__ctx-icon", "aria-hidden": true, children: /* @__PURE__ */ jsx5(Icon26, { icon: item.icon || "mdi:information-outline", size: 16 }) }),
-          /* @__PURE__ */ jsxs3("span", { className: "conv-usage-dialog__ctx-copy", children: [
-            /* @__PURE__ */ jsx5("span", { className: "conv-usage-dialog__ctx-k", children: item.label }),
-            /* @__PURE__ */ jsx5("span", { className: `conv-usage-dialog__ctx-v${item.mono ? " conv-usage-dialog__mono" : ""}`, children: item.value })
+          /* @__PURE__ */ jsx6("span", { className: "conv-usage-dialog__ctx-icon", "aria-hidden": true, children: /* @__PURE__ */ jsx6(Icon27, { icon: item.icon || "mdi:information-outline", size: 16 }) }),
+          /* @__PURE__ */ jsxs4("span", { className: "conv-usage-dialog__ctx-copy", children: [
+            /* @__PURE__ */ jsx6("span", { className: "conv-usage-dialog__ctx-k", children: item.label }),
+            /* @__PURE__ */ jsx6("span", { className: `conv-usage-dialog__ctx-v${item.mono ? " conv-usage-dialog__mono" : ""}`, children: item.value })
           ] })
         ]
       },
@@ -5796,20 +5980,20 @@ function safeJsonPreview(value, maxLen = 600) {
   return `${raw.slice(0, maxLen)}\u2026 [truncado ${raw.length} chars]`;
 }
 function McpToolsSection({ tools, GlassSection, GlassInner }) {
-  const { Typography: Typography28, Box: Box33, Chip: Chip19, Stack: Stack26 } = getMaterialUI();
+  const { Typography: Typography29, Box: Box34, Chip: Chip20, Stack: Stack27 } = getMaterialUI();
   if (!Array.isArray(tools) || !tools.length) return null;
-  const body = /* @__PURE__ */ jsx5(Box33, { className: "conv-usage-dialog__section-body", children: /* @__PURE__ */ jsx5(Stack26, { spacing: 1.5, children: tools.map((tool, idx) => {
+  const body = /* @__PURE__ */ jsx6(Box34, { className: "conv-usage-dialog__section-body", children: /* @__PURE__ */ jsx6(Stack27, { spacing: 1.5, children: tools.map((tool, idx) => {
     const name = String(tool?.name ?? `Tool ${idx + 1}`);
     const status = String(tool?.status ?? "");
     const error = tool?.error;
     const args = safeJsonPreview(tool?.arguments);
     const output = safeJsonPreview(tool?.output);
-    return /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__mcp-tool", children: [
-      /* @__PURE__ */ jsxs3(Stack26, { direction: "row", spacing: 0.75, alignItems: "center", sx: { mb: 0.5 }, children: [
-        /* @__PURE__ */ jsx5("iconify-icon", { icon: "mdi:hammer-wrench", width: "16", height: "16" }),
-        /* @__PURE__ */ jsx5(Typography28, { variant: "body2", fontWeight: 600, sx: { flex: 1, minWidth: 0 }, children: name }),
-        status ? /* @__PURE__ */ jsx5(
-          Chip19,
+    return /* @__PURE__ */ jsxs4(Box34, { className: "conv-usage-dialog__mcp-tool", children: [
+      /* @__PURE__ */ jsxs4(Stack27, { direction: "row", spacing: 0.75, alignItems: "center", sx: { mb: 0.5 }, children: [
+        /* @__PURE__ */ jsx6("iconify-icon", { icon: "mdi:hammer-wrench", width: "16", height: "16" }),
+        /* @__PURE__ */ jsx6(Typography29, { variant: "body2", fontWeight: 600, sx: { flex: 1, minWidth: 0 }, children: name }),
+        status ? /* @__PURE__ */ jsx6(
+          Chip20,
           {
             size: "small",
             variant: "outlined",
@@ -5818,22 +6002,22 @@ function McpToolsSection({ tools, GlassSection, GlassInner }) {
           }
         ) : null
       ] }),
-      args ? /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__mcp-tool-block", sx: { mb: 0.75 }, children: [
-        /* @__PURE__ */ jsx5(Typography28, { variant: "caption", color: "text.secondary", component: "div", sx: { mb: 0.25 }, children: "Argumentos" }),
-        /* @__PURE__ */ jsx5(Typography28, { variant: "caption", component: "pre", sx: { whiteSpace: "pre-wrap", wordBreak: "break-word", m: 0 }, children: args })
+      args ? /* @__PURE__ */ jsxs4(Box34, { className: "conv-usage-dialog__mcp-tool-block", sx: { mb: 0.75 }, children: [
+        /* @__PURE__ */ jsx6(Typography29, { variant: "caption", color: "text.secondary", component: "div", sx: { mb: 0.25 }, children: "Argumentos" }),
+        /* @__PURE__ */ jsx6(Typography29, { variant: "caption", component: "pre", sx: { whiteSpace: "pre-wrap", wordBreak: "break-word", m: 0 }, children: args })
       ] }) : null,
-      output ? /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__mcp-tool-block", children: [
-        /* @__PURE__ */ jsx5(Typography28, { variant: "caption", color: "text.secondary", component: "div", sx: { mb: 0.25 }, children: "Resultado" }),
-        /* @__PURE__ */ jsx5(Typography28, { variant: "caption", component: "pre", sx: { whiteSpace: "pre-wrap", wordBreak: "break-word", m: 0 }, children: output })
+      output ? /* @__PURE__ */ jsxs4(Box34, { className: "conv-usage-dialog__mcp-tool-block", children: [
+        /* @__PURE__ */ jsx6(Typography29, { variant: "caption", color: "text.secondary", component: "div", sx: { mb: 0.25 }, children: "Resultado" }),
+        /* @__PURE__ */ jsx6(Typography29, { variant: "caption", component: "pre", sx: { whiteSpace: "pre-wrap", wordBreak: "break-word", m: 0 }, children: output })
       ] }) : null,
-      error ? /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__mcp-tool-block conv-usage-dialog__mcp-tool-block--error", children: [
-        /* @__PURE__ */ jsx5(Typography28, { variant: "caption", color: "error", component: "div", sx: { mb: 0.25 }, children: "Error" }),
-        /* @__PURE__ */ jsx5(Typography28, { variant: "caption", component: "pre", sx: { whiteSpace: "pre-wrap", wordBreak: "break-word", m: 0 }, children: safeJsonPreview(error) })
+      error ? /* @__PURE__ */ jsxs4(Box34, { className: "conv-usage-dialog__mcp-tool-block conv-usage-dialog__mcp-tool-block--error", children: [
+        /* @__PURE__ */ jsx6(Typography29, { variant: "caption", color: "error", component: "div", sx: { mb: 0.25 }, children: "Error" }),
+        /* @__PURE__ */ jsx6(Typography29, { variant: "caption", component: "pre", sx: { whiteSpace: "pre-wrap", wordBreak: "break-word", m: 0 }, children: safeJsonPreview(error) })
       ] }) : null
     ] }, `${name}-${idx}`);
   }) }) });
   if (GlassSection && GlassInner) {
-    return /* @__PURE__ */ jsx5(
+    return /* @__PURE__ */ jsx6(
       GlassSection,
       {
         sectionKey: "conv-usage-mcp-tools",
@@ -5844,14 +6028,14 @@ function McpToolsSection({ tools, GlassSection, GlassInner }) {
         tone: "warn",
         headerSx: { borderRadius: "0.75rem 0.75rem 0 0" },
         bodySx: { pt: { xs: 1.25, sm: 1.5 } },
-        children: /* @__PURE__ */ jsx5(GlassInner, { children: body })
+        children: /* @__PURE__ */ jsx6(GlassInner, { children: body })
       }
     );
   }
-  return /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__section-card conv-usage-dialog__section-card--mcp-tools", children: [
-    /* @__PURE__ */ jsxs3("div", { className: "conv-usage-dialog__section-head", children: [
-      /* @__PURE__ */ jsx5(Typography28, { component: "h3", variant: "subtitle2", className: "conv-usage-dialog__section-title", children: "Tools MCP" }),
-      /* @__PURE__ */ jsxs3(Typography28, { variant: "caption", color: "text.secondary", className: "conv-usage-dialog__section-sub", children: [
+  return /* @__PURE__ */ jsxs4(Box34, { className: "conv-usage-dialog__section-card conv-usage-dialog__section-card--mcp-tools", children: [
+    /* @__PURE__ */ jsxs4("div", { className: "conv-usage-dialog__section-head", children: [
+      /* @__PURE__ */ jsx6(Typography29, { component: "h3", variant: "subtitle2", className: "conv-usage-dialog__section-title", children: "Tools MCP" }),
+      /* @__PURE__ */ jsxs4(Typography29, { variant: "caption", color: "text.secondary", className: "conv-usage-dialog__section-sub", children: [
         tools.length,
         " llamada",
         tools.length === 1 ? "" : "s",
@@ -5862,8 +6046,8 @@ function McpToolsSection({ tools, GlassSection, GlassInner }) {
   ] });
 }
 function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
-  const { DialogContent: DialogContent15, Typography: Typography28, Box: Box33, Chip: Chip19, Stack: Stack26, Tooltip: Tooltip15, IconButton: IconButton14 } = getMaterialUI();
-  const { useMemo: useMemo21, useState: useState34 } = getReact();
+  const { DialogContent: DialogContent15, Typography: Typography29, Box: Box34, Chip: Chip20, Stack: Stack27, Tooltip: Tooltip16, IconButton: IconButton15 } = getMaterialUI();
+  const { useMemo: useMemo22, useState: useState34 } = getReact();
   let glass = null;
   try {
     glass = getGlass();
@@ -5881,7 +6065,7 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
       cost: stats.cost,
       accent: "#34d399",
       tone: "success",
-      icon: /* @__PURE__ */ jsx5(UI.Icon, { icon: "mdi:message-text-outline", size: 18 }),
+      icon: /* @__PURE__ */ jsx6(UI.Icon, { icon: "mdi:message-text-outline", size: 18 }),
       show: true
     },
     {
@@ -5892,7 +6076,7 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
       cost: stats.previousCost,
       accent: "#60a5fa",
       tone: "blue",
-      icon: /* @__PURE__ */ jsx5(UI.Icon, { icon: "mdi:history", size: 18 }),
+      icon: /* @__PURE__ */ jsx6(UI.Icon, { icon: "mdi:history", size: 18 }),
       show: usageHasData(stats.previousTokens, stats.previousCost)
     },
     {
@@ -5903,13 +6087,13 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
       cost: stats.cumulativeCost,
       accent: "#f59e0b",
       tone: "warn",
-      icon: /* @__PURE__ */ jsx5(UI.Icon, { icon: "mdi:sigma", size: 18 }),
+      icon: /* @__PURE__ */ jsx6(UI.Icon, { icon: "mdi:sigma", size: 18 }),
       show: usageHasData(stats.cumulativeTokens, stats.cumulativeCost)
     }
   ].filter((s) => s.show);
-  const chunks = useMemo21(() => chunksFromMeta(meta), [meta]);
-  const archivos = useMemo21(() => archivosCitadosFromMeta(meta), [meta]);
-  const mcpTools = useMemo21(() => {
+  const chunks = useMemo22(() => chunksFromMeta(meta), [meta]);
+  const archivos = useMemo22(() => archivosCitadosFromMeta(meta), [meta]);
+  const mcpTools = useMemo22(() => {
     const opKey2 = String(meta?.extra?.operativa_key ?? "");
     if (!/^contapymeMcpSession$/i.test(opKey2)) return [];
     const tools = meta?.http_response?.tools;
@@ -5921,8 +6105,8 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
   const showMetaPanel = Boolean(
     meta?.ts || meta?.model || meta?.modelo_autoswitch_vision || formatLatencySeconds(meta?.latency_ms) || meta?.itdconsulta
   );
-  return /* @__PURE__ */ jsxs3(Fragment2, { children: [
-    /* @__PURE__ */ jsxs3(
+  return /* @__PURE__ */ jsxs4(Fragment2, { children: [
+    /* @__PURE__ */ jsxs4(
       GlassDialog,
       {
         open,
@@ -5931,7 +6115,7 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
         fullWidth: true,
         paperMaxWidth: "42rem",
         paperClassName: "conv-usage-dialog-paper",
-        header: /* @__PURE__ */ jsx5(
+        header: /* @__PURE__ */ jsx6(
           GlassDialogHeader,
           {
             icon: header.icon,
@@ -5942,7 +6126,7 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
           }
         ),
         children: [
-          /* @__PURE__ */ jsx5(
+          /* @__PURE__ */ jsx6(
             DialogContent15,
             {
               dividers: true,
@@ -5952,10 +6136,10 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
                 maxHeight: "min(72dvh, 40rem)",
                 overflow: "auto"
               }),
-              children: /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__stack", children: [
-                showMetaPanel ? /* @__PURE__ */ jsx5(UsageDialogMetaPanel, { meta }) : null,
-                mcpTools.length ? /* @__PURE__ */ jsx5(McpToolsSection, { tools: mcpTools, GlassSection, GlassInner }) : null,
-                sections.map((section) => /* @__PURE__ */ jsx5(
+              children: /* @__PURE__ */ jsxs4(Box34, { className: "conv-usage-dialog__stack", children: [
+                showMetaPanel ? /* @__PURE__ */ jsx6(UsageDialogMetaPanel, { meta }) : null,
+                mcpTools.length ? /* @__PURE__ */ jsx6(McpToolsSection, { tools: mcpTools, GlassSection, GlassInner }) : null,
+                sections.map((section) => /* @__PURE__ */ jsx6(
                   UsageDialogSection,
                   {
                     section,
@@ -5964,7 +6148,7 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
                   },
                   section.key
                 )),
-                chunks.length || archivos.length ? GlassSection ? /* @__PURE__ */ jsxs3(
+                chunks.length || archivos.length ? GlassSection ? /* @__PURE__ */ jsxs4(
                   GlassSection,
                   {
                     sectionKey: "conv-usage-chunks",
@@ -5975,11 +6159,11 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
                     headerSx: { borderRadius: "0.75rem 0.75rem 0 0" },
                     bodySx: { pt: { xs: 1.25, sm: 1.5 } },
                     children: [
-                      /* @__PURE__ */ jsx5(Typography28, { variant: "caption", color: "text.secondary", component: "div", className: "conv-usage-dialog__section-sub", sx: { mb: 1 }, children: archivos.length ? `Chunks extra\xEDdos por file_search (${chunks.length} de ${archivos.length} archivo${archivos.length === 1 ? "" : "s"}).` : `${chunks.length} fragmento${chunks.length === 1 ? "" : "s"} del message.` }),
-                      archivos.length ? /* @__PURE__ */ jsx5(Stack26, { direction: "row", spacing: 0.5, flexWrap: "wrap", useFlexGap: true, className: "conv-usage-dialog__files", sx: { mb: 1 }, children: archivos.map((name) => {
+                      /* @__PURE__ */ jsx6(Typography29, { variant: "caption", color: "text.secondary", component: "div", className: "conv-usage-dialog__section-sub", sx: { mb: 1 }, children: archivos.length ? `Chunks extra\xEDdos por file_search (${chunks.length} de ${archivos.length} archivo${archivos.length === 1 ? "" : "s"}).` : `${chunks.length} fragmento${chunks.length === 1 ? "" : "s"} del message.` }),
+                      archivos.length ? /* @__PURE__ */ jsx6(Stack27, { direction: "row", spacing: 0.5, flexWrap: "wrap", useFlexGap: true, className: "conv-usage-dialog__files", sx: { mb: 1 }, children: archivos.map((name) => {
                         const clickable = chunks.some((c) => c.filename === name);
-                        return /* @__PURE__ */ jsx5(
-                          Chip19,
+                        return /* @__PURE__ */ jsx6(
+                          Chip20,
                           {
                             size: "small",
                             variant: "outlined",
@@ -5988,7 +6172,7 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
                               const first = chunks.find((c) => c.filename === name);
                               if (first) setOpenChunk(first);
                             } : void 0,
-                            icon: /* @__PURE__ */ jsx5("iconify-icon", { icon: "mdi:file-document-outline", width: "14", height: "14" }),
+                            icon: /* @__PURE__ */ jsx6("iconify-icon", { icon: "mdi:file-document-outline", width: "14", height: "14" }),
                             label: name,
                             title: clickable ? `Ver fragmentos de ${name}` : name,
                             className: "conv-usage-dialog__file-chip"
@@ -5996,8 +6180,8 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
                           name
                         );
                       }) }) : null,
-                      /* @__PURE__ */ jsx5(Stack26, { spacing: 0.75, className: "conv-usage-dialog__chunks", children: chunks.map((c) => /* @__PURE__ */ jsxs3(
-                        Box33,
+                      /* @__PURE__ */ jsx6(Stack27, { spacing: 0.75, className: "conv-usage-dialog__chunks", children: chunks.map((c) => /* @__PURE__ */ jsxs4(
+                        Box34,
                         {
                           className: "conv-usage-dialog__chunk",
                           onClick: () => setOpenChunk(c),
@@ -6011,11 +6195,11 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
                           },
                           "aria-label": `Ver fragmento de ${c.filename || c.fileId || "texto"}`,
                           children: [
-                            /* @__PURE__ */ jsxs3(Stack26, { direction: "row", spacing: 0.75, alignItems: "center", sx: { mb: 0.35 }, children: [
-                              /* @__PURE__ */ jsx5("iconify-icon", { icon: "mdi:text-box-search-outline", width: "16", height: "16" }),
-                              /* @__PURE__ */ jsx5(Typography28, { variant: "body2", fontWeight: 600, sx: { flex: 1, minWidth: 0 }, children: c.filename || c.fileId || "fragmento" }),
-                              c.score != null ? /* @__PURE__ */ jsx5(
-                                Chip19,
+                            /* @__PURE__ */ jsxs4(Stack27, { direction: "row", spacing: 0.75, alignItems: "center", sx: { mb: 0.35 }, children: [
+                              /* @__PURE__ */ jsx6("iconify-icon", { icon: "mdi:text-box-search-outline", width: "16", height: "16" }),
+                              /* @__PURE__ */ jsx6(Typography29, { variant: "body2", fontWeight: 600, sx: { flex: 1, minWidth: 0 }, children: c.filename || c.fileId || "fragmento" }),
+                              c.score != null ? /* @__PURE__ */ jsx6(
+                                Chip20,
                                 {
                                   size: "small",
                                   variant: "outlined",
@@ -6023,10 +6207,10 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
                                   className: "conv-usage-dialog__chunk-score"
                                 }
                               ) : null,
-                              /* @__PURE__ */ jsx5(Tooltip15, { title: "Ver fragmento en full-page", children: /* @__PURE__ */ jsx5(IconButton14, { size: "small", "aria-label": "Abrir fragmento", className: "conv-usage-dialog__chunk-open", children: /* @__PURE__ */ jsx5("iconify-icon", { icon: "mdi:fullscreen", width: "16", height: "16" }) }) })
+                              /* @__PURE__ */ jsx6(Tooltip16, { title: "Ver fragmento en full-page", children: /* @__PURE__ */ jsx6(IconButton15, { size: "small", "aria-label": "Abrir fragmento", className: "conv-usage-dialog__chunk-open", children: /* @__PURE__ */ jsx6("iconify-icon", { icon: "mdi:fullscreen", width: "16", height: "16" }) }) })
                             ] }),
-                            /* @__PURE__ */ jsx5(
-                              Typography28,
+                            /* @__PURE__ */ jsx6(
+                              Typography29,
                               {
                                 variant: "caption",
                                 component: "pre",
@@ -6041,15 +6225,15 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
                       )) })
                     ]
                   }
-                ) : /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__section-card conv-usage-dialog__section-card--chunks", children: [
-                  /* @__PURE__ */ jsxs3("div", { className: "conv-usage-dialog__section-head", children: [
-                    /* @__PURE__ */ jsx5(Typography28, { component: "h3", variant: "subtitle2", className: "conv-usage-dialog__section-title", children: "Fragmentos citados" }),
-                    /* @__PURE__ */ jsx5(Typography28, { variant: "caption", color: "text.secondary", className: "conv-usage-dialog__section-sub", children: archivos.length ? `Chunks extra\xEDdos por file_search (${chunks.length} de ${archivos.length} archivo${archivos.length === 1 ? "" : "s"}).` : `${chunks.length} fragmento${chunks.length === 1 ? "" : "s"} del message.` })
+                ) : /* @__PURE__ */ jsxs4(Box34, { className: "conv-usage-dialog__section-card conv-usage-dialog__section-card--chunks", children: [
+                  /* @__PURE__ */ jsxs4("div", { className: "conv-usage-dialog__section-head", children: [
+                    /* @__PURE__ */ jsx6(Typography29, { component: "h3", variant: "subtitle2", className: "conv-usage-dialog__section-title", children: "Fragmentos citados" }),
+                    /* @__PURE__ */ jsx6(Typography29, { variant: "caption", color: "text.secondary", className: "conv-usage-dialog__section-sub", children: archivos.length ? `Chunks extra\xEDdos por file_search (${chunks.length} de ${archivos.length} archivo${archivos.length === 1 ? "" : "s"}).` : `${chunks.length} fragmento${chunks.length === 1 ? "" : "s"} del message.` })
                   ] }),
-                  archivos.length ? /* @__PURE__ */ jsx5(Stack26, { direction: "row", spacing: 0.5, flexWrap: "wrap", useFlexGap: true, className: "conv-usage-dialog__files", children: archivos.map((name) => {
+                  archivos.length ? /* @__PURE__ */ jsx6(Stack27, { direction: "row", spacing: 0.5, flexWrap: "wrap", useFlexGap: true, className: "conv-usage-dialog__files", children: archivos.map((name) => {
                     const clickable = chunks.some((c) => c.filename === name);
-                    return /* @__PURE__ */ jsx5(
-                      Chip19,
+                    return /* @__PURE__ */ jsx6(
+                      Chip20,
                       {
                         size: "small",
                         variant: "outlined",
@@ -6058,7 +6242,7 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
                           const first = chunks.find((c) => c.filename === name);
                           if (first) setOpenChunk(first);
                         } : void 0,
-                        icon: /* @__PURE__ */ jsx5("iconify-icon", { icon: "mdi:file-document-outline", width: "14", height: "14" }),
+                        icon: /* @__PURE__ */ jsx6("iconify-icon", { icon: "mdi:file-document-outline", width: "14", height: "14" }),
                         label: name,
                         title: clickable ? `Ver fragmentos de ${name}` : name,
                         className: "conv-usage-dialog__file-chip"
@@ -6066,8 +6250,8 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
                       name
                     );
                   }) }) : null,
-                  /* @__PURE__ */ jsx5(Stack26, { spacing: 0.75, className: "conv-usage-dialog__chunks", children: chunks.map((c) => /* @__PURE__ */ jsxs3(
-                    Box33,
+                  /* @__PURE__ */ jsx6(Stack27, { spacing: 0.75, className: "conv-usage-dialog__chunks", children: chunks.map((c) => /* @__PURE__ */ jsxs4(
+                    Box34,
                     {
                       className: "conv-usage-dialog__chunk",
                       onClick: () => setOpenChunk(c),
@@ -6081,11 +6265,11 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
                       },
                       "aria-label": `Ver fragmento de ${c.filename || c.fileId || "texto"}`,
                       children: [
-                        /* @__PURE__ */ jsxs3(Stack26, { direction: "row", spacing: 0.75, alignItems: "center", sx: { mb: 0.35 }, children: [
-                          /* @__PURE__ */ jsx5("iconify-icon", { icon: "mdi:text-box-search-outline", width: "16", height: "16" }),
-                          /* @__PURE__ */ jsx5(Typography28, { variant: "body2", fontWeight: 600, sx: { flex: 1, minWidth: 0 }, children: c.filename || c.fileId || "fragmento" }),
-                          c.score != null ? /* @__PURE__ */ jsx5(
-                            Chip19,
+                        /* @__PURE__ */ jsxs4(Stack27, { direction: "row", spacing: 0.75, alignItems: "center", sx: { mb: 0.35 }, children: [
+                          /* @__PURE__ */ jsx6("iconify-icon", { icon: "mdi:text-box-search-outline", width: "16", height: "16" }),
+                          /* @__PURE__ */ jsx6(Typography29, { variant: "body2", fontWeight: 600, sx: { flex: 1, minWidth: 0 }, children: c.filename || c.fileId || "fragmento" }),
+                          c.score != null ? /* @__PURE__ */ jsx6(
+                            Chip20,
                             {
                               size: "small",
                               variant: "outlined",
@@ -6093,10 +6277,10 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
                               className: "conv-usage-dialog__chunk-score"
                             }
                           ) : null,
-                          /* @__PURE__ */ jsx5(Tooltip15, { title: "Ver fragmento en full-page", children: /* @__PURE__ */ jsx5(IconButton14, { size: "small", "aria-label": "Abrir fragmento", className: "conv-usage-dialog__chunk-open", children: /* @__PURE__ */ jsx5("iconify-icon", { icon: "mdi:fullscreen", width: "16", height: "16" }) }) })
+                          /* @__PURE__ */ jsx6(Tooltip16, { title: "Ver fragmento en full-page", children: /* @__PURE__ */ jsx6(IconButton15, { size: "small", "aria-label": "Abrir fragmento", className: "conv-usage-dialog__chunk-open", children: /* @__PURE__ */ jsx6("iconify-icon", { icon: "mdi:fullscreen", width: "16", height: "16" }) }) })
                         ] }),
-                        /* @__PURE__ */ jsx5(
-                          Typography28,
+                        /* @__PURE__ */ jsx6(
+                          Typography29,
                           {
                             variant: "caption",
                             component: "pre",
@@ -6113,11 +6297,11 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
               ] })
             }
           ),
-          /* @__PURE__ */ jsx5(GlassDialogCloseActions, { onClose })
+          /* @__PURE__ */ jsx6(GlassDialogCloseActions, { onClose })
         ]
       }
     ),
-    /* @__PURE__ */ jsx5(
+    /* @__PURE__ */ jsx6(
       MdFullPageDialog,
       {
         open: Boolean(openChunk),
@@ -6135,8 +6319,8 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
   ] });
 }
 function UsageDialogSection({ section, GlassSection, GlassInner }) {
-  const { Box: Box33, Typography: Typography28, Stack: Stack26 } = getMaterialUI();
-  const { Icon: Icon26 } = UI;
+  const { Box: Box34, Typography: Typography29, Stack: Stack27 } = getMaterialUI();
+  const { Icon: Icon27 } = UI;
   const cost = section?.cost;
   const tokens = section?.tokens;
   const totalCost = Number(cost?.total ?? 0) || 0;
@@ -6146,15 +6330,15 @@ function UsageDialogSection({ section, GlassSection, GlassInner }) {
   const costLabel = totalCost > 0 ? `$${totalCost.toFixed(6)}` : "\u2014";
   const reasonLabel = reasoning > 0 ? `${reasoning.toLocaleString("es-CO")} razon.` : null;
   const empty = totalCost <= 0 && totalTokens <= 0;
-  const body = /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__section-body", children: [
-    empty ? /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__empty", role: "status", children: [
-      /* @__PURE__ */ jsx5("span", { className: "conv-usage-dialog__empty-icon", "aria-hidden": true, children: /* @__PURE__ */ jsx5(Icon26, { icon: "mdi:currency-usd-off", size: 18 }) }),
-      /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__empty-copy", children: [
-        /* @__PURE__ */ jsx5(Typography28, { component: "p", className: "conv-usage-dialog__empty-title", children: "Sin costo ni tokens LLM" }),
-        /* @__PURE__ */ jsx5(Typography28, { component: "p", className: "conv-usage-dialog__empty-sub", children: "Este turno no pas\xF3 por OpenAI (p. ej. ContaPyme MCP u operativa local)." })
+  const body = /* @__PURE__ */ jsxs4(Box34, { className: "conv-usage-dialog__section-body", children: [
+    empty ? /* @__PURE__ */ jsxs4(Box34, { className: "conv-usage-dialog__empty", role: "status", children: [
+      /* @__PURE__ */ jsx6("span", { className: "conv-usage-dialog__empty-icon", "aria-hidden": true, children: /* @__PURE__ */ jsx6(Icon27, { icon: "mdi:currency-usd-off", size: 18 }) }),
+      /* @__PURE__ */ jsxs4(Box34, { className: "conv-usage-dialog__empty-copy", children: [
+        /* @__PURE__ */ jsx6(Typography29, { component: "p", className: "conv-usage-dialog__empty-title", children: "Sin costo ni tokens LLM" }),
+        /* @__PURE__ */ jsx6(Typography29, { component: "p", className: "conv-usage-dialog__empty-sub", children: "Este turno no pas\xF3 por OpenAI (p. ej. ContaPyme MCP u operativa local)." })
       ] })
-    ] }) : /* @__PURE__ */ jsxs3(
-      Stack26,
+    ] }) : /* @__PURE__ */ jsxs4(
+      Stack27,
       {
         direction: { xs: "column", sm: "row" },
         spacing: { xs: 1.25, sm: 2 },
@@ -6162,10 +6346,10 @@ function UsageDialogSection({ section, GlassSection, GlassInner }) {
         justifyContent: "space-between",
         className: "conv-usage-dialog__headline",
         children: [
-          /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__headline-main", children: [
-            /* @__PURE__ */ jsx5(Typography28, { variant: "overline", className: "conv-usage-dialog__headline-k", sx: { lineHeight: 1, display: "block", opacity: 0.7 }, children: "Costo" }),
-            /* @__PURE__ */ jsx5(
-              Typography28,
+          /* @__PURE__ */ jsxs4(Box34, { className: "conv-usage-dialog__headline-main", children: [
+            /* @__PURE__ */ jsx6(Typography29, { variant: "overline", className: "conv-usage-dialog__headline-k", sx: { lineHeight: 1, display: "block", opacity: 0.7 }, children: "Costo" }),
+            /* @__PURE__ */ jsx6(
+              Typography29,
               {
                 variant: "h4",
                 component: "span",
@@ -6175,11 +6359,11 @@ function UsageDialogSection({ section, GlassSection, GlassInner }) {
               }
             )
           ] }),
-          /* @__PURE__ */ jsxs3(Stack26, { direction: "row", spacing: 1, alignItems: "center", className: "conv-usage-dialog__headline-meta", children: [
-            /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__headline-meta-item", children: [
-              /* @__PURE__ */ jsx5(Typography28, { variant: "overline", sx: { lineHeight: 1, display: "block", opacity: 0.7 }, children: "Tokens" }),
-              /* @__PURE__ */ jsx5(
-                Typography28,
+          /* @__PURE__ */ jsxs4(Stack27, { direction: "row", spacing: 1, alignItems: "center", className: "conv-usage-dialog__headline-meta", children: [
+            /* @__PURE__ */ jsxs4(Box34, { className: "conv-usage-dialog__headline-meta-item", children: [
+              /* @__PURE__ */ jsx6(Typography29, { variant: "overline", sx: { lineHeight: 1, display: "block", opacity: 0.7 }, children: "Tokens" }),
+              /* @__PURE__ */ jsx6(
+                Typography29,
                 {
                   variant: "h6",
                   component: "span",
@@ -6189,10 +6373,10 @@ function UsageDialogSection({ section, GlassSection, GlassInner }) {
                 }
               )
             ] }),
-            reasonLabel ? /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__headline-meta-item conv-usage-dialog__headline-meta-item--reason", children: [
-              /* @__PURE__ */ jsx5(Typography28, { variant: "overline", sx: { lineHeight: 1, display: "block", opacity: 0.7 }, children: "Razonamiento" }),
-              /* @__PURE__ */ jsx5(
-                Typography28,
+            reasonLabel ? /* @__PURE__ */ jsxs4(Box34, { className: "conv-usage-dialog__headline-meta-item conv-usage-dialog__headline-meta-item--reason", children: [
+              /* @__PURE__ */ jsx6(Typography29, { variant: "overline", sx: { lineHeight: 1, display: "block", opacity: 0.7 }, children: "Razonamiento" }),
+              /* @__PURE__ */ jsx6(
+                Typography29,
                 {
                   variant: "body1",
                   component: "span",
@@ -6205,9 +6389,9 @@ function UsageDialogSection({ section, GlassSection, GlassInner }) {
         ]
       }
     ),
-    !empty ? /* @__PURE__ */ jsxs3(Box33, { className: "conv-usage-dialog__metrics-wrap", children: [
-      /* @__PURE__ */ jsx5(Typography28, { component: "p", variant: "caption", className: "conv-usage-dialog__metrics-caption", children: "Desglose por etapa" }),
-      /* @__PURE__ */ jsx5(
+    !empty ? /* @__PURE__ */ jsxs4(Box34, { className: "conv-usage-dialog__metrics-wrap", children: [
+      /* @__PURE__ */ jsx6(Typography29, { component: "p", variant: "caption", className: "conv-usage-dialog__metrics-caption", children: "Desglose por etapa" }),
+      /* @__PURE__ */ jsx6(
         UsageMetricsGrid,
         {
           className: "conv-usage-dialog__metrics",
@@ -6218,22 +6402,22 @@ function UsageDialogSection({ section, GlassSection, GlassInner }) {
     ] }) : null
   ] });
   if (!GlassSection) {
-    return /* @__PURE__ */ jsxs3(Box33, { className: `conv-usage-dialog__section-card conv-usage-dialog__section-card--${section.key}`, children: [
-      /* @__PURE__ */ jsxs3("div", { className: "conv-usage-dialog__section-head", children: [
-        /* @__PURE__ */ jsx5(Typography28, { component: "h3", variant: "subtitle2", className: "conv-usage-dialog__section-title", children: section.title }),
-        /* @__PURE__ */ jsx5(Typography28, { variant: "caption", color: "text.secondary", className: "conv-usage-dialog__section-sub", children: section.subtitle })
+    return /* @__PURE__ */ jsxs4(Box34, { className: `conv-usage-dialog__section-card conv-usage-dialog__section-card--${section.key}`, children: [
+      /* @__PURE__ */ jsxs4("div", { className: "conv-usage-dialog__section-head", children: [
+        /* @__PURE__ */ jsx6(Typography29, { component: "h3", variant: "subtitle2", className: "conv-usage-dialog__section-title", children: section.title }),
+        /* @__PURE__ */ jsx6(Typography29, { variant: "caption", color: "text.secondary", className: "conv-usage-dialog__section-sub", children: section.subtitle })
       ] }),
       body
     ] });
   }
-  return /* @__PURE__ */ jsx5(
+  return /* @__PURE__ */ jsx6(
     GlassSection,
     {
       sectionKey: `conv-usage-${section.key}`,
       className: `conv-usage-dialog__glass-section conv-usage-dialog__glass-section--${section.key}`,
-      title: /* @__PURE__ */ jsxs3(Stack26, { direction: "row", spacing: 1, alignItems: "baseline", sx: { minWidth: 0, flex: 1 }, children: [
-        /* @__PURE__ */ jsx5(Typography28, { component: "span", variant: "subtitle1", sx: { fontWeight: 700, letterSpacing: -0.2 }, children: section.title }),
-        /* @__PURE__ */ jsx5(Typography28, { component: "span", variant: "caption", color: "text.secondary", sx: { flex: 1, minWidth: 0 }, children: section.subtitle })
+      title: /* @__PURE__ */ jsxs4(Stack27, { direction: "row", spacing: 1, alignItems: "baseline", sx: { minWidth: 0, flex: 1 }, children: [
+        /* @__PURE__ */ jsx6(Typography29, { component: "span", variant: "subtitle1", sx: { fontWeight: 700, letterSpacing: -0.2 }, children: section.title }),
+        /* @__PURE__ */ jsx6(Typography29, { component: "span", variant: "caption", color: "text.secondary", sx: { flex: 1, minWidth: 0 }, children: section.subtitle })
       ] }),
       icon: section.icon,
       accent: section.accent,
@@ -6245,7 +6429,7 @@ function UsageDialogSection({ section, GlassSection, GlassInner }) {
   );
 }
 function UsageStatsColumn({ stats, align = "right", msgLabel, fecha, meta, isUser = false }) {
-  const { Box: Box33 } = getMaterialUI();
+  const { Box: Box34 } = getMaterialUI();
   const [open, setOpen] = useState3(false);
   const modelRaw = String(meta?.model ?? "").trim();
   const modelLabel = modelRaw ? modelBadgeLabel(modelRaw) : "";
@@ -6272,9 +6456,9 @@ function UsageStatsColumn({ stats, align = "right", msgLabel, fecha, meta, isUse
     e?.stopPropagation?.();
     setOpen(true);
   };
-  return /* @__PURE__ */ jsxs3(Fragment2, { children: [
-    /* @__PURE__ */ jsxs3(
-      Box33,
+  return /* @__PURE__ */ jsxs4(Fragment2, { children: [
+    /* @__PURE__ */ jsxs4(
+      Box34,
       {
         className: [
           "conv-msg-usage-stats",
@@ -6296,6 +6480,8 @@ function UsageStatsColumn({ stats, align = "right", msgLabel, fecha, meta, isUse
         sx: {
           flexShrink: 0,
           width: "fit-content",
+          height: "fit-content",
+          minHeight: 0,
           maxWidth: { xs: "min(100%, 18rem)", sm: groups.length > 1 ? "22rem" : "18rem" },
           pt: 0.25,
           alignSelf: "flex-start",
@@ -6323,9 +6509,9 @@ function UsageStatsColumn({ stats, align = "right", msgLabel, fecha, meta, isUse
           } : {}
         },
         children: [
-          showMetaBadges ? /* @__PURE__ */ jsxs3(Box33, { className: `conv-msg-usage-stats__meta conv-msg-usage-stats__meta--${align}`, children: [
-            contextChips.map((c) => /* @__PURE__ */ jsx5(MetaBadge, { label: c.label, tone: c.tone, title: c.title }, c.key)),
-            modelLabel ? /* @__PURE__ */ jsx5(
+          showMetaBadges ? /* @__PURE__ */ jsxs4(Box34, { className: `conv-msg-usage-stats__meta conv-msg-usage-stats__meta--${align}`, children: [
+            contextChips.map((c) => /* @__PURE__ */ jsx6(MetaBadge, { label: c.label, tone: c.tone, title: c.title }, c.key)),
+            modelLabel ? /* @__PURE__ */ jsx6(
               UsageSummaryChip,
               {
                 tag: "MODELO",
@@ -6334,7 +6520,7 @@ function UsageStatsColumn({ stats, align = "right", msgLabel, fecha, meta, isUse
                 title: meta?.modelo_autoswitch_vision ? modelRaw && modelRaw !== modelLabel ? `Modelo usado (autoswitch visi\xF3n): ${modelRaw}` : "Modelo usado tras autoswitch visi\xF3n" : modelRaw && modelRaw !== modelLabel ? `Modelo: ${modelRaw}` : "Modelo LLM"
               }
             ) : null,
-            autoswitchBadge ? /* @__PURE__ */ jsx5(
+            autoswitchBadge ? /* @__PURE__ */ jsx6(
               UsageSummaryChip,
               {
                 tag: autoswitchBadge.tag,
@@ -6343,7 +6529,7 @@ function UsageStatsColumn({ stats, align = "right", msgLabel, fecha, meta, isUse
                 title: autoswitchBadge.title
               }
             ) : null,
-            latencyLabel ? /* @__PURE__ */ jsx5(
+            latencyLabel ? /* @__PURE__ */ jsx6(
               UsageSummaryChip,
               {
                 tag: "LAT",
@@ -6352,7 +6538,7 @@ function UsageStatsColumn({ stats, align = "right", msgLabel, fecha, meta, isUse
                 title: "Tiempo de respuesta"
               }
             ) : null,
-            metaTokLabel && !hasUsage ? /* @__PURE__ */ jsx5(
+            metaTokLabel && !hasUsage ? /* @__PURE__ */ jsx6(
               UsageSummaryChip,
               {
                 tag: "TOK",
@@ -6362,8 +6548,8 @@ function UsageStatsColumn({ stats, align = "right", msgLabel, fecha, meta, isUse
               }
             ) : null
           ] }) : null,
-          groups.length > 0 ? /* @__PURE__ */ jsx5(Box33, { className: `conv-msg-usage-stats__groups conv-msg-usage-stats__groups--${align}`, children: groups.map((group) => /* @__PURE__ */ jsxs3(Box33, { className: `conv-msg-usage-stats__group conv-msg-usage-stats__group--${group.key}`, children: [
-            /* @__PURE__ */ jsx5(
+          groups.length > 0 ? /* @__PURE__ */ jsx6(Box34, { className: `conv-msg-usage-stats__groups conv-msg-usage-stats__groups--${align}`, children: groups.map((group) => /* @__PURE__ */ jsxs4(Box34, { className: `conv-msg-usage-stats__group conv-msg-usage-stats__group--${group.key}`, children: [
+            /* @__PURE__ */ jsx6(
               UsageSummaryChip,
               {
                 tag: group.key === "msg" ? "MSG" : "ACUM",
@@ -6375,7 +6561,7 @@ function UsageStatsColumn({ stats, align = "right", msgLabel, fecha, meta, isUse
                 title: group.label
               }
             ),
-            /* @__PURE__ */ jsx5(
+            /* @__PURE__ */ jsx6(
               UsageSummaryChip,
               {
                 tag: "USD",
@@ -6384,7 +6570,7 @@ function UsageStatsColumn({ stats, align = "right", msgLabel, fecha, meta, isUse
                 title: "Costo USD"
               }
             ),
-            /* @__PURE__ */ jsx5(
+            /* @__PURE__ */ jsx6(
               UsageSummaryChip,
               {
                 tag: "TOK",
@@ -6397,7 +6583,7 @@ function UsageStatsColumn({ stats, align = "right", msgLabel, fecha, meta, isUse
         ]
       }
     ),
-    /* @__PURE__ */ jsx5(
+    /* @__PURE__ */ jsx6(
       UsageStatsDialog,
       {
         open: open && hasUsage,
@@ -6411,8 +6597,8 @@ function UsageStatsColumn({ stats, align = "right", msgLabel, fecha, meta, isUse
   ] });
 }
 function MsgRatingRow({ calificacion, onRate, disabled = false, busy = false, align = "right" }) {
-  const { Stack: Stack26, IconButton: IconButton14, Tooltip: Tooltip15, CircularProgress: CircularProgress19 } = getMaterialUI();
-  const { Icon: Icon26 } = UI;
+  const { Stack: Stack27, IconButton: IconButton15, Tooltip: Tooltip16, CircularProgress: CircularProgress19 } = getMaterialUI();
+  const { Icon: Icon27 } = UI;
   const rated = calificacion !== void 0 && calificacion !== null;
   const useful = calificacion === 1;
   const notUseful = calificacion === 0;
@@ -6433,8 +6619,8 @@ function MsgRatingRow({ calificacion, onRate, disabled = false, busy = false, al
   })();
   const upRatedSx = useful ? { color: "#16a34a !important" } : void 0;
   const downRatedSx = notUseful ? { color: "#ef4444 !important" } : void 0;
-  return /* @__PURE__ */ jsxs3(
-    Stack26,
+  return /* @__PURE__ */ jsxs4(
+    Stack27,
     {
       direction: "row",
       spacing: 0.25,
@@ -6444,8 +6630,8 @@ function MsgRatingRow({ calificacion, onRate, disabled = false, busy = false, al
       role: "group",
       "aria-label": "Calificaci\xF3n del mensaje",
       children: [
-        /* @__PURE__ */ jsx5(Tooltip15, { title: upTooltip, arrow: true, children: /* @__PURE__ */ jsx5("span", { children: /* @__PURE__ */ jsx5(
-          IconButton14,
+        /* @__PURE__ */ jsx6(Tooltip16, { title: upTooltip, arrow: true, children: /* @__PURE__ */ jsx6("span", { children: /* @__PURE__ */ jsx6(
+          IconButton15,
           {
             size: "small",
             className: `conv-msg-rating__btn conv-msg-rating__btn--up${useful ? " conv-msg-rating__btn--active" : ""}`,
@@ -6454,8 +6640,8 @@ function MsgRatingRow({ calificacion, onRate, disabled = false, busy = false, al
             disabled: disabled || busy || rated,
             onClick: () => onRate(true),
             sx: upRatedSx,
-            children: busy && !rated ? /* @__PURE__ */ jsx5(CircularProgress19, { size: 16 }) : /* @__PURE__ */ jsx5(
-              Icon26,
+            children: busy && !rated ? /* @__PURE__ */ jsx6(CircularProgress19, { size: 16 }) : /* @__PURE__ */ jsx6(
+              Icon27,
               {
                 icon: useful ? "mdi:thumb-up" : "mdi:thumb-up-outline",
                 size: 18,
@@ -6464,8 +6650,8 @@ function MsgRatingRow({ calificacion, onRate, disabled = false, busy = false, al
             )
           }
         ) }) }),
-        /* @__PURE__ */ jsx5(Tooltip15, { title: downTooltip, arrow: true, children: /* @__PURE__ */ jsx5("span", { children: /* @__PURE__ */ jsx5(
-          IconButton14,
+        /* @__PURE__ */ jsx6(Tooltip16, { title: downTooltip, arrow: true, children: /* @__PURE__ */ jsx6("span", { children: /* @__PURE__ */ jsx6(
+          IconButton15,
           {
             size: "small",
             className: `conv-msg-rating__btn conv-msg-rating__btn--down${notUseful ? " conv-msg-rating__btn--active" : ""}`,
@@ -6474,8 +6660,8 @@ function MsgRatingRow({ calificacion, onRate, disabled = false, busy = false, al
             disabled: disabled || busy || rated,
             onClick: () => onRate(false),
             sx: downRatedSx,
-            children: /* @__PURE__ */ jsx5(
-              Icon26,
+            children: /* @__PURE__ */ jsx6(
+              Icon27,
               {
                 icon: notUseful ? "mdi:thumb-down" : "mdi:thumb-down-outline",
                 size: 18,
@@ -6493,7 +6679,7 @@ function resolveMsgImensaje(msg) {
   return imensaje > 0 ? imensaje : void 0;
 }
 var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = false, chatUserDisplayName, chatUserNick, showUsageStats = false, onImageClick, streamingMsgId = null, onRateMessage = null, canRate = false, ratingMsgId = null, operativaEnter = false, onContapymeLoginDone = null }) {
-  const { Alert: Alert18, Box: Box33 } = getMaterialUI();
+  const { Alert: Alert18, Box: Box34 } = getMaterialUI();
   const [fileSearchOpen, setFileSearchOpen] = useState3(false);
   const meta = roleMetaFor(msg, compactMeta);
   const title = roleTitle(msg, chatUserDisplayName, chatUserNick);
@@ -6503,7 +6689,7 @@ var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = 
   const isUser = msg.esUsuario;
   const isOperativa = msg.esOperativa;
   const isStreaming = Boolean(msg.isStreaming || streamingMsgId && msg.idMsg === streamingMsgId);
-  const showMetaBtn = Boolean(onMeta && msg.meta && metaWorthDialog(msg.meta, isUser));
+  const showMetaBtn = Boolean(onMeta && (msg.logFragment || msg.meta && metaWorthDialog(msg.meta, isUser)));
   const showFileSearchChips = Boolean(!compactMeta && !isUser && msg.meta && metaHasFileSearch(msg.meta));
   const showMetaChips = Boolean(!compactMeta && (onMeta || showFileSearchChips));
   const statsSide = isUser ? "left" : "right";
@@ -6511,7 +6697,7 @@ var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = 
   const showRating = Boolean(
     onRateMessage && !isUser && !isOperativa && !isStreaming && msgImensaje && (canRate || msg.calificacion !== void 0)
   );
-  const ratingRow = showRating ? /* @__PURE__ */ jsx5(
+  const ratingRow = showRating ? /* @__PURE__ */ jsx6(
     MsgRatingRow,
     {
       calificacion: msg.calificacion,
@@ -6528,8 +6714,8 @@ var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = 
   const rowMaxWidth = showMetricsColumn ? "100%" : fullLayout ? isOperativa ? "min(96%, 52rem)" : isUser ? "min(96%, 44rem)" : "min(96%, 48rem)" : isOperativa ? "92%" : "min(96%, 42rem)";
   const cardMaxWidth = showMetricsColumn ? isOperativa ? "72%" : { xs: "100%", sm: "min(48rem, calc(100% - 11.5rem))" } : "100%";
   const roleClass = isOperativa ? `conv-msg--operativa${operativaEnter ? " conv-msg--operativa-enter" : ""}` : "";
-  return /* @__PURE__ */ jsxs3(
-    Box33,
+  return /* @__PURE__ */ jsxs4(
+    Box34,
     {
       className: [compactMeta ? "conv-msg--compact" : "", roleClass].filter(Boolean).join(" ") || void 0,
       sx: {
@@ -6539,8 +6725,8 @@ var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = 
         mb: isOperativa ? compactMeta ? 1 : 1.75 : compactMeta ? 2.5 : 2
       },
       children: [
-        /* @__PURE__ */ jsxs3(
-          Box33,
+        /* @__PURE__ */ jsxs4(
+          Box34,
           {
             className: [
               "conv-msg-row",
@@ -6559,8 +6745,8 @@ var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = 
               opacity: 1
             },
             children: [
-              /* @__PURE__ */ jsx5(
-                Box33,
+              /* @__PURE__ */ jsx6(
+                Box34,
                 {
                   className: "conv-msg-card-wrap",
                   sx: {
@@ -6569,7 +6755,7 @@ var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = 
                     maxWidth: cardMaxWidth,
                     minWidth: 0
                   },
-                  children: /* @__PURE__ */ jsxs3(
+                  children: /* @__PURE__ */ jsxs4(
                     SectionCard,
                     {
                       id: `conv-msg-${msg.idMsg}`,
@@ -6584,7 +6770,7 @@ var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = 
                       compact: compactMeta,
                       streaming: isStreaming,
                       onMeta: showMetaBtn ? () => onMeta(msg) : void 0,
-                      metaChips: showMetaChips ? /* @__PURE__ */ jsx5(
+                      metaChips: showMetaChips ? /* @__PURE__ */ jsx6(
                         MetaChipRow,
                         {
                           meta: msg.meta,
@@ -6597,11 +6783,11 @@ var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = 
                         }
                       ) : null,
                       children: [
-                        msg.streamFailed && msg.streamError && /* @__PURE__ */ jsx5(Alert18, { severity: "warning", sx: { mb: 1.5, py: 0.25, fontSize: "0.78rem" }, children: msg.streamError }),
-                        msg.contenido?.trim() || msg.imagenes?.length || msg.audios?.length || isStreaming ? /* @__PURE__ */ jsx5(
+                        msg.streamFailed && msg.streamError && /* @__PURE__ */ jsx6(Alert18, { severity: "warning", sx: { mb: 1.5, py: 0.25, fontSize: "0.78rem" }, children: msg.streamError }),
+                        msg.contenido?.trim() || msg.imagenes?.length || msg.audios?.length || isStreaming ? /* @__PURE__ */ jsx6(
                           MsgBody,
                           {
-                            text: msg.contenido,
+                            text: formatOperativaContenidoForLog(msg, msg.contenido),
                             imagenes: msg.imagenes,
                             audios: msg.audios,
                             audiosTranscripcion: msg.audiosTranscripcion,
@@ -6618,19 +6804,22 @@ var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = 
                   )
                 }
               ),
-              showSideColumn && /* @__PURE__ */ jsxs3(
-                Box33,
+              showSideColumn && /* @__PURE__ */ jsxs4(
+                Box34,
                 {
                   className: `conv-msg-side-column conv-msg-side-column--${statsSide}`,
                   sx: {
                     flexShrink: 0,
-                    maxWidth: { xs: "min(100%, 16rem)", sm: "18rem" },
+                    maxWidth: { xs: "100%", sm: "18rem" },
+                    width: { xs: "100%", sm: "auto" },
                     pt: 0.25,
                     pb: 0.25,
-                    alignSelf: "stretch"
+                    alignSelf: { xs: "flex-start", sm: "stretch" },
+                    height: { xs: "fit-content", sm: "auto" },
+                    minHeight: { xs: 0, sm: "auto" }
                   },
                   children: [
-                    showMetricsColumn ? /* @__PURE__ */ jsx5(
+                    showMetricsColumn ? /* @__PURE__ */ jsx6(
                       UsageStatsColumn,
                       {
                         stats: msg.usageStats,
@@ -6641,14 +6830,14 @@ var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = 
                         isUser
                       }
                     ) : null,
-                    ratingRow ? /* @__PURE__ */ jsx5(Box33, { className: "conv-msg-rating-slot", children: ratingRow }) : null
+                    ratingRow ? /* @__PURE__ */ jsx6(Box34, { className: "conv-msg-rating-slot", children: ratingRow }) : null
                   ]
                 }
               )
             ]
           }
         ),
-        /* @__PURE__ */ jsx5(
+        /* @__PURE__ */ jsx6(
           FileSearchDialog,
           {
             open: fileSearchOpen,
@@ -6662,21 +6851,21 @@ var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = 
   );
 }, (prev, next) => prev.msg === next.msg && prev.streamingMsgId === next.streamingMsgId && prev.compactMeta === next.compactMeta && prev.chatUserDisplayName === next.chatUserDisplayName && prev.chatUserNick === next.chatUserNick && prev.showUsageStats === next.showUsageStats && prev.ratingMsgId === next.ratingMsgId && prev.canRate === next.canRate && prev.operativaEnter === next.operativaEnter);
 function ConvLogWebView({ mensajes, onMeta, compactMeta = false, emptyHint, chatUserDisplayName, chatUserNick, showUsageStats = true, streamingMsgId = null, onRateMessage = null, canRate = false, ratingMsgId = null, threadKey = null, threadClassName = "", onContapymeLoginDone = null }) {
-  const { Box: Box33, Typography: Typography28 } = getMaterialUI();
+  const { Box: Box34, Typography: Typography29 } = getMaterialUI();
   const [lightboxSrc, setLightboxSrc] = useState3(null);
   const operativaEnterIds = useOperativaEnterIds(mensajes, threadKey, { enabled: !compactMeta });
-  const mensajesConStats = useMemo2(
+  const mensajesConStats = useMemo3(
     () => attachUsageStats(mensajes || []),
     [mensajes]
   );
   const hasUsageStats = showUsageStats && threadHasUsageStats(mensajesConStats);
-  const onImageClick = useMemo2(() => (src) => setLightboxSrc(src), []);
+  const onImageClick = useMemo3(() => (src) => setLightboxSrc(src), []);
   if (!mensajes?.length) {
     if (emptyHint === null) return null;
-    return /* @__PURE__ */ jsx5(Typography28, { variant: "body2", color: "text.secondary", sx: { textAlign: "center", py: 6 }, children: emptyHint || "Recupera por ID o pega un log para ver el hilo." });
+    return /* @__PURE__ */ jsx6(Typography29, { variant: "body2", color: "text.secondary", sx: { textAlign: "center", py: 6 }, children: emptyHint || "Recupera por ID o pega un log para ver el hilo." });
   }
-  return /* @__PURE__ */ jsxs3(Box33, { className: threadClassName || void 0, sx: { width: "100%", maxWidth: "100%" }, children: [
-    mensajesConStats.map((m) => /* @__PURE__ */ jsx5(
+  return /* @__PURE__ */ jsxs4(Box34, { className: threadClassName || void 0, sx: { width: "100%", maxWidth: "100%" }, children: [
+    mensajesConStats.map((m) => /* @__PURE__ */ jsx6(
       MensajeSection,
       {
         msg: m,
@@ -6695,14 +6884,14 @@ function ConvLogWebView({ mensajes, onMeta, compactMeta = false, emptyHint, chat
       },
       m.idMsg
     )),
-    /* @__PURE__ */ jsx5(ImageLightboxDialog, { open: Boolean(lightboxSrc), src: lightboxSrc, onClose: () => setLightboxSrc(null) })
+    /* @__PURE__ */ jsx6(ImageLightboxDialog, { open: Boolean(lightboxSrc), src: lightboxSrc, onClose: () => setLightboxSrc(null) })
   ] });
 }
 function convLogNavItems(mensajes) {
   return (mensajes || []).map((m, i) => {
     const rk = roleKey(m);
     const meta = ROLE_META[rk] || ROLE_META.assistant;
-    const preview = String(m.contenido || "").replace(/\s+/g, " ").trim().slice(0, 48);
+    const preview = String(formatOperativaContenidoForLog(m, m.contenido) || "").replace(/\s+/g, " ").trim().slice(0, 48);
     return {
       id: m.idMsg,
       label: `#${i + 1} \xB7 ${roleTitle(m)}`,
@@ -6714,13 +6903,13 @@ function convLogNavItems(mensajes) {
 }
 
 // src/js/ui/ConvLogThread.jsx
-import { jsx as jsx6, jsxs as jsxs4 } from "react/jsx-runtime";
-var { Box: Box2, Alert } = getMaterialUI();
+import { jsx as jsx7, jsxs as jsxs5 } from "react/jsx-runtime";
+var { Box: Box3, Alert } = getMaterialUI();
 function ThreadLoading({ label = "Cargando conversaci\xF3n\u2026" }) {
-  return /* @__PURE__ */ jsx6(Box2, { className: "isa-app-boot isa-app-boot--inline", sx: { position: "absolute", inset: 0, zIndex: 2, minHeight: 0, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", pointerEvents: "none" }, children: /* @__PURE__ */ jsxs4("div", { className: "isa-app-boot__card isa-app-boot__card--compact", role: "status", "aria-live": "polite", style: { background: "rgba(8, 16, 32, 0.72)" }, children: [
-    /* @__PURE__ */ jsx6("div", { className: "isa-app-boot__icon-wrap isa-app-boot__icon-wrap--sm", children: /* @__PURE__ */ jsx6("iconify-icon", { icon: "mdi:loading", class: "isa-spin", width: "1.375em", height: "1.375em" }) }),
-    /* @__PURE__ */ jsx6("p", { className: "isa-app-boot__label", children: label }),
-    /* @__PURE__ */ jsx6("div", { className: "isa-app-boot__bar", "aria-hidden": "true", children: /* @__PURE__ */ jsx6("span", { className: "isa-app-boot__bar-fill" }) })
+  return /* @__PURE__ */ jsx7(Box3, { className: "isa-app-boot isa-app-boot--inline", sx: { position: "absolute", inset: 0, zIndex: 2, minHeight: 0, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", pointerEvents: "none" }, children: /* @__PURE__ */ jsxs5("div", { className: "isa-app-boot__card isa-app-boot__card--compact", role: "status", "aria-live": "polite", style: { background: "rgba(8, 16, 32, 0.72)" }, children: [
+    /* @__PURE__ */ jsx7("div", { className: "isa-app-boot__icon-wrap isa-app-boot__icon-wrap--sm", children: /* @__PURE__ */ jsx7("iconify-icon", { icon: "mdi:loading", class: "isa-spin", width: "1.375em", height: "1.375em" }) }),
+    /* @__PURE__ */ jsx7("p", { className: "isa-app-boot__label", children: label }),
+    /* @__PURE__ */ jsx7("div", { className: "isa-app-boot__bar", "aria-hidden": "true", children: /* @__PURE__ */ jsx7("span", { className: "isa-app-boot__bar-fill" }) })
   ] }) });
 }
 function ConvLogThread({
@@ -6747,8 +6936,8 @@ function ConvLogThread({
 }) {
   const threadClassName = compactMeta ? "paty-chat-thread--compact" : "paty-chat-log-thread";
   const showSpinner = loading && (loadingOnlyWhenEmpty ? !mensajes?.length : true);
-  return /* @__PURE__ */ jsxs4(
-    Box2,
+  return /* @__PURE__ */ jsxs5(
+    Box3,
     {
       ref: scrollRef,
       onScroll,
@@ -6759,9 +6948,9 @@ function ConvLogThread({
       ].filter(Boolean).join(" "),
       sx: { ...convLogSurfaceSx(), flex: 1, minHeight: 0, ...sx },
       children: [
-        showSpinner ? /* @__PURE__ */ jsx6(ThreadLoading, {}) : null,
-        error ? /* @__PURE__ */ jsx6(Alert, { severity: "warning", sx: { mb: 2 }, children: error }) : null,
-        /* @__PURE__ */ jsx6(
+        showSpinner ? /* @__PURE__ */ jsx7(ThreadLoading, {}) : null,
+        error ? /* @__PURE__ */ jsx7(Alert, { severity: "warning", sx: { mb: 2 }, children: error }) : null,
+        /* @__PURE__ */ jsx7(
           ConvLogWebView,
           {
             mensajes,
@@ -6808,22 +6997,22 @@ function mobileDrawerPaperProps(className) {
 }
 
 // src/js/tools/LogViewer.jsx
-import { Fragment as Fragment3, jsx as jsx7, jsxs as jsxs5 } from "react/jsx-runtime";
+import { Fragment as Fragment3, jsx as jsx8, jsxs as jsxs6 } from "react/jsx-runtime";
 var LOG_SIDEBAR_DEFAULT_W = 400;
 function readLogSidebarWidthFromUrl() {
   const w = Number(getSnapshot().log?.sidebarW);
   return Number.isFinite(w) && w > 0 ? w : null;
 }
-var { useState: useState4, useCallback, useMemo: useMemo3, useEffect: useEffect4 } = getReact();
+var { useState: useState4, useCallback, useMemo: useMemo4, useEffect: useEffect4 } = getReact();
 var {
-  Box: Box3,
-  Typography: Typography2,
+  Box: Box4,
+  Typography: Typography3,
   TextField,
-  Stack: Stack2,
+  Stack: Stack3,
   Alert: Alert2,
-  Chip: Chip2,
+  Chip: Chip3,
   Divider,
-  Tooltip,
+  Tooltip: Tooltip2,
   List,
   ListItemButton,
   ListItemText,
@@ -6834,16 +7023,16 @@ var {
   Button,
   Drawer,
   Fab,
-  IconButton,
+  IconButton: IconButton2,
   useTheme,
   useMediaQuery
 } = getMaterialUI();
 function MsgNavList({ items, selectedId, onSelect }) {
-  const { Icon: Icon26 } = UI;
+  const { Icon: Icon27 } = UI;
   if (!items.length) {
-    return /* @__PURE__ */ jsx7(Typography2, { variant: "caption", color: "text.secondary", sx: { py: 1, display: "block" }, children: "Sin mensajes en el hilo." });
+    return /* @__PURE__ */ jsx8(Typography3, { variant: "caption", color: "text.secondary", sx: { py: 1, display: "block" }, children: "Sin mensajes en el hilo." });
   }
-  return /* @__PURE__ */ jsx7(List, { dense: true, disablePadding: true, sx: { py: 0.5 }, children: items.map((it) => /* @__PURE__ */ jsx7(Tooltip, { title: it.secondary, placement: "right", enterDelay: 400, children: /* @__PURE__ */ jsxs5(
+  return /* @__PURE__ */ jsx8(List, { dense: true, disablePadding: true, sx: { py: 0.5 }, children: items.map((it) => /* @__PURE__ */ jsx8(Tooltip2, { title: it.secondary, placement: "right", enterDelay: 400, children: /* @__PURE__ */ jsxs6(
     ListItemButton,
     {
       selected: selectedId === it.id,
@@ -6856,8 +7045,8 @@ function MsgNavList({ items, selectedId, onSelect }) {
         "&.Mui-selected": { bgcolor: "action.selected" }
       },
       children: [
-        /* @__PURE__ */ jsx7(
-          Box3,
+        /* @__PURE__ */ jsx8(
+          Box4,
           {
             sx: {
               width: 8,
@@ -6870,8 +7059,8 @@ function MsgNavList({ items, selectedId, onSelect }) {
             }
           }
         ),
-        /* @__PURE__ */ jsx7(Icon26, { icon: it.icon, size: 15, style: { opacity: 0.75, flexShrink: 0, marginRight: 6 } }),
-        /* @__PURE__ */ jsx7(
+        /* @__PURE__ */ jsx8(Icon27, { icon: it.icon, size: 15, style: { opacity: 0.75, flexShrink: 0, marginRight: 6 } }),
+        /* @__PURE__ */ jsx8(
           ListItemText,
           {
             primary: it.label,
@@ -6887,52 +7076,52 @@ function MsgNavList({ items, selectedId, onSelect }) {
 function ResumenDialog({ open, onClose, logInfo, navItems, selectedId, onSelectMsg }) {
   const resumen = logInfo?.resumen;
   const tk = resumen?.tokens;
-  return /* @__PURE__ */ jsxs5(Dialog, { open, onClose, maxWidth: "sm", fullWidth: true, children: [
-    /* @__PURE__ */ jsxs5(DialogTitle, { sx: { pb: 1 }, children: [
+  return /* @__PURE__ */ jsxs6(Dialog, { open, onClose, maxWidth: "sm", fullWidth: true, children: [
+    /* @__PURE__ */ jsxs6(DialogTitle, { sx: { pb: 1 }, children: [
       "Resumen",
       logInfo?.iconversacion ? ` \xB7 conv #${logInfo.iconversacion}` : ""
     ] }),
-    /* @__PURE__ */ jsxs5(DialogContent2, { dividers: true, sx: { pt: 1.5 }, children: [
-      resumen && /* @__PURE__ */ jsxs5(Box3, { sx: { mb: 2 }, children: [
-        /* @__PURE__ */ jsx7(Typography2, { variant: "overline", color: "text.secondary", sx: { display: "block", mb: 1 }, children: "M\xE9tricas" }),
-        /* @__PURE__ */ jsxs5(Stack2, { direction: "row", flexWrap: "wrap", useFlexGap: true, spacing: 1, sx: { mb: 1.5 }, children: [
-          resumen.totalMensajes != null && /* @__PURE__ */ jsx7(Chip2, { size: "small", variant: "outlined", label: `${resumen.totalMensajes} mensajes` }),
-          resumen.totalTurnos != null && /* @__PURE__ */ jsx7(Chip2, { size: "small", variant: "outlined", label: `${resumen.totalTurnos} turnos` }),
-          resumen.totalOperativas != null && /* @__PURE__ */ jsx7(Chip2, { size: "small", variant: "outlined", label: `${resumen.totalOperativas} operativas` }),
-          tk?.total != null && /* @__PURE__ */ jsx7(Chip2, { size: "small", variant: "outlined", color: "secondary", label: `${tk.total} tokens` })
+    /* @__PURE__ */ jsxs6(DialogContent2, { dividers: true, sx: { pt: 1.5 }, children: [
+      resumen && /* @__PURE__ */ jsxs6(Box4, { sx: { mb: 2 }, children: [
+        /* @__PURE__ */ jsx8(Typography3, { variant: "overline", color: "text.secondary", sx: { display: "block", mb: 1 }, children: "M\xE9tricas" }),
+        /* @__PURE__ */ jsxs6(Stack3, { direction: "row", flexWrap: "wrap", useFlexGap: true, spacing: 1, sx: { mb: 1.5 }, children: [
+          resumen.totalMensajes != null && /* @__PURE__ */ jsx8(Chip3, { size: "small", variant: "outlined", label: `${resumen.totalMensajes} mensajes` }),
+          resumen.totalTurnos != null && /* @__PURE__ */ jsx8(Chip3, { size: "small", variant: "outlined", label: `${resumen.totalTurnos} turnos` }),
+          resumen.totalOperativas != null && /* @__PURE__ */ jsx8(Chip3, { size: "small", variant: "outlined", label: `${resumen.totalOperativas} operativas` }),
+          tk?.total != null && /* @__PURE__ */ jsx8(Chip3, { size: "small", variant: "outlined", color: "secondary", label: `${tk.total} tokens` })
         ] }),
-        (resumen.ultimoModelo || resumen.ultimoPromptId || resumen.ultimaItdconsulta || resumen.ultimoNombreUsuario) && /* @__PURE__ */ jsxs5(Stack2, { spacing: 0.75, sx: { typography: "body2", color: "text.secondary" }, children: [
-          resumen.ultimoNombreUsuario && /* @__PURE__ */ jsxs5(Typography2, { variant: "body2", children: [
-            /* @__PURE__ */ jsx7("strong", { children: "Usuario:" }),
+        (resumen.ultimoModelo || resumen.ultimoPromptId || resumen.ultimaItdconsulta || resumen.ultimoNombreUsuario) && /* @__PURE__ */ jsxs6(Stack3, { spacing: 0.75, sx: { typography: "body2", color: "text.secondary" }, children: [
+          resumen.ultimoNombreUsuario && /* @__PURE__ */ jsxs6(Typography3, { variant: "body2", children: [
+            /* @__PURE__ */ jsx8("strong", { children: "Usuario:" }),
             " ",
             resumen.ultimoNombreUsuario
           ] }),
-          resumen.ultimaItdconsulta && /* @__PURE__ */ jsxs5(Typography2, { variant: "body2", children: [
-            /* @__PURE__ */ jsx7("strong", { children: "itdconsulta:" }),
+          resumen.ultimaItdconsulta && /* @__PURE__ */ jsxs6(Typography3, { variant: "body2", children: [
+            /* @__PURE__ */ jsx8("strong", { children: "itdconsulta:" }),
             " ",
             resumen.ultimaItdconsulta
           ] }),
-          resumen.ultimoModelo && /* @__PURE__ */ jsxs5(Typography2, { variant: "body2", children: [
-            /* @__PURE__ */ jsx7("strong", { children: "Modelo:" }),
+          resumen.ultimoModelo && /* @__PURE__ */ jsxs6(Typography3, { variant: "body2", children: [
+            /* @__PURE__ */ jsx8("strong", { children: "Modelo:" }),
             " ",
             resumen.ultimoModelo
           ] }),
-          resumen.ultimoPromptId && /* @__PURE__ */ jsxs5(Typography2, { variant: "body2", noWrap: true, title: resumen.ultimoPromptId, children: [
-            /* @__PURE__ */ jsx7("strong", { children: "Prompt:" }),
+          resumen.ultimoPromptId && /* @__PURE__ */ jsxs6(Typography3, { variant: "body2", noWrap: true, title: resumen.ultimoPromptId, children: [
+            /* @__PURE__ */ jsx8("strong", { children: "Prompt:" }),
             " ",
             resumen.ultimoPromptId
           ] })
         ] })
       ] }),
-      !resumen && logInfo?.iconversacion && /* @__PURE__ */ jsx7(Typography2, { variant: "body2", color: "text.secondary", sx: { mb: 2 }, children: "Sin bloque resumen en el log; usa el \xEDndice para saltar a un mensaje." }),
-      /* @__PURE__ */ jsx7(Divider, { sx: { my: 1.5 } }),
-      /* @__PURE__ */ jsxs5(Typography2, { variant: "overline", color: "text.secondary", sx: { display: "block", mb: 0.5 }, children: [
+      !resumen && logInfo?.iconversacion && /* @__PURE__ */ jsx8(Typography3, { variant: "body2", color: "text.secondary", sx: { mb: 2 }, children: "Sin bloque resumen en el log; usa el \xEDndice para saltar a un mensaje." }),
+      /* @__PURE__ */ jsx8(Divider, { sx: { my: 1.5 } }),
+      /* @__PURE__ */ jsxs6(Typography3, { variant: "overline", color: "text.secondary", sx: { display: "block", mb: 0.5 }, children: [
         "\xCDndice (",
         navItems.length,
         ")"
       ] }),
-      /* @__PURE__ */ jsx7(Typography2, { variant: "caption", color: "text.secondary", sx: { display: "block", mb: 1 }, children: "Vista compacta; el detalle completo est\xE1 en el panel derecho." }),
-      /* @__PURE__ */ jsx7(
+      /* @__PURE__ */ jsx8(Typography3, { variant: "caption", color: "text.secondary", sx: { display: "block", mb: 1 }, children: "Vista compacta; el detalle completo est\xE1 en el panel derecho." }),
+      /* @__PURE__ */ jsx8(
         MsgNavList,
         {
           items: navItems,
@@ -6944,7 +7133,7 @@ function ResumenDialog({ open, onClose, logInfo, navItems, selectedId, onSelectM
         }
       )
     ] }),
-    /* @__PURE__ */ jsx7(DialogActions, { sx: { px: 2, py: 1.25 }, children: /* @__PURE__ */ jsx7(Button, { onClick: onClose, sx: { textTransform: "none", fontWeight: 600 }, children: "Cerrar" }) })
+    /* @__PURE__ */ jsx8(DialogActions, { sx: { px: 2, py: 1.25 }, children: /* @__PURE__ */ jsx8(Button, { onClick: onClose, sx: { textTransform: "none", fontWeight: 600 }, children: "Cerrar" }) })
   ] });
 }
 function LogEntradaPanel({
@@ -6963,7 +7152,7 @@ function LogEntradaPanel({
   limpiar,
   onJsonInputChange
 }) {
-  const { Icon: Icon26 } = UI;
+  const { Icon: Icon27 } = UI;
   const { GlassPanel, NEON_COLORS } = getGlass();
   useEffect4(() => {
     if (!focusTarget) return void 0;
@@ -6981,8 +7170,8 @@ function LogEntradaPanel({
     }, 150);
     return () => window.clearTimeout(timer);
   }, [focusTarget, onFocusApplied]);
-  return /* @__PURE__ */ jsxs5(
-    Box3,
+  return /* @__PURE__ */ jsxs6(
+    Box4,
     {
       className: "conv-log-entrada",
       sx: {
@@ -6995,8 +7184,8 @@ function LogEntradaPanel({
         boxSizing: "border-box"
       },
       children: [
-        drawerMode ? /* @__PURE__ */ jsx7(
-          Stack2,
+        drawerMode ? /* @__PURE__ */ jsx8(
+          Stack3,
           {
             direction: "row",
             spacing: 1,
@@ -7004,11 +7193,11 @@ function LogEntradaPanel({
             justifyContent: "flex-end",
             className: "conv-log-sidebar-block conv-log-entrada-drawer-head",
             sx: { flexShrink: 0 },
-            children: onClose ? /* @__PURE__ */ jsx7(Tooltip, { title: "Cerrar panel", children: /* @__PURE__ */ jsx7(IconButton, { size: "small", onClick: onClose, "aria-label": "Cerrar panel", children: /* @__PURE__ */ jsx7(Icon26, { icon: "mdi:close", size: 18 }) }) }) : null
+            children: onClose ? /* @__PURE__ */ jsx8(Tooltip2, { title: "Cerrar panel", children: /* @__PURE__ */ jsx8(IconButton2, { size: "small", onClick: onClose, "aria-label": "Cerrar panel", children: /* @__PURE__ */ jsx8(Icon27, { icon: "mdi:close", size: 18 }) }) }) : null
           }
         ) : null,
-        /* @__PURE__ */ jsxs5(Box3, { className: "conv-log-sidebar-block conv-log-entrada-actions", sx: { flexShrink: 0 }, children: [
-          /* @__PURE__ */ jsxs5(
+        /* @__PURE__ */ jsxs6(Box4, { className: "conv-log-sidebar-block conv-log-entrada-actions", sx: { flexShrink: 0 }, children: [
+          /* @__PURE__ */ jsxs6(
             GlassPanel,
             {
               tone: "blue",
@@ -7017,7 +7206,7 @@ function LogEntradaPanel({
               "aria-label": "Acciones de entrada de log",
               sx: { p: 0.65, display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", alignItems: "center", gap: 0.75, width: "100%", flexWrap: "nowrap" },
               children: [
-                /* @__PURE__ */ jsx7(
+                /* @__PURE__ */ jsx8(
                   TextField,
                   {
                     className: "conv-log-action-grp__input",
@@ -7035,8 +7224,8 @@ function LogEntradaPanel({
                     sx: { m: 0, "& .MuiOutlinedInput-root": { height: 32 } }
                   }
                 ),
-                /* @__PURE__ */ jsxs5(Box3, { className: "conv-log-action-grp__actions", children: [
-                  /* @__PURE__ */ jsx7(Tooltip, { title: "Recuperar por ID (Enter)", arrow: true, children: /* @__PURE__ */ jsx7("span", { children: /* @__PURE__ */ jsx7(
+                /* @__PURE__ */ jsxs6(Box4, { className: "conv-log-action-grp__actions", children: [
+                  /* @__PURE__ */ jsx8(Tooltip2, { title: "Recuperar por ID (Enter)", arrow: true, children: /* @__PURE__ */ jsx8("span", { children: /* @__PURE__ */ jsx8(
                     ButtonIconify,
                     {
                       icon: "mdi:cloud-download-outline",
@@ -7046,7 +7235,7 @@ function LogEntradaPanel({
                       busy: loading
                     }
                   ) }) }),
-                  /* @__PURE__ */ jsx7(Tooltip, { title: "Limpiar", arrow: true, children: /* @__PURE__ */ jsx7("span", { children: /* @__PURE__ */ jsx7(
+                  /* @__PURE__ */ jsx8(Tooltip2, { title: "Limpiar", arrow: true, children: /* @__PURE__ */ jsx8("span", { children: /* @__PURE__ */ jsx8(
                     ButtonIconify,
                     {
                       icon: "mdi:delete-outline",
@@ -7059,26 +7248,26 @@ function LogEntradaPanel({
               ]
             }
           ),
-          error ? /* @__PURE__ */ jsx7(Alert2, { severity: "error", className: "conv-log-entrada-error", children: error }) : null
+          error ? /* @__PURE__ */ jsx8(Alert2, { severity: "error", className: "conv-log-entrada-error", children: error }) : null
         ] }),
-        /* @__PURE__ */ jsxs5(
-          Box3,
+        /* @__PURE__ */ jsxs6(
+          Box4,
           {
             className: "conv-log-sidebar-block conv-log-json-block",
             sx: { flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" },
             children: [
-              /* @__PURE__ */ jsxs5(Box3, { className: "conv-log-json-head isa-neon-section-label", "aria-hidden": true, children: [
-                /* @__PURE__ */ jsx7(Icon26, { icon: "mdi:code-json", size: 15 }),
-                /* @__PURE__ */ jsx7(Typography2, { component: "span", variant: "caption", className: "conv-log-json-head__label", children: "JSON del log" })
+              /* @__PURE__ */ jsxs6(Box4, { className: "conv-log-json-head isa-neon-section-label", "aria-hidden": true, children: [
+                /* @__PURE__ */ jsx8(Icon27, { icon: "mdi:code-json", size: 15 }),
+                /* @__PURE__ */ jsx8(Typography3, { component: "span", variant: "caption", className: "conv-log-json-head__label", children: "JSON del log" })
               ] }),
-              /* @__PURE__ */ jsx7(
+              /* @__PURE__ */ jsx8(
                 GlassPanel,
                 {
                   tone: "purple",
                   accent: NEON_COLORS.purple,
                   className: "log-json-editor-wrap",
                   sx: { flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", p: 0 },
-                  children: /* @__PURE__ */ jsx7(
+                  children: /* @__PURE__ */ jsx8(
                     JsonCodeEditor,
                     {
                       value: jsonInput,
@@ -7097,7 +7286,7 @@ function LogEntradaPanel({
 }
 function LogViewer({ bootLog = {} }) {
   const IsaSplitView = getIsaSplitView();
-  const { Icon: Icon26 } = UI;
+  const { Icon: Icon27 } = UI;
   const theme2 = useTheme();
   const isMobile = useMediaQuery(theme2.breakpoints.down("md"));
   const [entradaOpen, setEntradaOpen] = useState4(false);
@@ -7112,7 +7301,7 @@ function LogViewer({ bootLog = {} }) {
   const [resumenOpen, setResumenOpen] = useState4(false);
   const [selectedMsgId, setSelectedMsgId] = useState4(null);
   const [entradaFocus, setEntradaFocus] = useState4(null);
-  const navItems = useMemo3(() => convLogNavItems(mensajes), [mensajes]);
+  const navItems = useMemo4(() => convLogNavItems(mensajes), [mensajes]);
   const aplicarLog = useCallback((log, { silent = false } = {}) => {
     const vista = logToMensajesVista(log);
     setLogInfo(log);
@@ -7141,7 +7330,7 @@ function LogViewer({ bootLog = {} }) {
     const t = setTimeout(() => persistLogMeta(convId), 800);
     return () => clearTimeout(t);
   }, [convId]);
-  const resumenChips = useMemo3(() => {
+  const resumenChips = useMemo4(() => {
     if (!logInfo) return [];
     const chips = [];
     if (logInfo.iconversacion) chips.push({ label: `conv #${logInfo.iconversacion}`, color: "primary" });
@@ -7150,7 +7339,7 @@ function LogViewer({ bootLog = {} }) {
     if (mensajes.length) chips.push({ label: `${mensajes.length} en hilo`, color: "info" });
     return chips;
   }, [logInfo, mensajes.length]);
-  const canClear = useMemo3(
+  const canClear = useMemo4(
     () => Boolean(
       String(convId ?? "").trim() || jsonInput.trim() || logInfo || mensajes.length || error
     ),
@@ -7239,9 +7428,9 @@ function LogViewer({ bootLog = {} }) {
     limpiar,
     onJsonInputChange: setJsonInput
   };
-  const mainPanel = /* @__PURE__ */ jsxs5(Box3, { sx: { flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }, children: [
-    isMobile ? /* @__PURE__ */ jsxs5(
-      Stack2,
+  const mainPanel = /* @__PURE__ */ jsxs6(Box4, { sx: { flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }, children: [
+    isMobile ? /* @__PURE__ */ jsxs6(
+      Stack3,
       {
         direction: "row",
         spacing: 1,
@@ -7255,13 +7444,13 @@ function LogViewer({ bootLog = {} }) {
           bgcolor: "background.paper"
         },
         children: [
-          /* @__PURE__ */ jsx7(Tooltip, { title: "Entrada de log", arrow: true, children: /* @__PURE__ */ jsx7(IconButton, { size: "small", onClick: () => setEntradaOpen(true), "aria-label": "Abrir entrada de log", children: /* @__PURE__ */ jsx7(Icon26, { icon: "mdi:database-import-outline", size: 20 }) }) }),
-          /* @__PURE__ */ jsx7(Typography2, { variant: "subtitle2", sx: { fontWeight: 700, flex: 1 }, noWrap: true, children: "Hilo recuperado" })
+          /* @__PURE__ */ jsx8(Tooltip2, { title: "Entrada de log", arrow: true, children: /* @__PURE__ */ jsx8(IconButton2, { size: "small", onClick: () => setEntradaOpen(true), "aria-label": "Abrir entrada de log", children: /* @__PURE__ */ jsx8(Icon27, { icon: "mdi:database-import-outline", size: 20 }) }) }),
+          /* @__PURE__ */ jsx8(Typography3, { variant: "subtitle2", sx: { fontWeight: 700, flex: 1 }, noWrap: true, children: "Hilo recuperado" })
         ]
       }
     ) : null,
-    /* @__PURE__ */ jsxs5(
-      Stack2,
+    /* @__PURE__ */ jsxs6(
+      Stack3,
       {
         direction: "row",
         spacing: 1,
@@ -7271,19 +7460,19 @@ function LogViewer({ bootLog = {} }) {
         className: "conv-log-thread-head",
         sx: { px: { xs: 1, md: 2 }, py: 1, flexShrink: 0 },
         children: [
-          /* @__PURE__ */ jsx7(
-            Chip2,
+          /* @__PURE__ */ jsx8(
+            Chip3,
             {
               className: "conv-log-thread-title-chip isa-neon-glass-chip",
               size: "small",
-              label: /* @__PURE__ */ jsxs5(Box3, { component: "span", sx: { display: "inline-flex", alignItems: "center", gap: 0.75 }, children: [
-                /* @__PURE__ */ jsx7(Icon26, { icon: "mdi:clipboard-text-clock-outline", size: 16 }),
+              label: /* @__PURE__ */ jsxs6(Box4, { component: "span", sx: { display: "inline-flex", alignItems: "center", gap: 0.75 }, children: [
+                /* @__PURE__ */ jsx8(Icon27, { icon: "mdi:clipboard-text-clock-outline", size: 16 }),
                 "Hilo recuperado"
               ] })
             }
           ),
-          resumenChips.map((c) => /* @__PURE__ */ jsx7(Chip2, { size: "small", label: c.label, color: c.color, variant: "outlined" }, c.label)),
-          mensajes.length > 0 && /* @__PURE__ */ jsx7(Tooltip, { title: "Resumen e \xEDndice compacto de mensajes", arrow: true, children: /* @__PURE__ */ jsx7("span", { children: /* @__PURE__ */ jsx7(
+          resumenChips.map((c) => /* @__PURE__ */ jsx8(Chip3, { size: "small", label: c.label, color: c.color, variant: "outlined" }, c.label)),
+          mensajes.length > 0 && /* @__PURE__ */ jsx8(Tooltip2, { title: "Resumen e \xEDndice compacto de mensajes", arrow: true, children: /* @__PURE__ */ jsx8("span", { children: /* @__PURE__ */ jsx8(
             ButtonIconify,
             {
               variant: "primary",
@@ -7292,12 +7481,12 @@ function LogViewer({ bootLog = {} }) {
               onClick: () => setResumenOpen(true)
             }
           ) }) }),
-          /* @__PURE__ */ jsx7(Box3, { sx: { flex: 1 } }),
-          logInfo?.createdAt && /* @__PURE__ */ jsx7(Typography2, { variant: "caption", color: "text.secondary", title: String(logInfo.createdAt), children: formatTs(logInfo.createdAt) })
+          /* @__PURE__ */ jsx8(Box4, { sx: { flex: 1 } }),
+          logInfo?.createdAt && /* @__PURE__ */ jsx8(Typography3, { variant: "caption", color: "text.secondary", title: String(logInfo.createdAt), children: formatTs(logInfo.createdAt) })
         ]
       }
     ),
-    /* @__PURE__ */ jsx7(
+    /* @__PURE__ */ jsx8(
       ConvLogThread,
       {
         mensajes,
@@ -7308,14 +7497,14 @@ function LogViewer({ bootLog = {} }) {
       }
     )
   ] });
-  return /* @__PURE__ */ jsxs5(
-    Box3,
+  return /* @__PURE__ */ jsxs6(
+    Box4,
     {
       className: "conv-log-shell",
       sx: { display: "flex", height: "100%", minHeight: 0, flexDirection: "column", position: "relative" },
       children: [
-        isMobile ? /* @__PURE__ */ jsxs5(Fragment3, { children: [
-          /* @__PURE__ */ jsx7(
+        isMobile ? /* @__PURE__ */ jsxs6(Fragment3, { children: [
+          /* @__PURE__ */ jsx8(
             Drawer,
             {
               anchor: "left",
@@ -7323,11 +7512,11 @@ function LogViewer({ bootLog = {} }) {
               onClose: () => setEntradaOpen(false),
               ModalProps: { keepMounted: true },
               PaperProps: mobileDrawerPaperProps("paty-mobile-sidebar-drawer"),
-              children: /* @__PURE__ */ jsx7(LogEntradaPanel, { ...entradaProps, drawerMode: true, onClose: () => setEntradaOpen(false) })
+              children: /* @__PURE__ */ jsx8(LogEntradaPanel, { ...entradaProps, drawerMode: true, onClose: () => setEntradaOpen(false) })
             }
           ),
           mainPanel
-        ] }) : /* @__PURE__ */ jsx7(
+        ] }) : /* @__PURE__ */ jsx8(
           IsaSplitView,
           {
             className: "conv-log-shell-split",
@@ -7340,9 +7529,9 @@ function LogViewer({ bootLog = {} }) {
             panelTitle: "Entrada",
             panelIcon: "mdi:database-import-outline",
             UI,
-            collapsedRail: ({ expand }) => /* @__PURE__ */ jsxs5(Box3, { className: "conv-log-collapsed-rail", children: [
-              /* @__PURE__ */ jsx7(Tooltip, { title: "Buscar por iconversacion", placement: "right", children: /* @__PURE__ */ jsx7(
-                IconButton,
+            collapsedRail: ({ expand }) => /* @__PURE__ */ jsxs6(Box4, { className: "conv-log-collapsed-rail", children: [
+              /* @__PURE__ */ jsx8(Tooltip2, { title: "Buscar por iconversacion", placement: "right", children: /* @__PURE__ */ jsx8(
+                IconButton2,
                 {
                   size: "small",
                   className: "isa-neon-rail-btn isa-neon-rail-btn--search",
@@ -7351,11 +7540,11 @@ function LogViewer({ bootLog = {} }) {
                     setEntradaFocus("convId");
                     expand();
                   },
-                  children: /* @__PURE__ */ jsx7(Icon26, { icon: "mdi:magnify", size: 20 })
+                  children: /* @__PURE__ */ jsx8(Icon27, { icon: "mdi:magnify", size: 20 })
                 }
               ) }),
-              /* @__PURE__ */ jsx7(Tooltip, { title: "Ver o editar JSON del log", placement: "right", children: /* @__PURE__ */ jsx7(
-                IconButton,
+              /* @__PURE__ */ jsx8(Tooltip2, { title: "Ver o editar JSON del log", placement: "right", children: /* @__PURE__ */ jsx8(
+                IconButton2,
                 {
                   size: "small",
                   className: "isa-neon-rail-btn isa-neon-rail-btn--json",
@@ -7364,15 +7553,15 @@ function LogViewer({ bootLog = {} }) {
                     setEntradaFocus("json");
                     expand();
                   },
-                  children: /* @__PURE__ */ jsx7(Icon26, { icon: "mdi:code-braces", size: 20 })
+                  children: /* @__PURE__ */ jsx8(Icon27, { icon: "mdi:code-braces", size: 20 })
                 }
               ) })
             ] }),
-            panel: /* @__PURE__ */ jsx7(LogEntradaPanel, { ...entradaProps }),
+            panel: /* @__PURE__ */ jsx8(LogEntradaPanel, { ...entradaProps }),
             children: mainPanel
           }
         ),
-        isMobile ? /* @__PURE__ */ jsx7(
+        isMobile ? /* @__PURE__ */ jsx8(
           Fab,
           {
             color: "primary",
@@ -7386,10 +7575,10 @@ function LogViewer({ bootLog = {} }) {
               zIndex: 6,
               display: entradaOpen ? "none" : "flex"
             },
-            children: /* @__PURE__ */ jsx7(Icon26, { icon: "mdi:database-import-outline", size: 22 })
+            children: /* @__PURE__ */ jsx8(Icon27, { icon: "mdi:database-import-outline", size: 22 })
           }
         ) : null,
-        /* @__PURE__ */ jsx7(
+        /* @__PURE__ */ jsx8(
           MetaDialog,
           {
             open: metaOpen,
@@ -7399,10 +7588,12 @@ function LogViewer({ bootLog = {} }) {
             title: metaMsg ? `Trazabilidad \xB7 ${metaMsg.rol}` : "",
             isUserMessage: Boolean(metaMsg?.esUsuario),
             userContent: metaMsg?.contenido ?? "",
-            imagenes: metaMsg?.imagenes ?? null
+            imagenes: metaMsg?.imagenes ?? null,
+            logFragment: metaMsg?.logFragment ?? null,
+            showLog: true
           }
         ),
-        /* @__PURE__ */ jsx7(
+        /* @__PURE__ */ jsx8(
           ResumenDialog,
           {
             open: resumenOpen,
@@ -8330,7 +8521,7 @@ function resetPromptConfigToDefaults(tipo, setPrompts) {
 }
 
 // src/js/tools/promptsSql/usePromptsSqlTool.ts
-var { useState: useState5, useEffect: useEffect5, useCallback: useCallback2, useMemo: useMemo4, useRef: useRef2 } = getReact();
+var { useState: useState5, useEffect: useEffect5, useCallback: useCallback2, useMemo: useMemo5, useRef: useRef2 } = getReact();
 var EMPTY_BODIES = Object.freeze({});
 function usePromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
   const [authTick, setAuthTick] = useState5(0);
@@ -8350,37 +8541,37 @@ function usePromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
       window.removeEventListener("patyia-apptools:caps-changed", onAuth);
     };
   }, []);
-  const canPublish = useMemo4(() => {
+  const canPublish = useMemo5(() => {
     if (isViewingAsRole()) {
       return canEditInstrucciones() || canEditPromptsOperativos();
     }
     if (forcePermsOpen()) return true;
     return instruccionesCanEdit || canEditInstrucciones() || canEditPromptsOperativos();
   }, [authTick, instruccionesCanEdit]);
-  const loggedIn = useMemo4(() => isLoggedIn(), [authTick]);
+  const loggedIn = useMemo5(() => isLoggedIn(), [authTick]);
   const canEdit = canPublish;
-  const editBlockReason = useMemo4(() => {
+  const editBlockReason = useMemo5(() => {
     if (canEdit) return "";
     if (!loggedIn) return "Inicia sesi\xF3n para editar instrucciones";
     return "Sin permiso para editar instrucciones";
   }, [authTick, canEdit, loggedIn]);
-  const saveTitle = useMemo4(() => {
+  const saveTitle = useMemo5(() => {
     if (canPublish) return "Guardar instrucciones y configuraci\xF3n en Paty (MSSQL)";
     return "Sin permiso para guardar en Paty";
   }, [authTick, canPublish]);
-  const importTitle = useMemo4(() => {
+  const importTitle = useMemo5(() => {
     if (canPublish) return "Importar archivos PROMPT_*.md / .txt";
     if (!loggedIn) return "Inicia sesi\xF3n para importar instrucciones";
     return "Sin permiso para importar instrucciones";
   }, [authTick, canPublish, loggedIn]);
   const [extraInstructionKeys, setExtraInstructionKeys] = useState5([]);
-  const instruccionKeys = useMemo4(
+  const instruccionKeys = useMemo5(
     () => allInstructionKeys(extraInstructionKeys),
     [extraInstructionKeys]
   );
   const [importDlg, setImportDlg] = useState5({ open: false, rows: [] });
   const urlBodies = bootPrompts.bodies ?? EMPTY_BODIES;
-  const urlDraftTipos = useMemo4(() => urlDraftTipoSet(bootPrompts), [bootPrompts]);
+  const urlDraftTipos = useMemo5(() => urlDraftTipoSet(bootPrompts), [bootPrompts]);
   const [prompts, setPrompts] = useState5(() => buildInitialPromptState(bootPrompts, urlBodies));
   const [activeTab, setActiveTab] = useState5(
     Number.isInteger(bootPrompts.activeTab) ? bootPrompts.activeTab : 0
@@ -8460,7 +8651,7 @@ function usePromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
       cancelled = true;
     };
   }, [envRev]);
-  const pendingTipos = useMemo4(
+  const pendingTipos = useMemo5(
     () => instruccionKeys.filter((t) => {
       const p = prompts[t];
       if (!p?.body?.trim()) return false;
@@ -8468,18 +8659,18 @@ function usePromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
     }),
     [prompts, instruccionKeys]
   );
-  const hasLocalChanges = useMemo4(
+  const hasLocalChanges = useMemo5(
     () => instruccionKeys.some((t) => hasPendingChanges(prompts[t])),
     [prompts, instruccionKeys]
   );
-  const modelSelectOptions2 = useMemo4(
+  const modelSelectOptions2 = useMemo5(
     () => mergeModelOptions(
       ...instruccionKeys.map((t) => prompts[t]?.jconfig?.model),
       ...instruccionKeys.map((t) => prompts[t]?.jconfigBaseline?.model)
     ),
     [prompts, instruccionKeys]
   );
-  const filledCount = useMemo4(
+  const filledCount = useMemo5(
     () => instruccionKeys.filter((k) => prompts[k]?.body?.trim()).length,
     [prompts, instruccionKeys]
   );
@@ -8651,13 +8842,13 @@ function usePromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
 
 // src/js/tools/promptsSql/PromptsSqlActionBar.jsx
 init_platform();
-import { jsx as jsx8, jsxs as jsxs6 } from "react/jsx-runtime";
-var { Stack: Stack3, Chip: Chip3, CircularProgress } = getMaterialUI();
+import { jsx as jsx9, jsxs as jsxs7 } from "react/jsx-runtime";
+var { Stack: Stack4, Chip: Chip4, CircularProgress } = getMaterialUI();
 function PromptsSqlActionBar({ filledCount, instruccionKeysLength, loadBusy, actionBusy, hasLocalChanges, pendingTiposLength, canPublish, saveTitle, importTitle, fileInputRef, onFileInput, onImportClick, onDiscardAll, onSaveAll }) {
-  return /* @__PURE__ */ jsx8("div", { className: "panel-head prompts-tool-head", children: /* @__PURE__ */ jsxs6(Stack3, { direction: "row", spacing: 0.5, alignItems: "center", sx: { ml: "auto" }, children: [
-    loadBusy && /* @__PURE__ */ jsx8(CircularProgress, { size: 14 }),
-    /* @__PURE__ */ jsx8(
-      Chip3,
+  return /* @__PURE__ */ jsx9("div", { className: "panel-head prompts-tool-head", children: /* @__PURE__ */ jsxs7(Stack4, { direction: "row", spacing: 0.5, alignItems: "center", sx: { ml: "auto" }, children: [
+    loadBusy && /* @__PURE__ */ jsx9(CircularProgress, { size: 14 }),
+    /* @__PURE__ */ jsx9(
+      Chip4,
       {
         className: "panel-head-count-chip isa-neon-glass-chip",
         size: "small",
@@ -8666,7 +8857,7 @@ function PromptsSqlActionBar({ filledCount, instruccionKeysLength, loadBusy, act
         variant: "outlined"
       }
     ),
-    /* @__PURE__ */ jsx8(
+    /* @__PURE__ */ jsx9(
       ButtonIconify,
       {
         icon: "mdi:folder-open-outline",
@@ -8675,7 +8866,7 @@ function PromptsSqlActionBar({ filledCount, instruccionKeysLength, loadBusy, act
         disabled: actionBusy || loadBusy || !canPublish
       }
     ),
-    /* @__PURE__ */ jsx8(
+    /* @__PURE__ */ jsx9(
       "input",
       {
         ref: fileInputRef,
@@ -8686,7 +8877,7 @@ function PromptsSqlActionBar({ filledCount, instruccionKeysLength, loadBusy, act
         onChange: onFileInput
       }
     ),
-    /* @__PURE__ */ jsx8(
+    /* @__PURE__ */ jsx9(
       ButtonIconify,
       {
         icon: "mdi:delete-outline",
@@ -8695,7 +8886,7 @@ function PromptsSqlActionBar({ filledCount, instruccionKeysLength, loadBusy, act
         disabled: actionBusy || loadBusy || !hasLocalChanges
       }
     ),
-    /* @__PURE__ */ jsx8(
+    /* @__PURE__ */ jsx9(
       ButtonIconify,
       {
         variant: "primary",
@@ -8734,14 +8925,14 @@ var ICON_BY_TIPO = {
 };
 
 // src/js/tools/promptsSql/PromptInstructionDot.jsx
-import { jsx as jsx9 } from "react/jsx-runtime";
+import { jsx as jsx10 } from "react/jsx-runtime";
 function PromptInstructionDot({ tipo, prompts, row, showWhenEmpty = "dot" }) {
   const p = prompts[tipo];
   const has = Boolean(p?.body?.trim());
   const dirty = hasPendingChanges(p) || row?.status === "tipo_desconocido";
   if (!has) {
     if (showWhenEmpty === "none") return null;
-    return /* @__PURE__ */ jsx9(
+    return /* @__PURE__ */ jsx10(
       "span",
       {
         className: "tab-dot tab-dot--empty",
@@ -8753,7 +8944,7 @@ function PromptInstructionDot({ tipo, prompts, row, showWhenEmpty = "dot" }) {
   let title = "Sincronizado";
   if (row?.status === "tipo_desconocido") title = "Tipo no catalogado";
   else if (hasPendingChanges(p)) title = "Cambios pendientes de guardar";
-  return /* @__PURE__ */ jsx9(
+  return /* @__PURE__ */ jsx10(
     "span",
     {
       className: `tab-dot${dirty ? " tab-dot--dirty" : ""}`,
@@ -8763,14 +8954,14 @@ function PromptInstructionDot({ tipo, prompts, row, showWhenEmpty = "dot" }) {
   );
 }
 function MapeoRowDot(props) {
-  return /* @__PURE__ */ jsx9(PromptInstructionDot, { ...props, showWhenEmpty: "dot" });
+  return /* @__PURE__ */ jsx10(PromptInstructionDot, { ...props, showWhenEmpty: "dot" });
 }
 
 // src/js/tools/promptsSql/PromptsSqlTree.jsx
-import { jsx as jsx10, jsxs as jsxs7 } from "react/jsx-runtime";
+import { jsx as jsx11, jsxs as jsxs8 } from "react/jsx-runtime";
 var { Tabs: Tabs2, Tab: Tab2 } = getMaterialUI();
 function PromptsSqlTree({ instruccionKeys, prompts, activeTab, onActiveTabChange, dragOver, onDragEnter, onDragLeave, onDragOverZone, onDrop, children }) {
-  return /* @__PURE__ */ jsxs7(
+  return /* @__PURE__ */ jsxs8(
     "div",
     {
       className: `prompt-tabs-layout${dragOver ? " prompt-tabs-layout--drop-active" : ""}`,
@@ -8779,17 +8970,17 @@ function PromptsSqlTree({ instruccionKeys, prompts, activeTab, onActiveTabChange
       onDragOver: onDragOverZone,
       onDrop,
       children: [
-        dragOver && /* @__PURE__ */ jsxs7("div", { className: "prompt-drop-overlay", "aria-hidden": true, children: [
-          /* @__PURE__ */ jsx10("iconify-icon", { icon: "mdi:file-upload-outline", width: "1.6em", height: "1.6em" }),
-          /* @__PURE__ */ jsxs7("span", { children: [
+        dragOver && /* @__PURE__ */ jsxs8("div", { className: "prompt-drop-overlay", "aria-hidden": true, children: [
+          /* @__PURE__ */ jsx11("iconify-icon", { icon: "mdi:file-upload-outline", width: "1.6em", height: "1.6em" }),
+          /* @__PURE__ */ jsxs8("span", { children: [
             "Suelta ",
-            /* @__PURE__ */ jsx10("code", { children: "PROMPT_*.md" }),
+            /* @__PURE__ */ jsx11("code", { children: "PROMPT_*.md" }),
             " o ",
-            /* @__PURE__ */ jsx10("code", { children: "PROMPT_*.txt" }),
+            /* @__PURE__ */ jsx11("code", { children: "PROMPT_*.txt" }),
             " aqu\xED"
           ] })
         ] }),
-        /* @__PURE__ */ jsx10(
+        /* @__PURE__ */ jsx11(
           Tabs2,
           {
             value: activeTab,
@@ -8817,13 +9008,13 @@ function PromptsSqlTree({ instruccionKeys, prompts, activeTab, onActiveTabChange
                 sx: { width: "100%", minHeight: 0, height: 20, maxHeight: 20, p: 0, px: 0, flex: "0 0 auto" }
               }
             },
-            children: instruccionKeys.map((tipo) => /* @__PURE__ */ jsx10(
+            children: instruccionKeys.map((tipo) => /* @__PURE__ */ jsx11(
               Tab2,
               {
-                label: /* @__PURE__ */ jsxs7("span", { className: "tab-label", children: [
-                  /* @__PURE__ */ jsx10("iconify-icon", { icon: ICON_BY_TIPO[tipo] || "mdi:file-document-outline", width: "0.9em", height: "0.9em" }),
-                  /* @__PURE__ */ jsx10("span", { children: tipo.replace(/_/g, " ") }),
-                  /* @__PURE__ */ jsx10(PromptInstructionDot, { tipo, prompts, showWhenEmpty: "none" })
+                label: /* @__PURE__ */ jsxs8("span", { className: "tab-label", children: [
+                  /* @__PURE__ */ jsx11("iconify-icon", { icon: ICON_BY_TIPO[tipo] || "mdi:file-document-outline", width: "0.9em", height: "0.9em" }),
+                  /* @__PURE__ */ jsx11("span", { children: tipo.replace(/_/g, " ") }),
+                  /* @__PURE__ */ jsx11(PromptInstructionDot, { tipo, prompts, showWhenEmpty: "none" })
                 ] })
               },
               tipo
@@ -9104,12 +9295,12 @@ function insertImageNodeAtSelection(dataUrl, alt = "imagen") {
 }
 
 // src/js/ui/PromptBodyEditor.jsx
-import { Fragment as Fragment5, jsx as jsx11, jsxs as jsxs8 } from "react/jsx-runtime";
-var { useState: useState6, useEffect: useEffect6, useLayoutEffect, useRef: useRef3, useCallback: useCallback3, useMemo: useMemo5 } = getReact();
+import { Fragment as Fragment5, jsx as jsx12, jsxs as jsxs9 } from "react/jsx-runtime";
+var { useState: useState6, useEffect: useEffect6, useLayoutEffect, useRef: useRef3, useCallback: useCallback3, useMemo: useMemo6 } = getReact();
 var {
-  Box: Box4,
-  Stack: Stack4,
-  Typography: Typography3,
+  Box: Box5,
+  Stack: Stack5,
+  Typography: Typography4,
   Dialog: Dialog2,
   DialogTitle: DialogTitle2,
   DialogContent: DialogContent3,
@@ -9118,7 +9309,7 @@ var {
   TextField: TextField2,
   Alert: Alert3,
   Divider: Divider2,
-  Chip: Chip4,
+  Chip: Chip5,
   Switch,
   FormControlLabel,
   CircularProgress: CircularProgress2
@@ -9413,16 +9604,16 @@ function RenameVarDialog({ open, name, existing, onClose, onConfirm }) {
     }
     onConfirm(next);
   }
-  return /* @__PURE__ */ jsxs8(Dialog2, { open, onClose, maxWidth: "xs", fullWidth: true, children: [
-    /* @__PURE__ */ jsx11(DialogTitle2, { children: "Renombrar variable" }),
-    /* @__PURE__ */ jsxs8(DialogContent3, { children: [
-      /* @__PURE__ */ jsxs8(Typography3, { variant: "body2", color: "text.secondary", sx: { mb: 1.5 }, children: [
+  return /* @__PURE__ */ jsxs9(Dialog2, { open, onClose, maxWidth: "xs", fullWidth: true, children: [
+    /* @__PURE__ */ jsx12(DialogTitle2, { children: "Renombrar variable" }),
+    /* @__PURE__ */ jsxs9(DialogContent3, { children: [
+      /* @__PURE__ */ jsxs9(Typography4, { variant: "body2", color: "text.secondary", sx: { mb: 1.5 }, children: [
         "Se actualizar\xE1n todas las ocurrencias de ",
-        /* @__PURE__ */ jsx11("code", { children: `{{${name}}}` }),
+        /* @__PURE__ */ jsx12("code", { children: `{{${name}}}` }),
         " en el documento."
       ] }),
-      err ? /* @__PURE__ */ jsx11(Alert3, { severity: "error", sx: { mb: 1 }, children: err }) : null,
-      /* @__PURE__ */ jsx11(
+      err ? /* @__PURE__ */ jsx12(Alert3, { severity: "error", sx: { mb: 1 }, children: err }) : null,
+      /* @__PURE__ */ jsx12(
         TextField2,
         {
           autoFocus: true,
@@ -9437,9 +9628,9 @@ function RenameVarDialog({ open, name, existing, onClose, onConfirm }) {
         }
       )
     ] }),
-    /* @__PURE__ */ jsxs8(DialogActions2, { children: [
-      /* @__PURE__ */ jsx11(Button2, { onClick: onClose, children: "Cancelar" }),
-      /* @__PURE__ */ jsx11(Button2, { variant: "contained", onClick: submit, children: "Renombrar" })
+    /* @__PURE__ */ jsxs9(DialogActions2, { children: [
+      /* @__PURE__ */ jsx12(Button2, { onClick: onClose, children: "Cancelar" }),
+      /* @__PURE__ */ jsx12(Button2, { variant: "contained", onClick: submit, children: "Renombrar" })
     ] })
   ] });
 }
@@ -9459,7 +9650,7 @@ function PromptEditorDialog({ open, onClose, title, body, canEdit, onSave, onDra
   const savedRangeRef = useRef3(null);
   const savedCaretRef = useRef3(null);
   const pushSuppressRef = useRef3(false);
-  const variables = useMemo5(() => extractPromptVariables(value), [value]);
+  const variables = useMemo6(() => extractPromptVariables(value), [value]);
   const captureEditorSelection = useCallback3(() => {
     const el = surfaceRef.current;
     const sel = window.getSelection();
@@ -9752,7 +9943,7 @@ function PromptEditorDialog({ open, onClose, title, body, canEdit, onSave, onDra
     captureEditorSelection();
     pushChange();
   }
-  return /* @__PURE__ */ jsxs8(
+  return /* @__PURE__ */ jsxs9(
     Dialog2,
     {
       open,
@@ -9767,13 +9958,13 @@ function PromptEditorDialog({ open, onClose, title, body, canEdit, onSave, onDra
         }
       },
       children: [
-        /* @__PURE__ */ jsxs8(DialogTitle2, { sx: { display: "flex", alignItems: "center", gap: 1, py: 1.5, flexWrap: "wrap" }, children: [
-          /* @__PURE__ */ jsx11("iconify-icon", { icon: "mdi:pencil-outline", width: "1.25em", height: "1.25em" }),
-          /* @__PURE__ */ jsx11(Box4, { component: "span", sx: { fontWeight: 600 }, children: title }),
-          /* @__PURE__ */ jsx11(
+        /* @__PURE__ */ jsxs9(DialogTitle2, { sx: { display: "flex", alignItems: "center", gap: 1, py: 1.5, flexWrap: "wrap" }, children: [
+          /* @__PURE__ */ jsx12("iconify-icon", { icon: "mdi:pencil-outline", width: "1.25em", height: "1.25em" }),
+          /* @__PURE__ */ jsx12(Box5, { component: "span", sx: { fontWeight: 600 }, children: title }),
+          /* @__PURE__ */ jsx12(
             FormControlLabel,
             {
-              control: /* @__PURE__ */ jsx11(
+              control: /* @__PURE__ */ jsx12(
                 Switch,
                 {
                   size: "small",
@@ -9782,35 +9973,35 @@ function PromptEditorDialog({ open, onClose, title, body, canEdit, onSave, onDra
                   disabled: !canEdit
                 }
               ),
-              label: /* @__PURE__ */ jsx11(Typography3, { variant: "body2", color: "text.secondary", component: "span", children: "Texto plano" }),
+              label: /* @__PURE__ */ jsx12(Typography4, { variant: "body2", color: "text.secondary", component: "span", children: "Texto plano" }),
               sx: { ml: 0.5, mr: 0 }
             }
           ),
-          /* @__PURE__ */ jsx11(Box4, { sx: { flex: 1 } }),
-          !plainText && /* @__PURE__ */ jsxs8(Stack4, { direction: "row", spacing: 0.5, alignItems: "center", flexWrap: "wrap", useFlexGap: true, children: [
-            /* @__PURE__ */ jsx11(ButtonIconify, { icon: "mdi:undo", title: "Deshacer (Ctrl+Z)", onMouseDown: keepToolbarFocus, onClick: handleUndo, disabled: !canUndo }),
-            /* @__PURE__ */ jsx11(ButtonIconify, { icon: "mdi:redo", title: "Rehacer (Ctrl+Y)", onMouseDown: keepToolbarFocus, onClick: handleRedo, disabled: !canRedo }),
-            /* @__PURE__ */ jsx11(Divider2, { orientation: "vertical", flexItem: true, sx: { mx: 0.5 } }),
-            /* @__PURE__ */ jsx11(ButtonIconify, { icon: "mdi:format-bold", title: "Negrita", onMouseDown: keepToolbarFocus, onClick: () => execFmt("bold"), disabled: !canEdit }),
-            /* @__PURE__ */ jsx11(ButtonIconify, { icon: "mdi:format-italic", title: "Cursiva", onMouseDown: keepToolbarFocus, onClick: () => execFmt("italic"), disabled: !canEdit }),
-            /* @__PURE__ */ jsx11(ButtonIconify, { icon: "mdi:format-header-1", title: "T\xEDtulo 1", onMouseDown: keepToolbarFocus, onClick: () => execFmt("formatBlock", "h1"), disabled: !canEdit }),
-            /* @__PURE__ */ jsx11(ButtonIconify, { icon: "mdi:format-header-2", title: "T\xEDtulo 2", onMouseDown: keepToolbarFocus, onClick: () => execFmt("formatBlock", "h2"), disabled: !canEdit }),
-            /* @__PURE__ */ jsx11(ButtonIconify, { icon: "mdi:format-list-bulleted", title: "Lista", onMouseDown: keepToolbarFocus, onClick: () => execFmt("insertUnorderedList"), disabled: !canEdit })
+          /* @__PURE__ */ jsx12(Box5, { sx: { flex: 1 } }),
+          !plainText && /* @__PURE__ */ jsxs9(Stack5, { direction: "row", spacing: 0.5, alignItems: "center", flexWrap: "wrap", useFlexGap: true, children: [
+            /* @__PURE__ */ jsx12(ButtonIconify, { icon: "mdi:undo", title: "Deshacer (Ctrl+Z)", onMouseDown: keepToolbarFocus, onClick: handleUndo, disabled: !canUndo }),
+            /* @__PURE__ */ jsx12(ButtonIconify, { icon: "mdi:redo", title: "Rehacer (Ctrl+Y)", onMouseDown: keepToolbarFocus, onClick: handleRedo, disabled: !canRedo }),
+            /* @__PURE__ */ jsx12(Divider2, { orientation: "vertical", flexItem: true, sx: { mx: 0.5 } }),
+            /* @__PURE__ */ jsx12(ButtonIconify, { icon: "mdi:format-bold", title: "Negrita", onMouseDown: keepToolbarFocus, onClick: () => execFmt("bold"), disabled: !canEdit }),
+            /* @__PURE__ */ jsx12(ButtonIconify, { icon: "mdi:format-italic", title: "Cursiva", onMouseDown: keepToolbarFocus, onClick: () => execFmt("italic"), disabled: !canEdit }),
+            /* @__PURE__ */ jsx12(ButtonIconify, { icon: "mdi:format-header-1", title: "T\xEDtulo 1", onMouseDown: keepToolbarFocus, onClick: () => execFmt("formatBlock", "h1"), disabled: !canEdit }),
+            /* @__PURE__ */ jsx12(ButtonIconify, { icon: "mdi:format-header-2", title: "T\xEDtulo 2", onMouseDown: keepToolbarFocus, onClick: () => execFmt("formatBlock", "h2"), disabled: !canEdit }),
+            /* @__PURE__ */ jsx12(ButtonIconify, { icon: "mdi:format-list-bulleted", title: "Lista", onMouseDown: keepToolbarFocus, onClick: () => execFmt("insertUnorderedList"), disabled: !canEdit })
           ] }),
-          plainText && /* @__PURE__ */ jsxs8(Stack4, { direction: "row", spacing: 0.5, alignItems: "center", children: [
-            /* @__PURE__ */ jsx11(ButtonIconify, { icon: "mdi:undo", title: "Deshacer (Ctrl+Z)", onClick: handleUndo, disabled: !canUndo }),
-            /* @__PURE__ */ jsx11(ButtonIconify, { icon: "mdi:redo", title: "Rehacer (Ctrl+Y)", onClick: handleRedo, disabled: !canRedo })
+          plainText && /* @__PURE__ */ jsxs9(Stack5, { direction: "row", spacing: 0.5, alignItems: "center", children: [
+            /* @__PURE__ */ jsx12(ButtonIconify, { icon: "mdi:undo", title: "Deshacer (Ctrl+Z)", onClick: handleUndo, disabled: !canUndo }),
+            /* @__PURE__ */ jsx12(ButtonIconify, { icon: "mdi:redo", title: "Rehacer (Ctrl+Y)", onClick: handleRedo, disabled: !canRedo })
           ] })
         ] }),
-        /* @__PURE__ */ jsxs8(DialogContent3, { ref: dialogContentRef, dividers: true, className: "prompt-md-dialog custom-scrollbar", children: [
-          variables.length > 0 && /* @__PURE__ */ jsxs8(Stack4, { direction: "row", spacing: 0.5, flexWrap: "wrap", useFlexGap: true, sx: { mb: 1.5, width: "100%", justifyContent: "flex-start", px: "1.5rem", pt: 1.25 }, children: [
-            /* @__PURE__ */ jsxs8(Typography3, { variant: "caption", color: "text.secondary", sx: { alignSelf: "center", mr: 0.5 }, children: [
+        /* @__PURE__ */ jsxs9(DialogContent3, { ref: dialogContentRef, dividers: true, className: "prompt-md-dialog custom-scrollbar", children: [
+          variables.length > 0 && /* @__PURE__ */ jsxs9(Stack5, { direction: "row", spacing: 0.5, flexWrap: "wrap", useFlexGap: true, sx: { mb: 1.5, width: "100%", justifyContent: "flex-start", px: "1.5rem", pt: 1.25 }, children: [
+            /* @__PURE__ */ jsxs9(Typography4, { variant: "caption", color: "text.secondary", sx: { alignSelf: "center", mr: 0.5 }, children: [
               "Variables (escribe ",
               "{{nombre}}",
               " en el texto):"
             ] }),
-            variables.map((v) => /* @__PURE__ */ jsx11(
-              Chip4,
+            variables.map((v) => /* @__PURE__ */ jsx12(
+              Chip5,
               {
                 size: "small",
                 variant: "outlined",
@@ -9822,7 +10013,7 @@ function PromptEditorDialog({ open, onClose, title, body, canEdit, onSave, onDra
               v
             ))
           ] }),
-          plainText ? /* @__PURE__ */ jsx11(
+          plainText ? /* @__PURE__ */ jsx12(
             TextField2,
             {
               multiline: true,
@@ -9842,7 +10033,7 @@ function PromptEditorDialog({ open, onClose, title, body, canEdit, onSave, onDra
               inputRef: plainTextRef,
               slotProps: { input: { "aria-label": "Editor de instrucci\xF3n (texto plano)" } }
             }
-          ) : /* @__PURE__ */ jsx11(
+          ) : /* @__PURE__ */ jsx12(
             "div",
             {
               ref: attachSurfaceRef,
@@ -9864,12 +10055,12 @@ function PromptEditorDialog({ open, onClose, title, body, canEdit, onSave, onDra
             }
           )
         ] }),
-        /* @__PURE__ */ jsxs8(DialogActions2, { sx: { px: 2, py: 1 }, children: [
-          /* @__PURE__ */ jsx11(Button2, { onClick: handleDismiss, disabled: saving, sx: { color: "text.secondary" }, children: "Cerrar" }),
-          /* @__PURE__ */ jsx11(Button2, { onClick: handleDiscard, disabled: saving, children: "Descartar" }),
-          /* @__PURE__ */ jsx11(Button2, { variant: "contained", onClick: handleSave, disabled: !canEdit || saving, children: saving ? "Guardando\u2026" : "Guardar cambios" })
+        /* @__PURE__ */ jsxs9(DialogActions2, { sx: { px: 2, py: 1 }, children: [
+          /* @__PURE__ */ jsx12(Button2, { onClick: handleDismiss, disabled: saving, sx: { color: "text.secondary" }, children: "Cerrar" }),
+          /* @__PURE__ */ jsx12(Button2, { onClick: handleDiscard, disabled: saving, children: "Descartar" }),
+          /* @__PURE__ */ jsx12(Button2, { variant: "contained", onClick: handleSave, disabled: !canEdit || saving, children: saving ? "Guardando\u2026" : "Guardar cambios" })
         ] }),
-        /* @__PURE__ */ jsx11(
+        /* @__PURE__ */ jsx12(
           RenameVarDialog,
           {
             open: renameDlg.open,
@@ -9898,7 +10089,7 @@ function PromptBodyEditor({
 }) {
   const [editorOpen, setEditorOpen] = useState6(false);
   const previewRef = useRef3(null);
-  const previewHtml = useMemo5(() => {
+  const previewHtml = useMemo6(() => {
     if (Array.isArray(bodyLines) && bodyLines.length) return bodyPreviewHtmlFromLines(bodyLines);
     const text = String(body || "").trim();
     if (!text) return "";
@@ -9935,9 +10126,9 @@ function PromptBodyEditor({
       openEditor();
     }
   }
-  return /* @__PURE__ */ jsxs8(Fragment5, { children: [
-    /* @__PURE__ */ jsx11(
-      Box4,
+  return /* @__PURE__ */ jsxs9(Fragment5, { children: [
+    /* @__PURE__ */ jsx12(
+      Box5,
       {
         className: `prompt-body-preview custom-scrollbar${canEdit ? " prompt-body-preview--editable" : ""}`,
         sx: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" },
@@ -9948,17 +10139,17 @@ function PromptBodyEditor({
         role: loading ? void 0 : canEdit ? "button" : void 0,
         tabIndex: loading ? void 0 : canEdit ? 0 : void 0,
         "aria-busy": loading || void 0,
-        children: loading ? /* @__PURE__ */ jsx11(Box4, { className: "prompt-body-preview__loading", "aria-hidden": true, children: /* @__PURE__ */ jsx11(CircularProgress2, { size: 28 }) }) : previewHtml ? /* @__PURE__ */ jsx11(
+        children: loading ? /* @__PURE__ */ jsx12(Box5, { className: "prompt-body-preview__loading", "aria-hidden": true, children: /* @__PURE__ */ jsx12(CircularProgress2, { size: 28 }) }) : previewHtml ? /* @__PURE__ */ jsx12(
           "div",
           {
             ref: previewRef,
             className: "prompt-md-preview msg-body",
             dangerouslySetInnerHTML: { __html: previewHtml }
           }
-        ) : /* @__PURE__ */ jsx11(Typography3, { variant: "body2", color: "text.secondary", className: "prompt-body-preview__empty", children: placeholder || "Sin contenido. Doble clic para editar\u2026" })
+        ) : /* @__PURE__ */ jsx12(Typography4, { variant: "body2", color: "text.secondary", className: "prompt-body-preview__empty", children: placeholder || "Sin contenido. Doble clic para editar\u2026" })
       }
     ),
-    /* @__PURE__ */ jsx11(
+    /* @__PURE__ */ jsx12(
       PromptEditorDialog,
       {
         open: editorOpen,
@@ -9975,7 +10166,7 @@ function PromptBodyEditor({
 }
 
 // src/js/tools/promptsSql/PromptsSqlEditorPane.jsx
-import { jsx as jsx12, jsxs as jsxs9 } from "react/jsx-runtime";
+import { jsx as jsx13, jsxs as jsxs10 } from "react/jsx-runtime";
 var {
   Table,
   TableContainer,
@@ -9984,7 +10175,7 @@ var {
   TableCell,
   TableBody,
   TextField: TextField3,
-  Stack: Stack5,
+  Stack: Stack6,
   FormControl,
   Select,
   MenuItem
@@ -9999,7 +10190,7 @@ function PromptsSqlBodyEditor({
   onPersist,
   editorOpenSignal
 }) {
-  return /* @__PURE__ */ jsx12("div", { className: "tab-editor", children: /* @__PURE__ */ jsx12(
+  return /* @__PURE__ */ jsx13("div", { className: "tab-editor", children: /* @__PURE__ */ jsx13(
     PromptBodyEditor,
     {
       body: activePrompt?.body || "",
@@ -10030,16 +10221,16 @@ function PromptsSqlMapeoTable({
   onOpenJconfig,
   onConfirmResetConfig
 }) {
-  return /* @__PURE__ */ jsx12("div", { className: "prompt-mapeo-block", children: /* @__PURE__ */ jsx12(TableContainer, { className: "prompt-mapeo-scroll custom-scrollbar", children: /* @__PURE__ */ jsxs9(Table, { size: "small", stickyHeader: true, children: [
-    /* @__PURE__ */ jsx12(TableHead, { children: /* @__PURE__ */ jsxs9(TableRow, { children: [
-      /* @__PURE__ */ jsx12(TableCell, { children: "Instrucci\xF3n" }),
-      /* @__PURE__ */ jsx12(TableCell, { children: "Chars | Tokens" }),
-      /* @__PURE__ */ jsx12(TableCell, { children: "Modelo" }),
-      /* @__PURE__ */ jsx12(TableCell, { children: "temperature" }),
-      /* @__PURE__ */ jsx12(TableCell, { children: "top_p" }),
-      /* @__PURE__ */ jsx12(TableCell, { align: "center", children: "Actions" })
+  return /* @__PURE__ */ jsx13("div", { className: "prompt-mapeo-block", children: /* @__PURE__ */ jsx13(TableContainer, { className: "prompt-mapeo-scroll custom-scrollbar", children: /* @__PURE__ */ jsxs10(Table, { size: "small", stickyHeader: true, children: [
+    /* @__PURE__ */ jsx13(TableHead, { children: /* @__PURE__ */ jsxs10(TableRow, { children: [
+      /* @__PURE__ */ jsx13(TableCell, { children: "Instrucci\xF3n" }),
+      /* @__PURE__ */ jsx13(TableCell, { children: "Chars | Tokens" }),
+      /* @__PURE__ */ jsx13(TableCell, { children: "Modelo" }),
+      /* @__PURE__ */ jsx13(TableCell, { children: "temperature" }),
+      /* @__PURE__ */ jsx13(TableCell, { children: "top_p" }),
+      /* @__PURE__ */ jsx13(TableCell, { align: "center", children: "Actions" })
     ] }) }),
-    /* @__PURE__ */ jsx12(TableBody, { children: instruccionKeys.map((tipo) => {
+    /* @__PURE__ */ jsx13(TableBody, { children: instruccionKeys.map((tipo) => {
       const p = prompts[tipo];
       const jc = p?.jconfig || parseJconfig(null);
       const modelValue = String(jc.model ?? "").trim() || DEFAULT_JCONFIG.model;
@@ -10051,7 +10242,7 @@ function PromptsSqlMapeoTable({
       };
       const stopRowEvent = (e) => e.stopPropagation();
       const atDefaultConfig = jconfigEqual(jc, DEFAULT_JCONFIG);
-      return /* @__PURE__ */ jsxs9(
+      return /* @__PURE__ */ jsxs10(
         TableRow,
         {
           hover: true,
@@ -10065,12 +10256,12 @@ function PromptsSqlMapeoTable({
           sx: { cursor: "pointer" },
           title: canEdit && !loadBusy ? "Doble clic para editar" : void 0,
           children: [
-            /* @__PURE__ */ jsx12(TableCell, { children: /* @__PURE__ */ jsxs9("span", { className: "prompt-mapeo-tipo", children: [
-              /* @__PURE__ */ jsx12(MapeoRowDot, { tipo, prompts, row }),
-              /* @__PURE__ */ jsx12("code", { children: tipo })
+            /* @__PURE__ */ jsx13(TableCell, { children: /* @__PURE__ */ jsxs10("span", { className: "prompt-mapeo-tipo", children: [
+              /* @__PURE__ */ jsx13(MapeoRowDot, { tipo, prompts, row }),
+              /* @__PURE__ */ jsx13("code", { children: tipo })
             ] }) }),
-            /* @__PURE__ */ jsx12(TableCell, { className: "prompt-mapeo-metric", children: formatCharsTokens(p?.body) }),
-            /* @__PURE__ */ jsx12(TableCell, { onClick: stopRowEvent, onDoubleClick: stopRowEvent, children: /* @__PURE__ */ jsx12(FormControl, { size: "small", sx: { minWidth: 132 }, onClick: stopRowEvent, disabled: !canEdit, children: /* @__PURE__ */ jsx12(
+            /* @__PURE__ */ jsx13(TableCell, { className: "prompt-mapeo-metric", children: formatCharsTokens(p?.body) }),
+            /* @__PURE__ */ jsx13(TableCell, { onClick: stopRowEvent, onDoubleClick: stopRowEvent, children: /* @__PURE__ */ jsx13(FormControl, { size: "small", sx: { minWidth: 132 }, onClick: stopRowEvent, disabled: !canEdit, children: /* @__PURE__ */ jsx13(
               Select,
               {
                 value: modelValue,
@@ -10078,10 +10269,10 @@ function PromptsSqlMapeoTable({
                 disabled: !canEdit,
                 MenuProps: { disableScrollLock: true },
                 sx: { fontSize: "0.72rem", "& .MuiSelect-select": { py: "3px", px: 0.6, minHeight: "0 !important" } },
-                children: modelSelectOptions2.map((id) => /* @__PURE__ */ jsx12(MenuItem, { value: id, sx: { fontSize: "0.72rem" }, children: id }, id))
+                children: modelSelectOptions2.map((id) => /* @__PURE__ */ jsx13(MenuItem, { value: id, sx: { fontSize: "0.72rem" }, children: id }, id))
               }
             ) }) }),
-            /* @__PURE__ */ jsx12(TableCell, { onClick: stopRowEvent, onDoubleClick: stopRowEvent, children: /* @__PURE__ */ jsx12(
+            /* @__PURE__ */ jsx13(TableCell, { onClick: stopRowEvent, onDoubleClick: stopRowEvent, children: /* @__PURE__ */ jsx13(
               TextField3,
               {
                 ...unitIntervalFieldProps(
@@ -10092,7 +10283,7 @@ function PromptsSqlMapeoTable({
                 disabled: !canEdit
               }
             ) }),
-            /* @__PURE__ */ jsx12(TableCell, { onClick: stopRowEvent, onDoubleClick: stopRowEvent, children: /* @__PURE__ */ jsx12(
+            /* @__PURE__ */ jsx13(TableCell, { onClick: stopRowEvent, onDoubleClick: stopRowEvent, children: /* @__PURE__ */ jsx13(
               TextField3,
               {
                 ...unitIntervalFieldProps(
@@ -10103,8 +10294,8 @@ function PromptsSqlMapeoTable({
                 disabled: !canEdit
               }
             ) }),
-            /* @__PURE__ */ jsx12(TableCell, { align: "center", className: "prompt-mapeo-actions", onClick: stopRowEvent, onDoubleClick: stopRowEvent, children: /* @__PURE__ */ jsxs9(Stack5, { direction: "row", spacing: 0.25, justifyContent: "center", useFlexGap: true, children: [
-              /* @__PURE__ */ jsx12(
+            /* @__PURE__ */ jsx13(TableCell, { align: "center", className: "prompt-mapeo-actions", onClick: stopRowEvent, onDoubleClick: stopRowEvent, children: /* @__PURE__ */ jsxs10(Stack6, { direction: "row", spacing: 0.25, justifyContent: "center", useFlexGap: true, children: [
+              /* @__PURE__ */ jsx13(
                 ButtonIconify,
                 {
                   icon: "mdi:code-json",
@@ -10112,7 +10303,7 @@ function PromptsSqlMapeoTable({
                   onClick: () => onOpenJconfig(tipo)
                 }
               ),
-              loggedIn && /* @__PURE__ */ jsx12(
+              loggedIn && /* @__PURE__ */ jsx13(
                 ButtonIconify,
                 {
                   icon: "mdi:backup-restore",
@@ -10132,51 +10323,51 @@ function PromptsSqlMapeoTable({
 
 // src/js/tools/promptsSql/FileImportMapDialog.jsx
 init_platform();
-import { jsx as jsx13, jsxs as jsxs10 } from "react/jsx-runtime";
+import { jsx as jsx14, jsxs as jsxs11 } from "react/jsx-runtime";
 var {
   Dialog: Dialog3,
   DialogTitle: DialogTitle3,
   DialogContent: DialogContent4,
   DialogActions: DialogActions3,
   Button: Button3,
-  Typography: Typography4,
-  Stack: Stack6,
+  Typography: Typography5,
+  Stack: Stack7,
   Alert: Alert4,
-  Chip: Chip5,
+  Chip: Chip6,
   FormControl: FormControl2,
   Select: Select2,
   MenuItem: MenuItem2
 } = getMaterialUI();
 function FileImportMapDialog({ open, onClose, rows, instructionKeys, onChangeRow, onConfirm }) {
-  return /* @__PURE__ */ jsxs10(Dialog3, { open, onClose, maxWidth: "md", fullWidth: true, scroll: "paper", children: [
-    /* @__PURE__ */ jsxs10(DialogTitle3, { sx: { display: "flex", alignItems: "center", gap: 1, py: 1.5 }, children: [
-      /* @__PURE__ */ jsx13("iconify-icon", { icon: "mdi:file-link-outline", width: "1.25em", height: "1.25em" }),
+  return /* @__PURE__ */ jsxs11(Dialog3, { open, onClose, maxWidth: "md", fullWidth: true, scroll: "paper", children: [
+    /* @__PURE__ */ jsxs11(DialogTitle3, { sx: { display: "flex", alignItems: "center", gap: 1, py: 1.5 }, children: [
+      /* @__PURE__ */ jsx14("iconify-icon", { icon: "mdi:file-link-outline", width: "1.25em", height: "1.25em" }),
       "Confirmar importaci\xF3n"
     ] }),
-    /* @__PURE__ */ jsxs10(DialogContent4, { dividers: true, className: "custom-scrollbar", children: [
-      /* @__PURE__ */ jsxs10(Typography4, { variant: "body2", color: "text.secondary", sx: { mb: 2 }, children: [
+    /* @__PURE__ */ jsxs11(DialogContent4, { dividers: true, className: "custom-scrollbar", children: [
+      /* @__PURE__ */ jsxs11(Typography5, { variant: "body2", color: "text.secondary", sx: { mb: 2 }, children: [
         "Relaciona cada archivo con la instrucci\xF3n destino. La coincidencia autom\xE1tica usa el nombre",
         " ",
         "(",
-        /* @__PURE__ */ jsx13("code", { children: "PROMPT_*.md" }),
+        /* @__PURE__ */ jsx14("code", { children: "PROMPT_*.md" }),
         " / ",
-        /* @__PURE__ */ jsx13("code", { children: ".txt" }),
+        /* @__PURE__ */ jsx14("code", { children: ".txt" }),
         ") o una l\xEDnea exacta",
         " ",
-        /* @__PURE__ */ jsx13("code", { children: "iinstruccion: CLAVE" }),
+        /* @__PURE__ */ jsx14("code", { children: "iinstruccion: CLAVE" }),
         " en el contenido."
       ] }),
       rows.map((row, idx) => {
         const ambiguous = row.nameMatches.length > 1 || row.contentMatches.length > 1 || row.nameMatches.length === 1 && row.contentMatches.length === 1 && row.nameMatches[0] !== row.contentMatches[0];
-        return /* @__PURE__ */ jsxs10(
-          Stack6,
+        return /* @__PURE__ */ jsxs11(
+          Stack7,
           {
             spacing: 1,
             sx: { mb: 2, pb: 2, borderBottom: "1px solid", borderColor: "divider" },
             children: [
-              /* @__PURE__ */ jsx13(Typography4, { variant: "subtitle2", component: "div", children: /* @__PURE__ */ jsx13("code", { children: row.fileName }) }),
-              row.suggested && !ambiguous && /* @__PURE__ */ jsx13(
-                Chip5,
+              /* @__PURE__ */ jsx14(Typography5, { variant: "subtitle2", component: "div", children: /* @__PURE__ */ jsx14("code", { children: row.fileName }) }),
+              row.suggested && !ambiguous && /* @__PURE__ */ jsx14(
+                Chip6,
                 {
                   size: "small",
                   variant: "outlined",
@@ -10184,9 +10375,9 @@ function FileImportMapDialog({ open, onClose, rows, instructionKeys, onChangeRow
                   label: `Sugerido: ${row.suggested}${row.matchSource ? ` (${row.matchSource})` : ""}`
                 }
               ),
-              ambiguous && /* @__PURE__ */ jsx13(Alert4, { severity: "warning", sx: { py: 0.5 }, children: "Coincidencias m\xFAltiples o contradictorias \u2014 elige la instrucci\xF3n manualmente." }),
-              !row.suggested && !ambiguous && /* @__PURE__ */ jsx13(Alert4, { severity: "info", sx: { py: 0.5 }, children: "Sin coincidencia exacta \u2014 selecciona la instrucci\xF3n destino." }),
-              /* @__PURE__ */ jsx13(FormControl2, { size: "small", fullWidth: true, children: /* @__PURE__ */ jsxs10(
+              ambiguous && /* @__PURE__ */ jsx14(Alert4, { severity: "warning", sx: { py: 0.5 }, children: "Coincidencias m\xFAltiples o contradictorias \u2014 elige la instrucci\xF3n manualmente." }),
+              !row.suggested && !ambiguous && /* @__PURE__ */ jsx14(Alert4, { severity: "info", sx: { py: 0.5 }, children: "Sin coincidencia exacta \u2014 selecciona la instrucci\xF3n destino." }),
+              /* @__PURE__ */ jsx14(FormControl2, { size: "small", fullWidth: true, children: /* @__PURE__ */ jsxs11(
                 Select2,
                 {
                   value: row.selected || "",
@@ -10194,10 +10385,10 @@ function FileImportMapDialog({ open, onClose, rows, instructionKeys, onChangeRow
                   onChange: (e) => onChangeRow(idx, e.target.value),
                   MenuProps: { disableScrollLock: true },
                   children: [
-                    /* @__PURE__ */ jsx13(MenuItem2, { value: "", children: /* @__PURE__ */ jsx13("em", { children: "No importar este archivo" }) }),
+                    /* @__PURE__ */ jsx14(MenuItem2, { value: "", children: /* @__PURE__ */ jsx14("em", { children: "No importar este archivo" }) }),
                     instructionKeys.map((k) => {
                       const meta = getInstructionMeta(k);
-                      return /* @__PURE__ */ jsxs10(MenuItem2, { value: k, children: [
+                      return /* @__PURE__ */ jsxs11(MenuItem2, { value: k, children: [
                         k,
                         " \xB7 ",
                         meta.ninstruccion
@@ -10212,68 +10403,68 @@ function FileImportMapDialog({ open, onClose, rows, instructionKeys, onChangeRow
         );
       })
     ] }),
-    /* @__PURE__ */ jsxs10(DialogActions3, { sx: { px: 2, py: 1.5 }, children: [
-      /* @__PURE__ */ jsx13(Button3, { onClick: onClose, children: "Cancelar" }),
-      /* @__PURE__ */ jsx13(Button3, { variant: "contained", onClick: onConfirm, children: "Importar selecci\xF3n" })
+    /* @__PURE__ */ jsxs11(DialogActions3, { sx: { px: 2, py: 1.5 }, children: [
+      /* @__PURE__ */ jsx14(Button3, { onClick: onClose, children: "Cancelar" }),
+      /* @__PURE__ */ jsx14(Button3, { variant: "contained", onClick: onConfirm, children: "Importar selecci\xF3n" })
     ] })
   ] });
 }
 
 // src/js/tools/promptsSql/JconfigDetailDialog.jsx
 init_platform();
-import { jsx as jsx14, jsxs as jsxs11 } from "react/jsx-runtime";
-var { useMemo: useMemo6 } = getReact();
-var { Dialog: Dialog4, DialogTitle: DialogTitle4, DialogContent: DialogContent5, Typography: Typography5, Box: Box5 } = getMaterialUI();
+import { jsx as jsx15, jsxs as jsxs12 } from "react/jsx-runtime";
+var { useMemo: useMemo7 } = getReact();
+var { Dialog: Dialog4, DialogTitle: DialogTitle4, DialogContent: DialogContent5, Typography: Typography6, Box: Box6 } = getMaterialUI();
 function JconfigDetailDialog({ open, onClose, tipo, jc, body }) {
-  const view = useMemo6(() => jconfigView(jc, body), [jc, body]);
-  const json = useMemo6(() => JSON.stringify(view, null, 2), [view]);
-  return /* @__PURE__ */ jsxs11(Dialog4, { open, onClose, maxWidth: "sm", fullWidth: true, scroll: "paper", children: [
-    /* @__PURE__ */ jsxs11(DialogTitle4, { sx: { display: "flex", alignItems: "center", gap: 1, py: 1.5 }, children: [
-      /* @__PURE__ */ jsx14("iconify-icon", { icon: "mdi:code-json", width: "1.25em", height: "1.25em" }),
-      /* @__PURE__ */ jsxs11(Box5, { component: "span", sx: { fontWeight: 600 }, children: [
+  const view = useMemo7(() => jconfigView(jc, body), [jc, body]);
+  const json = useMemo7(() => JSON.stringify(view, null, 2), [view]);
+  return /* @__PURE__ */ jsxs12(Dialog4, { open, onClose, maxWidth: "sm", fullWidth: true, scroll: "paper", children: [
+    /* @__PURE__ */ jsxs12(DialogTitle4, { sx: { display: "flex", alignItems: "center", gap: 1, py: 1.5 }, children: [
+      /* @__PURE__ */ jsx15("iconify-icon", { icon: "mdi:code-json", width: "1.25em", height: "1.25em" }),
+      /* @__PURE__ */ jsxs12(Box6, { component: "span", sx: { fontWeight: 600 }, children: [
         "JCONFIG \xB7 ",
         tipo
       ] }),
-      /* @__PURE__ */ jsx14(Box5, { sx: { flex: 1 } }),
-      /* @__PURE__ */ jsx14(ButtonIconify, { icon: "mdi:close", title: "Cerrar", onClick: onClose })
+      /* @__PURE__ */ jsx15(Box6, { sx: { flex: 1 } }),
+      /* @__PURE__ */ jsx15(ButtonIconify, { icon: "mdi:close", title: "Cerrar", onClick: onClose })
     ] }),
-    /* @__PURE__ */ jsxs11(DialogContent5, { dividers: true, className: "custom-scrollbar", children: [
-      /* @__PURE__ */ jsxs11("div", { className: "meta-grid", children: [
-        /* @__PURE__ */ jsxs11("div", { className: "meta-row", children: [
-          /* @__PURE__ */ jsx14("span", { className: "meta-k", children: "Author" }),
-          /* @__PURE__ */ jsx14("span", { className: "meta-v", children: view.author || "\u2014" })
+    /* @__PURE__ */ jsxs12(DialogContent5, { dividers: true, className: "custom-scrollbar", children: [
+      /* @__PURE__ */ jsxs12("div", { className: "meta-grid", children: [
+        /* @__PURE__ */ jsxs12("div", { className: "meta-row", children: [
+          /* @__PURE__ */ jsx15("span", { className: "meta-k", children: "Author" }),
+          /* @__PURE__ */ jsx15("span", { className: "meta-v", children: view.author || "\u2014" })
         ] }),
-        /* @__PURE__ */ jsxs11("div", { className: "meta-row", children: [
-          /* @__PURE__ */ jsx14("span", { className: "meta-k", children: "Fmod" }),
-          /* @__PURE__ */ jsx14("span", { className: "meta-v", children: formatFmod(view.fmod) })
+        /* @__PURE__ */ jsxs12("div", { className: "meta-row", children: [
+          /* @__PURE__ */ jsx15("span", { className: "meta-k", children: "Fmod" }),
+          /* @__PURE__ */ jsx15("span", { className: "meta-v", children: formatFmod(view.fmod) })
         ] }),
-        /* @__PURE__ */ jsxs11("div", { className: "meta-row", children: [
-          /* @__PURE__ */ jsx14("span", { className: "meta-k", children: "Chars" }),
-          /* @__PURE__ */ jsx14("span", { className: "meta-v", children: view.chars ?? "\u2014" })
+        /* @__PURE__ */ jsxs12("div", { className: "meta-row", children: [
+          /* @__PURE__ */ jsx15("span", { className: "meta-k", children: "Chars" }),
+          /* @__PURE__ */ jsx15("span", { className: "meta-v", children: view.chars ?? "\u2014" })
         ] }),
-        /* @__PURE__ */ jsxs11("div", { className: "meta-row", children: [
-          /* @__PURE__ */ jsx14("span", { className: "meta-k", children: "Tokens" }),
-          /* @__PURE__ */ jsx14("span", { className: "meta-v", children: view.tokens ?? "\u2014" })
+        /* @__PURE__ */ jsxs12("div", { className: "meta-row", children: [
+          /* @__PURE__ */ jsx15("span", { className: "meta-k", children: "Tokens" }),
+          /* @__PURE__ */ jsx15("span", { className: "meta-v", children: view.tokens ?? "\u2014" })
         ] }),
-        /* @__PURE__ */ jsxs11("div", { className: "meta-row", children: [
-          /* @__PURE__ */ jsx14("span", { className: "meta-k", children: "Modelo" }),
-          /* @__PURE__ */ jsx14("span", { className: "meta-v", children: /* @__PURE__ */ jsx14("code", { children: view.model }) })
+        /* @__PURE__ */ jsxs12("div", { className: "meta-row", children: [
+          /* @__PURE__ */ jsx15("span", { className: "meta-k", children: "Modelo" }),
+          /* @__PURE__ */ jsx15("span", { className: "meta-v", children: /* @__PURE__ */ jsx15("code", { children: view.model }) })
         ] }),
-        /* @__PURE__ */ jsxs11("div", { className: "meta-row", children: [
-          /* @__PURE__ */ jsx14("span", { className: "meta-k", children: "temperature" }),
-          /* @__PURE__ */ jsx14("span", { className: "meta-v", children: view.temperature })
+        /* @__PURE__ */ jsxs12("div", { className: "meta-row", children: [
+          /* @__PURE__ */ jsx15("span", { className: "meta-k", children: "temperature" }),
+          /* @__PURE__ */ jsx15("span", { className: "meta-v", children: view.temperature })
         ] }),
-        /* @__PURE__ */ jsxs11("div", { className: "meta-row", children: [
-          /* @__PURE__ */ jsx14("span", { className: "meta-k", children: "top_p" }),
-          /* @__PURE__ */ jsx14("span", { className: "meta-v", children: view.top_p })
+        /* @__PURE__ */ jsxs12("div", { className: "meta-row", children: [
+          /* @__PURE__ */ jsx15("span", { className: "meta-k", children: "top_p" }),
+          /* @__PURE__ */ jsx15("span", { className: "meta-v", children: view.top_p })
         ] }),
-        /* @__PURE__ */ jsxs11("div", { className: "meta-row", children: [
-          /* @__PURE__ */ jsx14("span", { className: "meta-k", children: "Provider" }),
-          /* @__PURE__ */ jsx14("span", { className: "meta-v", children: /* @__PURE__ */ jsx14("code", { children: view.provider }) })
+        /* @__PURE__ */ jsxs12("div", { className: "meta-row", children: [
+          /* @__PURE__ */ jsx15("span", { className: "meta-k", children: "Provider" }),
+          /* @__PURE__ */ jsx15("span", { className: "meta-v", children: /* @__PURE__ */ jsx15("code", { children: view.provider }) })
         ] })
       ] }),
-      /* @__PURE__ */ jsx14(Typography5, { variant: "caption", color: "text.secondary", sx: { display: "block", mt: 2, mb: 0.5 }, children: "JSON persistido en BD" }),
-      /* @__PURE__ */ jsx14(
+      /* @__PURE__ */ jsx15(Typography6, { variant: "caption", color: "text.secondary", sx: { display: "block", mt: 2, mb: 0.5 }, children: "JSON persistido en BD" }),
+      /* @__PURE__ */ jsx15(
         CodeMirrorPanel,
         {
           value: json,
@@ -10290,7 +10481,7 @@ function JconfigDetailDialog({ open, onClose, tipo, jc, body }) {
 }
 
 // src/js/tools/PromptsSqlTool.jsx
-import { jsx as jsx15, jsxs as jsxs12 } from "react/jsx-runtime";
+import { jsx as jsx16, jsxs as jsxs13 } from "react/jsx-runtime";
 var { Paper, Alert: Alert5 } = getMaterialUI();
 var { useState: useState7, useCallback: useCallback4 } = getReact();
 function PromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
@@ -10301,9 +10492,9 @@ function PromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
       setEditorOpenSignal((n) => n + 1);
     }
   }, [tool.canEdit, tool.loadBusy]);
-  return /* @__PURE__ */ jsxs12("div", { className: "tool-grid tool-grid-prompts tool-grid-prompts--solo isa-tool-surface", children: [
-    /* @__PURE__ */ jsxs12(Paper, { className: "tool-panel scroll-panel config-tool-panel prompts-tool-panel", elevation: 0, children: [
-      /* @__PURE__ */ jsx15(
+  return /* @__PURE__ */ jsxs13("div", { className: "tool-grid tool-grid-prompts tool-grid-prompts--solo isa-tool-surface", children: [
+    /* @__PURE__ */ jsxs13(Paper, { className: "tool-panel scroll-panel config-tool-panel prompts-tool-panel", elevation: 0, children: [
+      /* @__PURE__ */ jsx16(
         PromptsSqlActionBar,
         {
           filledCount: tool.filledCount,
@@ -10322,9 +10513,9 @@ function PromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
           onSaveAll: tool.saveAll
         }
       ),
-      /* @__PURE__ */ jsxs12("div", { className: "panel-body panel-body-tabs custom-scrollbar", children: [
-        tool.loadErr && /* @__PURE__ */ jsx15(Alert5, { severity: "warning", sx: { mb: 1 }, children: tool.loadErr }),
-        /* @__PURE__ */ jsx15("div", { className: "prompt-instrucciones-zone", children: /* @__PURE__ */ jsx15(
+      /* @__PURE__ */ jsxs13("div", { className: "panel-body panel-body-tabs custom-scrollbar", children: [
+        tool.loadErr && /* @__PURE__ */ jsx16(Alert5, { severity: "warning", sx: { mb: 1 }, children: tool.loadErr }),
+        /* @__PURE__ */ jsx16("div", { className: "prompt-instrucciones-zone", children: /* @__PURE__ */ jsx16(
           PromptsSqlTree,
           {
             instruccionKeys: tool.instruccionKeys,
@@ -10336,7 +10527,7 @@ function PromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
             onDragLeave: tool.onDragLeave,
             onDragOverZone: tool.onDragOverZone,
             onDrop: tool.onDrop,
-            children: /* @__PURE__ */ jsx15(
+            children: /* @__PURE__ */ jsx16(
               PromptsSqlBodyEditor,
               {
                 activeTipo: tool.activeTipo,
@@ -10351,7 +10542,7 @@ function PromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
             )
           }
         ) }),
-        /* @__PURE__ */ jsx15(
+        /* @__PURE__ */ jsx16(
           PromptsSqlMapeoTable,
           {
             activeTipo: tool.activeTipo,
@@ -10371,7 +10562,7 @@ function PromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
         )
       ] })
     ] }),
-    /* @__PURE__ */ jsx15(
+    /* @__PURE__ */ jsx16(
       FileImportMapDialog,
       {
         open: tool.importDlg.open,
@@ -10382,7 +10573,7 @@ function PromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
         onConfirm: tool.confirmFileImport
       }
     ),
-    /* @__PURE__ */ jsx15(
+    /* @__PURE__ */ jsx16(
       JconfigDetailDialog,
       {
         open: tool.jconfigDlg.open,
@@ -10407,12 +10598,78 @@ init_patyiaChatApi();
 init_patyia();
 init_patyiaTokens();
 var DEFAULT_CONCURRENCY = 3;
-async function uploadFilesMultipart(path, jwt, input) {
+function unwrapIss(raw) {
+  const d = raw;
+  const enc = d?.encabezado;
+  if (enc && typeof enc === "object" && enc.resultado === false) {
+    throw new Error(String(enc.mensaje || "Error en la respuesta del servidor"));
+  }
+  if (d?.respuesta && typeof d.respuesta === "object" && !Array.isArray(d.respuesta)) return d.respuesta;
+  if (d?.body && typeof d.body === "object" && !Array.isArray(d.body)) return d.body;
+  return d;
+}
+function arrayBufferToBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  const chunk = 32768;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+function variantUrl(v) {
+  const u = String(v?.url || "").trim();
+  return u || void 0;
+}
+function rowToAdjunto(row, fallbackName, kind) {
+  const variants = row.jfile?.variants;
+  const original = variants?.original;
+  const url = original?.url || variants?.med?.url;
+  if (!url) throw new Error("ISS file/upload sin variants.original.url");
+  const variantUrls = {
+    ...variantUrl(variants?.thumb) ? { thumb: variantUrl(variants?.thumb) } : {},
+    ...variantUrl(variants?.med) ? { med: variantUrl(variants?.med) } : {},
+    ...variantUrl(original) ? { original: variantUrl(original) } : {}
+  };
+  return {
+    key: String(original?.key || ""),
+    url: String(url),
+    mime: String(original?.mime || row.jfile?.mime || "application/octet-stream"),
+    bytes: Number(original?.bytes ?? row.jfile?.meta?.sizeBytes ?? 0),
+    filename: String(row.jfile?.filename || fallbackName),
+    ifile: row.ifile ? String(row.ifile) : void 0,
+    kind,
+    ...Object.keys(variantUrls).length ? { variants: variantUrls } : {}
+  };
+}
+async function uploadOneFile(kind, jwt, file, signal) {
+  const base = resolveIssApiBase();
+  const headers = { "Content-Type": "application/json", ...jwt ? patyAuthHeaders(jwt) : {} };
+  const buf = await file.arrayBuffer();
+  const mime = (file.type || (kind === "audio" ? "audio/webm" : "image/jpeg")).split(";")[0].trim();
+  const res = await fetch(`${base}/api/file/upload`, {
+    method: "POST",
+    headers,
+    signal,
+    body: JSON.stringify({
+      kind,
+      mime,
+      filename: file.name || `${kind}-${Date.now()}`,
+      base64: arrayBufferToBase64(buf)
+    })
+  });
+  const ct = res.headers.get("content-type") || "";
+  const json = ct.includes("json") ? await res.json().catch(() => ({})) : {};
+  if (!res.ok) {
+    const err = json && typeof json === "object" && (json.error || json.message) || `HTTP ${res.status}`;
+    throw new Error(typeof err === "string" ? err : JSON.stringify(err));
+  }
+  const row = unwrapIss(json);
+  return rowToAdjunto(row, file.name || kind, kind);
+}
+async function uploadFiles(kind, jwt, input) {
   const { files, concurrency = DEFAULT_CONCURRENCY, onProgress, signal } = input;
   if (!files?.length) return [];
-  const base = resolveIssApiBase();
-  const headers = {};
-  if (jwt) Object.assign(headers, patyAuthHeaders(jwt));
   const results = new Array(files.length);
   let cursor = 0;
   const totalBytes = files.reduce((s, f) => s + (f?.size || 0), 0);
@@ -10422,47 +10679,35 @@ async function uploadFilesMultipart(path, jwt, input) {
       const i = cursor++;
       if (i >= files.length) return;
       const f = files[i];
-      const prevBytes = loadedBytes;
       try {
-        const fd = new FormData();
-        fd.append("files", f, f.name || `adjunto-${i + 1}`);
-        const res = await fetch(`${base}${path}`, {
-          method: "POST",
-          headers,
-          body: fd,
-          signal
-        });
-        const ct = res.headers.get("content-type") || "";
-        const json = ct.includes("json") ? await res.json().catch(() => ({})) : {};
-        if (!res.ok) {
-          const err = json && typeof json === "object" && (json.error || json.message) || `HTTP ${res.status}`;
-          throw new Error(typeof err === "string" ? err : JSON.stringify(err));
-        }
-        const itemsRaw = json && typeof json === "object" && Array.isArray(json.items) ? json.items : [];
-        const uploaded = itemsRaw[i] ?? itemsRaw[0];
-        if (!uploaded?.url) {
-          throw new Error("ISS devolvi\xF3 items sin url");
-        }
-        results[i] = { ...uploaded, filename: f.name };
-        loadedBytes = prevBytes + f.size;
+        results[i] = await uploadOneFile(kind, jwt, f, signal);
+        loadedBytes += f.size;
         onProgress?.({ loaded: loadedBytes, total: totalBytes, fileIndex: i });
       } catch (err) {
-        if (err?.name === "AbortError") {
-          throw err;
-        }
+        if (err?.name === "AbortError") throw err;
         throw new Error(`Subida fall\xF3 (${f.name || i}): ${err?.message || err}`);
       }
     }
   };
-  const lanes = Array.from({ length: Math.min(concurrency, files.length) }, () => worker());
-  await Promise.all(lanes);
+  await Promise.all(Array.from({ length: Math.min(concurrency, files.length) }, () => worker()));
   return results;
 }
 async function uploadAudios(jwt, files, onProgress, signal) {
-  return uploadFilesMultipart("/adjuntos/audios", jwt, { files, onProgress, signal });
+  return uploadFiles("audio", jwt, { files, onProgress, signal });
 }
 async function uploadImagenes(jwt, files, onProgress, signal) {
-  return uploadFilesMultipart("/adjuntos/imagenes", jwt, { files, onProgress, signal });
+  return uploadFiles("imagen", jwt, { files, onProgress, signal });
+}
+function chatRefsFromAdjuntos(items, kind) {
+  return items.map((i) => {
+    if (!i.ifile) return i.url;
+    return {
+      url: i.url,
+      ifile: i.ifile,
+      kind: i.kind || kind,
+      ...i.variants ? { variants: i.variants } : {}
+    };
+  }).filter((r) => typeof r === "string" ? Boolean(r) : Boolean(r.url));
 }
 
 // src/js/tools/chat/useChatTool.ts
@@ -10564,11 +10809,11 @@ function messageSourceFromUrl(chat) {
 
 // src/js/tools/chat/threadScroll.ts
 init_platform();
-var { useEffect: useEffect7, useLayoutEffect: useLayoutEffect2, useCallback: useCallback5, useRef: useRef4, useMemo: useMemo7 } = getReact();
+var { useEffect: useEffect7, useLayoutEffect: useLayoutEffect2, useCallback: useCallback5, useRef: useRef4, useMemo: useMemo8 } = getReact();
 var THREAD_SCROLL_NEAR_BOTTOM = 72;
 function useThreadScrollAnchor(scrollRef, mensajes, { sending = false } = {}) {
   const snapshotRef = useRef4(null);
-  const mensajesKey = useMemo7(
+  const mensajesKey = useMemo8(
     () => (mensajes || []).map((m) => m.idMsg === "stream-live" ? `${m.idMsg}:${String(m.contenido || "").length}` : m.idMsg).join("|"),
     [mensajes]
   );
@@ -11225,7 +11470,7 @@ function isVoiceRecordingSupported() {
 }
 
 // src/js/tools/chat/useChatTool.ts
-var { useState: useState8, useEffect: useEffect8, useCallback: useCallback6, useRef: useRef5, useMemo: useMemo8 } = getReact();
+var { useState: useState8, useEffect: useEffect8, useCallback: useCallback6, useRef: useRef5, useMemo: useMemo9 } = getReact();
 function readBootConvId(bootChat) {
   const fromBoot = Number(bootChat?.convId);
   if (fromBoot > 0) return fromBoot;
@@ -11394,12 +11639,12 @@ function useChatTool({ bootChat }) {
   const loggedIn = Session.isLoggedIn();
   const sessionUser = Session.username();
   const canAdminJwt = canAdminPortalJwt();
-  const canAuditChat = useMemo8(
+  const canAuditChat = useMemo9(
     () => canAccessOthers2(),
     [authTick]
   );
   const canInteract = canInteractPatyChat(sessionUser, jwt);
-  const listScope = useMemo8(() => {
+  const listScope = useMemo9(() => {
     const own = activeConvOwnerScope(null, jwt?.claims) ?? sessionBrowseScope;
     if (!canAuditChat) return own;
     return auditScope ?? own;
@@ -12013,8 +12258,8 @@ function useChatTool({ bootChat }) {
           void 0
         );
       }
-      const imagenesUrls = uploadedImages.map((u) => u.url);
-      const audiosUrls = uploadedAudios.map((u) => u.url);
+      const imagenesWire = chatRefsFromAdjuntos(uploadedImages, "imagen");
+      const audiosWire = chatRefsFromAdjuntos(uploadedAudios, "audio");
       const bindSidebarRow = (payload, opts) => {
         const id = Number(payload.iconversacion);
         if (!Number.isInteger(id) || id <= 0) return null;
@@ -12044,7 +12289,7 @@ function useChatTool({ bootChat }) {
       let boundEarly = false;
       const result = await sendConversacionStream(
         jwt,
-        { prompt: text, iconversacion: selectedId || void 0, imagenes: imagenesUrls, audios: audiosUrls, mode: chatMode, provider: llmProvider },
+        { prompt: text, iconversacion: selectedId || void 0, imagenes: imagenesWire, audios: audiosWire, mode: chatMode, provider: llmProvider },
         (partial, payload) => {
           if (partial) setStreamText(partial);
           if (!boundEarly && !convIdBefore && payload && Number(payload.iconversacion) > 0) {
@@ -12315,15 +12560,15 @@ function useChatTool({ bootChat }) {
       setRatingMsgId(null);
     }
   }, [canSend, jwt, selectedId]);
-  const chatUserDisplayName = useMemo8(
+  const chatUserDisplayName = useMemo9(
     () => resolveOwnerDisplayName(jwt, displayScope),
     [displayScope, jwt]
   );
-  const chatUserNick = useMemo8(
+  const chatUserNick = useMemo9(
     () => resolveOwnerNickname(jwt, sessionUser),
     [jwt, sessionUser]
   );
-  const displayMensajes = useMemo8(
+  const displayMensajes = useMemo9(
     () => appendStreamMsg(logMensajes, streamText, sending),
     [logMensajes, sending, streamText]
   );
@@ -12331,7 +12576,7 @@ function useChatTool({ bootChat }) {
     sending || selectedId && (loadingThread || detail || logMensajes.length > 0)
   );
   const onThreadScroll = useThreadScrollAnchor(threadScrollRef, displayMensajes, { sending });
-  const postBodyPreview = useMemo8(
+  const postBodyPreview = useMemo9(
     () => buildConversacionPostBody({
       prompt: draft,
       iconversacion: selectedId || void 0,
@@ -12356,11 +12601,11 @@ function useChatTool({ bootChat }) {
     }
   }, [jwt?.claims?.itercero, jwt?.claims?.icontacto, handleSelectAuditScope]);
   const auditCurrentScope = listScope;
-  const convListOwnerLabel = useMemo8(
+  const convListOwnerLabel = useMemo9(
     () => resolveConvListOwnerLabel(listScope, jwt, sessionUser),
     [listScope, jwt, sessionUser]
   );
-  const convListHeader = useMemo8(
+  const convListHeader = useMemo9(
     () => resolveConvListHeader(listScope, jwt, sessionUser),
     [listScope, jwt, sessionUser]
   );
@@ -12448,23 +12693,23 @@ function useChatTool({ bootChat }) {
 
 // src/js/tools/chat/ChatLoggedOutShell.jsx
 init_platform();
-import { jsx as jsx16, jsxs as jsxs13 } from "react/jsx-runtime";
+import { jsx as jsx17, jsxs as jsxs14 } from "react/jsx-runtime";
 var {
-  Box: Box6,
-  Typography: Typography6,
-  Stack: Stack7,
+  Box: Box7,
+  Typography: Typography7,
+  Stack: Stack8,
   Alert: Alert6
 } = getMaterialUI();
-var { Icon } = UI;
+var { Icon: Icon2 } = UI;
 function ChatLoggedOutShell() {
-  return /* @__PURE__ */ jsxs13(
-    Box6,
+  return /* @__PURE__ */ jsxs14(
+    Box7,
     {
       className: "conv-log-shell paty-chat-shell paty-chat-shell--logged-out",
       sx: { display: "flex", height: "100%", minHeight: 0, flexDirection: { xs: "column", md: "row" } },
       children: [
-        /* @__PURE__ */ jsxs13(
-          Box6,
+        /* @__PURE__ */ jsxs14(
+          Box7,
           {
             className: "conv-log-sidebar paty-chat-sidebar",
             sx: {
@@ -12482,37 +12727,37 @@ function ChatLoggedOutShell() {
             },
             "aria-hidden": "true",
             children: [
-              /* @__PURE__ */ jsx16(Stack7, { direction: "row", spacing: 1, alignItems: "center", className: "conv-log-sidebar-block", sx: { py: 1, borderBottom: 1, borderColor: "divider" }, children: /* @__PURE__ */ jsx16(Icon, { icon: "mdi:chat-outline", size: 20 }) }),
-              /* @__PURE__ */ jsx16(Box6, { className: "conv-log-sidebar-block paty-chat-sidebar-meta", sx: { pt: 0.75, pb: 0.75 }, children: /* @__PURE__ */ jsxs13(Box6, { className: "paty-chat-session paty-chat-session--skeleton", children: [
-                /* @__PURE__ */ jsx16(Box6, { className: "paty-chat-session__avatar", children: /* @__PURE__ */ jsx16(Icon, { icon: "mdi:account-outline", size: 20 }) }),
-                /* @__PURE__ */ jsxs13(Box6, { className: "paty-chat-session__body", children: [
-                  /* @__PURE__ */ jsx16("span", { className: "paty-chat-skeleton-line paty-chat-skeleton-line--md" }),
-                  /* @__PURE__ */ jsx16("span", { className: "paty-chat-skeleton-line paty-chat-skeleton-line--sm" })
+              /* @__PURE__ */ jsx17(Stack8, { direction: "row", spacing: 1, alignItems: "center", className: "conv-log-sidebar-block", sx: { py: 1, borderBottom: 1, borderColor: "divider" }, children: /* @__PURE__ */ jsx17(Icon2, { icon: "mdi:chat-outline", size: 20 }) }),
+              /* @__PURE__ */ jsx17(Box7, { className: "conv-log-sidebar-block paty-chat-sidebar-meta", sx: { pt: 0.75, pb: 0.75 }, children: /* @__PURE__ */ jsxs14(Box7, { className: "paty-chat-session paty-chat-session--skeleton", children: [
+                /* @__PURE__ */ jsx17(Box7, { className: "paty-chat-session__avatar", children: /* @__PURE__ */ jsx17(Icon2, { icon: "mdi:account-outline", size: 20 }) }),
+                /* @__PURE__ */ jsxs14(Box7, { className: "paty-chat-session__body", children: [
+                  /* @__PURE__ */ jsx17("span", { className: "paty-chat-skeleton-line paty-chat-skeleton-line--md" }),
+                  /* @__PURE__ */ jsx17("span", { className: "paty-chat-skeleton-line paty-chat-skeleton-line--sm" })
                 ] })
               ] }) }),
-              /* @__PURE__ */ jsxs13(Box6, { className: "conv-log-sidebar-block", sx: { flex: 1, pb: 1.5 }, children: [
-                /* @__PURE__ */ jsx16(Typography6, { variant: "caption", color: "text.secondary", sx: { mb: 1, display: "block" }, children: "Conversaciones" }),
-                [1, 2, 3, 4].map((i) => /* @__PURE__ */ jsxs13(Box6, { className: "paty-chat-skeleton-conv", children: [
-                  /* @__PURE__ */ jsx16("span", { className: "paty-chat-skeleton-line paty-chat-skeleton-line--xs" }),
-                  /* @__PURE__ */ jsx16("span", { className: "paty-chat-skeleton-line paty-chat-skeleton-line--lg" })
+              /* @__PURE__ */ jsxs14(Box7, { className: "conv-log-sidebar-block", sx: { flex: 1, pb: 1.5 }, children: [
+                /* @__PURE__ */ jsx17(Typography7, { variant: "caption", color: "text.secondary", sx: { mb: 1, display: "block" }, children: "Conversaciones" }),
+                [1, 2, 3, 4].map((i) => /* @__PURE__ */ jsxs14(Box7, { className: "paty-chat-skeleton-conv", children: [
+                  /* @__PURE__ */ jsx17("span", { className: "paty-chat-skeleton-line paty-chat-skeleton-line--xs" }),
+                  /* @__PURE__ */ jsx17("span", { className: "paty-chat-skeleton-line paty-chat-skeleton-line--lg" })
                 ] }, i))
               ] })
             ]
           }
         ),
-        /* @__PURE__ */ jsxs13(Box6, { sx: { flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", position: "relative" }, children: [
-          /* @__PURE__ */ jsx16(Box6, { sx: convLogSurfaceSx({ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 0, opacity: 0.45, pointerEvents: "none" }), "aria-hidden": "true", children: /* @__PURE__ */ jsx16(Box6, { sx: { textAlign: "center", maxWidth: 420, p: 2, borderRadius: 2, border: 1, borderColor: "divider", borderStyle: "dashed" }, children: /* @__PURE__ */ jsx16(Typography6, { variant: "body2", color: "text.secondary", children: "\xC1rea de conversaci\xF3n" }) }) }),
-          /* @__PURE__ */ jsx16(Box6, { className: "paty-chat-gate paty-chat-gate--overlay", children: /* @__PURE__ */ jsxs13(
-            Box6,
+        /* @__PURE__ */ jsxs14(Box7, { sx: { flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", position: "relative" }, children: [
+          /* @__PURE__ */ jsx17(Box7, { sx: convLogSurfaceSx({ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 0, opacity: 0.45, pointerEvents: "none" }), "aria-hidden": "true", children: /* @__PURE__ */ jsx17(Box7, { sx: { textAlign: "center", maxWidth: 420, p: 2, borderRadius: 2, border: 1, borderColor: "divider", borderStyle: "dashed" }, children: /* @__PURE__ */ jsx17(Typography7, { variant: "body2", color: "text.secondary", children: "\xC1rea de conversaci\xF3n" }) }) }),
+          /* @__PURE__ */ jsx17(Box7, { className: "paty-chat-gate paty-chat-gate--overlay", children: /* @__PURE__ */ jsxs14(
+            Box7,
             {
               className: "paty-chat-gate__inner isa-glass-card",
               sx: { p: { xs: 2.5, sm: 3 }, display: "flex", flexDirection: "column", gap: 2, alignItems: "stretch", boxSizing: "border-box", maxWidth: 520, width: "100%" },
               children: [
-                /* @__PURE__ */ jsxs13(Stack7, { direction: "row", spacing: 1, alignItems: "center", justifyContent: "center", children: [
-                  /* @__PURE__ */ jsx16(Icon, { icon: "mdi:login", width: "1.35em", height: "1.35em", style: { opacity: 0.85, flexShrink: 0 } }),
-                  /* @__PURE__ */ jsx16(Typography6, { variant: "h6", sx: { fontWeight: 700 }, children: "Chat" })
+                /* @__PURE__ */ jsxs14(Stack8, { direction: "row", spacing: 1, alignItems: "center", justifyContent: "center", children: [
+                  /* @__PURE__ */ jsx17(Icon2, { icon: "mdi:login", width: "1.35em", height: "1.35em", style: { opacity: 0.85, flexShrink: 0 } }),
+                  /* @__PURE__ */ jsx17(Typography7, { variant: "h6", sx: { fontWeight: 700 }, children: "Chat" })
                 ] }),
-                /* @__PURE__ */ jsx16(Alert6, { severity: "info", sx: { textAlign: "left", py: 0.75, px: 1.25 }, children: "Inicia sesi\xF3n con el bot\xF3n de la barra superior para ver conversaciones." })
+                /* @__PURE__ */ jsx17(Alert6, { severity: "info", sx: { textAlign: "left", py: 0.75, px: 1.25 }, children: "Inicia sesi\xF3n con el bot\xF3n de la barra superior para ver conversaciones." })
               ]
             }
           ) })
@@ -12530,10 +12775,10 @@ init_patyia_jwt();
 init_platform();
 init_patyia();
 init_patyia_jwt();
-import { jsx as jsx17, jsxs as jsxs14 } from "react/jsx-runtime";
-var { useState: useState9, useEffect: useEffect9, useMemo: useMemo9 } = getReact();
-var { Box: Box7, Typography: Typography7, CircularProgress: CircularProgress3, Chip: Chip6 } = getMaterialUI();
-var { Icon: Icon2 } = UI;
+import { jsx as jsx18, jsxs as jsxs15 } from "react/jsx-runtime";
+var { useState: useState9, useEffect: useEffect9, useMemo: useMemo10 } = getReact();
+var { Box: Box8, Typography: Typography8, CircularProgress: CircularProgress3, Chip: Chip7 } = getMaterialUI();
+var { Icon: Icon3 } = UI;
 var CHIP_SX = {
   live: { height: 18, "& .MuiChip-label": { px: 0.5, fontSize: "0.6rem", fontWeight: 600 } },
   readonly: { height: 18, "& .MuiChip-label": { px: 0.5, fontSize: "0.6rem", fontWeight: 600 } },
@@ -12541,38 +12786,38 @@ var CHIP_SX = {
 };
 function SessionModeChip({ canSend, jwtLoading }) {
   if (canSend) {
-    return /* @__PURE__ */ jsx17(
-      Chip6,
+    return /* @__PURE__ */ jsx18(
+      Chip7,
       {
         size: "small",
         variant: "outlined",
         label: "Interactivo",
-        icon: /* @__PURE__ */ jsx17(Icon2, { icon: "mdi:chat-processing-outline", size: 12, "aria-hidden": true }),
+        icon: /* @__PURE__ */ jsx18(Icon3, { icon: "mdi:chat-processing-outline", size: 12, "aria-hidden": true }),
         className: "paty-chat-session__badge paty-chat-session__badge--live",
         sx: CHIP_SX.live
       }
     );
   }
   if (jwtLoading) {
-    return /* @__PURE__ */ jsx17(
-      Chip6,
+    return /* @__PURE__ */ jsx18(
+      Chip7,
       {
         size: "small",
         variant: "outlined",
         label: "Token\u2026",
-        icon: /* @__PURE__ */ jsx17(CircularProgress3, { size: 9, color: "inherit" }),
+        icon: /* @__PURE__ */ jsx18(CircularProgress3, { size: 9, color: "inherit" }),
         className: "paty-chat-session__badge paty-chat-session__badge--loading",
         sx: CHIP_SX.loading
       }
     );
   }
-  return /* @__PURE__ */ jsx17(
-    Chip6,
+  return /* @__PURE__ */ jsx18(
+    Chip7,
     {
       size: "small",
       variant: "outlined",
       label: "Solo lectura",
-      icon: /* @__PURE__ */ jsx17(Icon2, { icon: "mdi:eye-outline", size: 12, "aria-hidden": true }),
+      icon: /* @__PURE__ */ jsx18(Icon3, { icon: "mdi:eye-outline", size: 12, "aria-hidden": true }),
       className: "paty-chat-session__badge paty-chat-session__badge--readonly",
       sx: CHIP_SX.readonly
     }
@@ -12585,14 +12830,14 @@ function ChatSessionPanel({ claims, displayScope, sessionUser: _sessionUser, own
   const scopeName = String(displayScope?.nombre ?? "").trim();
   const claimsName = jwtUserDisplayName(claims) || jwtUserShortName(claims);
   const primaryLabel = String(ownerDisplayName ?? "").trim() || scopeName || claimsName || codes || "ISA PatyIA";
-  const avatarUrl = useMemo9(() => buildUserAvatarUrl(primaryLabel, 72), [primaryLabel]);
+  const avatarUrl = useMemo10(() => buildUserAvatarUrl(primaryLabel, 72), [primaryLabel]);
   const [avatarOk, setAvatarOk] = useState9(true);
   useEffect9(() => {
     setAvatarOk(true);
   }, [avatarUrl]);
   const interactive = !!canAudit && typeof onOpenAudit === "function";
-  return /* @__PURE__ */ jsxs14(
-    Box7,
+  return /* @__PURE__ */ jsxs15(
+    Box8,
     {
       className: `paty-chat-session${interactive ? " paty-chat-session--clickable" : ""}`,
       role: interactive ? "button" : void 0,
@@ -12607,13 +12852,13 @@ function ChatSessionPanel({ claims, displayScope, sessionUser: _sessionUser, own
         }
       } : void 0,
       children: [
-        /* @__PURE__ */ jsx17(Box7, { className: "paty-chat-session__avatar", "aria-hidden": true, children: avatarOk ? /* @__PURE__ */ jsx17("img", { className: "paty-chat-session__avatar-img", src: avatarUrl, alt: "", width: 36, height: 36, loading: "lazy", decoding: "async", onError: () => setAvatarOk(false) }) : /* @__PURE__ */ jsx17(Icon2, { icon: "mdi:account-circle", size: 28 }) }),
-        /* @__PURE__ */ jsxs14(Box7, { className: "paty-chat-session__body", children: [
-          /* @__PURE__ */ jsx17(Typography7, { className: "paty-chat-session__name", noWrap: true, title: primaryLabel, children: primaryLabel }),
-          /* @__PURE__ */ jsxs14(Box7, { className: "paty-chat-session__meta", children: [
-            /* @__PURE__ */ jsx17(SessionModeChip, { canSend, jwtLoading }),
-            codes ? /* @__PURE__ */ jsx17(
-              Typography7,
+        /* @__PURE__ */ jsx18(Box8, { className: "paty-chat-session__avatar", "aria-hidden": true, children: avatarOk ? /* @__PURE__ */ jsx18("img", { className: "paty-chat-session__avatar-img", src: avatarUrl, alt: "", width: 36, height: 36, loading: "lazy", decoding: "async", onError: () => setAvatarOk(false) }) : /* @__PURE__ */ jsx18(Icon3, { icon: "mdi:account-circle", size: 28 }) }),
+        /* @__PURE__ */ jsxs15(Box8, { className: "paty-chat-session__body", children: [
+          /* @__PURE__ */ jsx18(Typography8, { className: "paty-chat-session__name", noWrap: true, title: primaryLabel, children: primaryLabel }),
+          /* @__PURE__ */ jsxs15(Box8, { className: "paty-chat-session__meta", children: [
+            /* @__PURE__ */ jsx18(SessionModeChip, { canSend, jwtLoading }),
+            codes ? /* @__PURE__ */ jsx18(
+              Typography8,
               {
                 className: "paty-chat-session__ids",
                 variant: "caption",
@@ -12625,7 +12870,7 @@ function ChatSessionPanel({ claims, displayScope, sessionUser: _sessionUser, own
             ) : null
           ] })
         ] }),
-        /* @__PURE__ */ jsx17(Box7, { className: "paty-chat-session__action", "aria-hidden": true, children: /* @__PURE__ */ jsx17(Icon2, { icon: "mdi:filter-variant", size: 14 }) })
+        /* @__PURE__ */ jsx18(Box8, { className: "paty-chat-session__action", "aria-hidden": true, children: /* @__PURE__ */ jsx18(Icon3, { icon: "mdi:filter-variant", size: 14 }) })
       ]
     }
   );
@@ -12633,11 +12878,11 @@ function ChatSessionPanel({ claims, displayScope, sessionUser: _sessionUser, own
 
 // src/js/tools/chat/ConvSearchAutocomplete.jsx
 init_platform();
-import { Fragment as Fragment6, jsx as jsx18, jsxs as jsxs15 } from "react/jsx-runtime";
+import { Fragment as Fragment6, jsx as jsx19, jsxs as jsxs16 } from "react/jsx-runtime";
 import { createElement as createElement2 } from "react";
-var { useState: useState10, useEffect: useEffect10, useRef: useRef6, useCallback: useCallback7, useMemo: useMemo10 } = getReact();
-var { Autocomplete, TextField: TextField4, Typography: Typography8, Box: Box8, IconButton: IconButton2, InputAdornment } = getMaterialUI();
-var { Icon: Icon3 } = UI;
+var { useState: useState10, useEffect: useEffect10, useRef: useRef6, useCallback: useCallback7, useMemo: useMemo11 } = getReact();
+var { Autocomplete, TextField: TextField4, Typography: Typography9, Box: Box9, IconButton: IconButton3, InputAdornment } = getMaterialUI();
+var { Icon: Icon4 } = UI;
 var DEBOUNCE_MS = 300;
 function convSearchFilter(text) {
   const raw = String(text ?? "").trim();
@@ -12670,7 +12915,7 @@ function ConvSearchAutocomplete({
   useEffect10(() => {
     setInputValue(search ?? "");
   }, [search]);
-  const selected = useMemo10(() => {
+  const selected = useMemo11(() => {
     if (!selectedId) return null;
     return rows.find((r) => Number(r.iconversacion) === Number(selectedId)) ?? null;
   }, [rows, selectedId]);
@@ -12696,7 +12941,7 @@ function ConvSearchAutocomplete({
   const showClear = Boolean(inputValue?.trim());
   const [menuOpen, setMenuOpen] = useState10(false);
   const fusedOpen = menuOpen ? " paty-chat-conv-search--open" : "";
-  return /* @__PURE__ */ jsx18(
+  return /* @__PURE__ */ jsx19(
     Autocomplete,
     {
       fullWidth: true,
@@ -12744,7 +12989,7 @@ function ConvSearchAutocomplete({
         }
       },
       renderOption: (props, row) => /* @__PURE__ */ createElement2(
-        Box8,
+        Box9,
         {
           component: "li",
           ...props,
@@ -12752,14 +12997,14 @@ function ConvSearchAutocomplete({
           className: "paty-chat-conv-search__option",
           sx: { display: "flex", alignItems: "center", justifyContent: "flex-start", py: 0.75 }
         },
-        /* @__PURE__ */ jsxs15(Typography8, { variant: "body2", className: "paty-chat-conv-search__option-label", sx: { fontWeight: 600 }, noWrap: true, children: [
-          /* @__PURE__ */ jsx18(Box8, { component: "span", className: "paty-chat-conv-search__option-id", children: row.iconversacion }),
-          /* @__PURE__ */ jsx18(Box8, { component: "span", className: "paty-chat-conv-search__option-title", children: String(row.titulo ?? "").trim() || "Sin t\xEDtulo" })
+        /* @__PURE__ */ jsxs16(Typography9, { variant: "body2", className: "paty-chat-conv-search__option-label", sx: { fontWeight: 600 }, noWrap: true, children: [
+          /* @__PURE__ */ jsx19(Box9, { component: "span", className: "paty-chat-conv-search__option-id", children: row.iconversacion }),
+          /* @__PURE__ */ jsx19(Box9, { component: "span", className: "paty-chat-conv-search__option-title", children: String(row.titulo ?? "").trim() || "Sin t\xEDtulo" })
         ] })
       ),
       renderInput: (params) => {
         const inputProps = params.InputProps ?? params.slotProps?.input ?? {};
-        return /* @__PURE__ */ jsx18(
+        return /* @__PURE__ */ jsx19(
           TextField4,
           {
             ...params,
@@ -12767,8 +13012,8 @@ function ConvSearchAutocomplete({
             placeholder,
             InputProps: {
               ...inputProps,
-              endAdornment: /* @__PURE__ */ jsxs15(Fragment6, { children: [
-                showClear ? /* @__PURE__ */ jsx18(InputAdornment, { position: "end", children: /* @__PURE__ */ jsx18(IconButton2, { size: "small", "aria-label": "Limpiar b\xFAsqueda", className: "paty-chat-conv-search__clear", onMouseDown: (e) => e.preventDefault(), onClick: clearSearch, children: /* @__PURE__ */ jsx18(Icon3, { icon: "mdi:close", size: 16 }) }) }) : null,
+              endAdornment: /* @__PURE__ */ jsxs16(Fragment6, { children: [
+                showClear ? /* @__PURE__ */ jsx19(InputAdornment, { position: "end", children: /* @__PURE__ */ jsx19(IconButton3, { size: "small", "aria-label": "Limpiar b\xFAsqueda", className: "paty-chat-conv-search__clear", onMouseDown: (e) => e.preventDefault(), onClick: clearSearch, children: /* @__PURE__ */ jsx19(Icon4, { icon: "mdi:close", size: 16 }) }) }) : null,
                 inputProps.endAdornment
               ] })
             }
@@ -12780,37 +13025,37 @@ function ConvSearchAutocomplete({
 }
 
 // src/js/tools/chat/ChatThreadSidebar.jsx
-import { Fragment as Fragment7, jsx as jsx19, jsxs as jsxs16 } from "react/jsx-runtime";
+import { Fragment as Fragment7, jsx as jsx20, jsxs as jsxs17 } from "react/jsx-runtime";
 var {
-  Box: Box9,
-  Typography: Typography9,
+  Box: Box10,
+  Typography: Typography10,
   Button: Button4,
-  IconButton: IconButton3,
+  IconButton: IconButton4,
   List: List2,
   ListItemButton: ListItemButton2,
   ListItemText: ListItemText2,
   CircularProgress: CircularProgress4,
-  Tooltip: Tooltip2,
-  Stack: Stack8,
+  Tooltip: Tooltip3,
+  Stack: Stack9,
   Divider: Divider3,
   Select: Select3,
   MenuItem: MenuItem3,
   FormControl: FormControl3
 } = getMaterialUI();
-var { Icon: Icon4 } = UI;
+var { Icon: Icon5 } = UI;
 function MessageSourceSwitch({ messageSource, onChange }) {
   const isProd = messageSource === "prod";
   const title = isProd ? "Modo producci\xF3n (sin meta)" : "Modo logs (con meta)";
   const hint = isProd ? "Clic para ver logs" : "Clic para ver producci\xF3n";
   const icon = isProd ? "mdi:earth" : "mdi:code-json";
-  return /* @__PURE__ */ jsx19(Tooltip2, { title: `${title} \xB7 ${hint}`, children: /* @__PURE__ */ jsx19(IconButton3, { color: "inherit", size: "small", onClick: () => onChange?.(isProd ? "logs" : "prod"), "aria-label": title, "aria-pressed": !isProd, children: /* @__PURE__ */ jsx19(Icon4, { icon, size: 18 }) }) });
+  return /* @__PURE__ */ jsx20(Tooltip3, { title: `${title} \xB7 ${hint}`, children: /* @__PURE__ */ jsx20(IconButton4, { color: "inherit", size: "small", onClick: () => onChange?.(isProd ? "logs" : "prod"), "aria-label": title, "aria-pressed": !isProd, children: /* @__PURE__ */ jsx20(Icon5, { icon, size: 18 }) }) });
 }
 function ChatModeSwitch({ mode, onChange }) {
   const isLibre = isLibreChatMode(mode);
   const title = isLibre ? "Libre" : "Patyia";
   const icon = isLibre ? "game-icons:freedom-dove" : "game-icons:bird-cage";
-  return /* @__PURE__ */ jsx19(Tooltip2, { title, children: /* @__PURE__ */ jsx19(
-    IconButton3,
+  return /* @__PURE__ */ jsx20(Tooltip3, { title, children: /* @__PURE__ */ jsx20(
+    IconButton4,
     {
       color: "inherit",
       size: "small",
@@ -12818,7 +13063,7 @@ function ChatModeSwitch({ mode, onChange }) {
       onClick: () => onChange?.(isLibre ? CHAT_MODE_PATYIA : CHAT_MODE_LIBRE),
       "aria-label": title,
       "aria-pressed": isLibre,
-      children: /* @__PURE__ */ jsx19(Icon4, { icon, size: 18 })
+      children: /* @__PURE__ */ jsx20(Icon5, { icon, size: 18 })
     }
   ) });
 }
@@ -12827,7 +13072,7 @@ function LlmProviderSwitch({ provider, onChange }) {
   const title = isMm ? "MiniMax M3" : "OpenAI";
   const hint = isMm ? "Clic \u2192 OpenAI (default)" : "Clic \u2192 MiniMax M3 (experimental)";
   const icon = isMm ? "mdi:creation" : "simple-icons:openai";
-  return /* @__PURE__ */ jsx19(Tooltip2, { title: `${title} \xB7 ${hint}`, children: /* @__PURE__ */ jsx19(
+  return /* @__PURE__ */ jsx20(Tooltip3, { title: `${title} \xB7 ${hint}`, children: /* @__PURE__ */ jsx20(
     Button4,
     {
       size: "small",
@@ -12837,7 +13082,7 @@ function LlmProviderSwitch({ provider, onChange }) {
       onClick: () => onChange?.(isMm ? CHAT_PROVIDER_OPENAI : CHAT_PROVIDER_MINIMAX),
       "aria-label": title,
       "aria-pressed": isMm,
-      startIcon: /* @__PURE__ */ jsx19(Icon4, { icon, size: 16 }),
+      startIcon: /* @__PURE__ */ jsx20(Icon5, { icon, size: 16 }),
       sx: { textTransform: "none", minWidth: 0, px: 0.75, py: 0.25, fontWeight: 600, fontSize: "0.75rem", lineHeight: 1.2, bgcolor: "transparent", boxShadow: "none", "&:hover": { bgcolor: "transparent" } },
       children: isMm ? "MiniMax" : "OpenAI"
     }
@@ -12852,8 +13097,8 @@ function ChatSidebarHeaderActions({
   onChatModeChange,
   onLlmProviderChange
 }) {
-  return /* @__PURE__ */ jsxs16(
-    Stack8,
+  return /* @__PURE__ */ jsxs17(
+    Stack9,
     {
       direction: "row",
       spacing: 0.35,
@@ -12862,10 +13107,10 @@ function ChatSidebarHeaderActions({
       onClick: (e) => e.stopPropagation(),
       onKeyDown: (e) => e.stopPropagation(),
       children: [
-        onClose ? /* @__PURE__ */ jsx19(Tooltip2, { title: "Cerrar panel", children: /* @__PURE__ */ jsx19(IconButton3, { size: "small", onClick: onClose, "aria-label": "Cerrar panel", children: /* @__PURE__ */ jsx19(Icon4, { icon: "mdi:close", size: 18 }) }) }) : null,
-        onMessageSourceChange ? /* @__PURE__ */ jsx19(MessageSourceSwitch, { messageSource, onChange: onMessageSourceChange }) : null,
-        onChatModeChange ? /* @__PURE__ */ jsx19(ChatModeSwitch, { mode, onChange: onChatModeChange }) : null,
-        onLlmProviderChange ? /* @__PURE__ */ jsx19(LlmProviderSwitch, { provider: llmProvider, onChange: onLlmProviderChange }) : null
+        onClose ? /* @__PURE__ */ jsx20(Tooltip3, { title: "Cerrar panel", children: /* @__PURE__ */ jsx20(IconButton4, { size: "small", onClick: onClose, "aria-label": "Cerrar panel", children: /* @__PURE__ */ jsx20(Icon5, { icon: "mdi:close", size: 18 }) }) }) : null,
+        onMessageSourceChange ? /* @__PURE__ */ jsx20(MessageSourceSwitch, { messageSource, onChange: onMessageSourceChange }) : null,
+        onChatModeChange ? /* @__PURE__ */ jsx20(ChatModeSwitch, { mode, onChange: onChatModeChange }) : null,
+        onLlmProviderChange ? /* @__PURE__ */ jsx20(LlmProviderSwitch, { provider: llmProvider, onChange: onLlmProviderChange }) : null
       ]
     }
   );
@@ -12875,7 +13120,7 @@ function ChatNewConversationButton({ canSend, onNewChat, onClose, compact = fals
     onNewChat?.();
     onClose?.();
   };
-  return /* @__PURE__ */ jsx19(Tooltip2, { title: "Nueva conversaci\xF3n", children: /* @__PURE__ */ jsx19("span", { children: compact ? /* @__PURE__ */ jsx19(IconButton3, { size: "small", color: "primary", disabled: !canSend, onClick: handleClick, "aria-label": "Nueva conversaci\xF3n", children: /* @__PURE__ */ jsx19(Icon4, { icon: "mdi:plus", size: 20 }) }) : /* @__PURE__ */ jsx19(Button4, { variant: "contained", size: "small", disabled: !canSend, startIcon: /* @__PURE__ */ jsx19(Icon4, { icon: "mdi:plus", size: 16 }), onClick: handleClick, children: "Nueva" }) }) });
+  return /* @__PURE__ */ jsx20(Tooltip3, { title: "Nueva conversaci\xF3n", children: /* @__PURE__ */ jsx20("span", { children: compact ? /* @__PURE__ */ jsx20(IconButton4, { size: "small", color: "primary", disabled: !canSend, onClick: handleClick, "aria-label": "Nueva conversaci\xF3n", children: /* @__PURE__ */ jsx20(Icon5, { icon: "mdi:plus", size: 20 }) }) : /* @__PURE__ */ jsx20(Button4, { variant: "contained", size: "small", disabled: !canSend, startIcon: /* @__PURE__ */ jsx20(Icon5, { icon: "mdi:plus", size: 16 }), onClick: handleClick, children: "Nueva" }) }) });
 }
 function ChatSidebarBody({
   jwt,
@@ -12910,8 +13155,8 @@ function ChatSidebarBody({
     onOpenConv(id);
     onClose?.();
   };
-  return /* @__PURE__ */ jsxs16(Fragment7, { children: [
-    /* @__PURE__ */ jsx19(Box9, { className: "conv-log-sidebar-block paty-chat-sidebar-meta", sx: { pt: 0.75, pb: 0.75, flexShrink: 0 }, children: /* @__PURE__ */ jsx19(
+  return /* @__PURE__ */ jsxs17(Fragment7, { children: [
+    /* @__PURE__ */ jsx20(Box10, { className: "conv-log-sidebar-block paty-chat-sidebar-meta", sx: { pt: 0.75, pb: 0.75, flexShrink: 0 }, children: /* @__PURE__ */ jsx20(
       ChatSessionPanel,
       {
         claims: jwt?.claims ?? null,
@@ -12924,17 +13169,17 @@ function ChatSidebarBody({
         onOpenAudit
       }
     ) }),
-    /* @__PURE__ */ jsx19(Divider3, { sx: { my: 1 } }),
-    /* @__PURE__ */ jsxs16(Box9, { className: "conv-log-sidebar-block paty-chat-sidebar-list-head", sx: { flexShrink: 0, pb: 0.5 }, children: [
-      /* @__PURE__ */ jsxs16(Stack8, { direction: "row", alignItems: "flex-start", spacing: 0.75, sx: { mb: 0.5, minWidth: 0 }, children: [
-        /* @__PURE__ */ jsxs16(Typography9, { variant: "caption", color: "text.secondary", sx: { flex: 1, minWidth: 0, fontWeight: 600 }, children: [
+    /* @__PURE__ */ jsx20(Divider3, { sx: { my: 1 } }),
+    /* @__PURE__ */ jsxs17(Box10, { className: "conv-log-sidebar-block paty-chat-sidebar-list-head", sx: { flexShrink: 0, pb: 0.5 }, children: [
+      /* @__PURE__ */ jsxs17(Stack9, { direction: "row", alignItems: "flex-start", spacing: 0.75, sx: { mb: 0.5, minWidth: 0 }, children: [
+        /* @__PURE__ */ jsxs17(Typography10, { variant: "caption", color: "text.secondary", sx: { flex: 1, minWidth: 0, fontWeight: 600 }, children: [
           "Conversaciones",
-          (jwt?.token || listScope) && (convListHeader || convListOwnerLabel) ? /* @__PURE__ */ jsx19(Stack8, { direction: "row", spacing: 0.5, alignItems: "center", useFlexGap: true, flexWrap: "wrap", sx: { mt: 0.25 }, children: /* @__PURE__ */ jsx19(Typography9, { variant: "caption", sx: { fontWeight: 500, color: "text.primary" }, children: convListHeader || convListOwnerLabel }) }) : null,
-          needsJwt ? /* @__PURE__ */ jsx19(Typography9, { component: "span", variant: "caption", sx: { display: "block", color: "info.main", mt: 0.25 }, children: listScope?.nombre ? `${listScope.nombre} \xB7 modo lectura` : sessionScopeLoading ? "Buscando tus conversaciones\u2026" : "Sin contacto identificado \xB7 filtra por usuario" }) : null
+          (jwt?.token || listScope) && (convListHeader || convListOwnerLabel) ? /* @__PURE__ */ jsx20(Stack9, { direction: "row", spacing: 0.5, alignItems: "center", useFlexGap: true, flexWrap: "wrap", sx: { mt: 0.25 }, children: /* @__PURE__ */ jsx20(Typography10, { variant: "caption", sx: { fontWeight: 500, color: "text.primary" }, children: convListHeader || convListOwnerLabel }) }) : null,
+          needsJwt ? /* @__PURE__ */ jsx20(Typography10, { component: "span", variant: "caption", sx: { display: "block", color: "info.main", mt: 0.25 }, children: listScope?.nombre ? `${listScope.nombre} \xB7 modo lectura` : sessionScopeLoading ? "Buscando tus conversaciones\u2026" : "Sin contacto identificado \xB7 filtra por usuario" }) : null
         ] }),
-        /* @__PURE__ */ jsx19(Box9, { sx: { flexShrink: 0, pt: 0.1 }, children: /* @__PURE__ */ jsx19(ChatNewConversationButton, { canSend, onNewChat, onClose }) })
+        /* @__PURE__ */ jsx20(Box10, { sx: { flexShrink: 0, pt: 0.1 }, children: /* @__PURE__ */ jsx20(ChatNewConversationButton, { canSend, onNewChat, onClose }) })
       ] }),
-      /* @__PURE__ */ jsx19(
+      /* @__PURE__ */ jsx20(
         ConvSearchAutocomplete,
         {
           rows,
@@ -12947,18 +13192,18 @@ function ChatSidebarBody({
         }
       )
     ] }),
-    /* @__PURE__ */ jsxs16(
-      Box9,
+    /* @__PURE__ */ jsxs17(
+      Box10,
       {
         className: "conv-log-sidebar-block paty-chat-sidebar-list-scroll",
         sx: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" },
         children: [
-          /* @__PURE__ */ jsx19(Box9, { className: "paty-chat-sidebar-list-inner", sx: { flex: 1, minHeight: 0, overflow: "auto" }, children: /* @__PURE__ */ jsxs16(List2, { dense: true, disablePadding: true, children: [
-            loadingList && !rows.length && /* @__PURE__ */ jsx19(Box9, { sx: { py: 2, textAlign: "center" }, children: /* @__PURE__ */ jsx19(CircularProgress4, { size: 22 }) }),
+          /* @__PURE__ */ jsx20(Box10, { className: "paty-chat-sidebar-list-inner", sx: { flex: 1, minHeight: 0, overflow: "auto" }, children: /* @__PURE__ */ jsxs17(List2, { dense: true, disablePadding: true, children: [
+            loadingList && !rows.length && /* @__PURE__ */ jsx20(Box10, { sx: { py: 2, textAlign: "center" }, children: /* @__PURE__ */ jsx20(CircularProgress4, { size: 22 }) }),
             rows.map((r) => {
               const convTitle = r.titulo || "Sin t\xEDtulo";
               const convTip = `${r.iconversacion} \xB7 ${convTitle}`;
-              return /* @__PURE__ */ jsxs16(
+              return /* @__PURE__ */ jsxs17(
                 ListItemButton2,
                 {
                   className: "paty-chat-conv-item",
@@ -12976,16 +13221,16 @@ function ChatSidebarBody({
                     gap: 0.5
                   },
                   children: [
-                    /* @__PURE__ */ jsx19(
+                    /* @__PURE__ */ jsx20(
                       ListItemText2,
                       {
                         sx: { flex: 1, minWidth: 0, m: 0 },
-                        primary: /* @__PURE__ */ jsxs16(Stack8, { direction: "row", spacing: 0.5, alignItems: "center", className: "paty-chat-conv-item__title", sx: { minWidth: 0, pointerEvents: "none" }, children: [
-                          /* @__PURE__ */ jsx19("span", { className: "paty-chat-conv-id-badge", children: r.iconversacion }),
-                          /* @__PURE__ */ jsx19(Typography9, { component: "span", variant: "body2", noWrap: true, sx: { fontWeight: 600, minWidth: 0, flex: 1 }, children: convTitle })
+                        primary: /* @__PURE__ */ jsxs17(Stack9, { direction: "row", spacing: 0.5, alignItems: "center", className: "paty-chat-conv-item__title", sx: { minWidth: 0, pointerEvents: "none" }, children: [
+                          /* @__PURE__ */ jsx20("span", { className: "paty-chat-conv-id-badge", children: r.iconversacion }),
+                          /* @__PURE__ */ jsx20(Typography10, { component: "span", variant: "body2", noWrap: true, sx: { fontWeight: 600, minWidth: 0, flex: 1 }, children: convTitle })
                         ] }),
-                        secondary: /* @__PURE__ */ jsx19(
-                          Typography9,
+                        secondary: /* @__PURE__ */ jsx20(
+                          Typography10,
                           {
                             component: "span",
                             variant: "caption",
@@ -13002,19 +13247,19 @@ function ChatSidebarBody({
                         }
                       }
                     ),
-                    canSend && convBelongsToJwt(r, jwt.claims) ? /* @__PURE__ */ jsx19(IconButton3, { size: "small", color: "error", "aria-label": "Eliminar", className: "paty-chat-conv-item__delete", onClick: (e) => {
+                    canSend && convBelongsToJwt(r, jwt.claims) ? /* @__PURE__ */ jsx20(IconButton4, { size: "small", color: "error", "aria-label": "Eliminar", className: "paty-chat-conv-item__delete", onClick: (e) => {
                       e.stopPropagation();
                       onDelete(r.iconversacion);
-                    }, sx: { flexShrink: 0, mr: 0 }, children: /* @__PURE__ */ jsx19(Icon4, { icon: "mdi:delete-outline", size: 16 }) }) : null
+                    }, sx: { flexShrink: 0, mr: 0 }, children: /* @__PURE__ */ jsx20(Icon5, { icon: "mdi:delete-outline", size: 16 }) }) : null
                   ]
                 },
                 r.iconversacion
               );
             })
           ] }) }),
-          convListMeta ? /* @__PURE__ */ jsx19(Box9, { className: "conv-log-sidebar-block paty-chat-sidebar-list-foot paty-chat-sidebar-list-foot--sticky", sx: { flexShrink: 0, pt: 0.5, pb: 0.5, px: 0 }, children: /* @__PURE__ */ jsxs16(Box9, { className: "paty-chat-conv-pager", role: "navigation", "aria-label": "Paginaci\xF3n de conversaciones", children: [
-            /* @__PURE__ */ jsxs16(
-              Typography9,
+          convListMeta ? /* @__PURE__ */ jsx20(Box10, { className: "conv-log-sidebar-block paty-chat-sidebar-list-foot paty-chat-sidebar-list-foot--sticky", sx: { flexShrink: 0, pt: 0.5, pb: 0.5, px: 0 }, children: /* @__PURE__ */ jsxs17(Box10, { className: "paty-chat-conv-pager", role: "navigation", "aria-label": "Paginaci\xF3n de conversaciones", children: [
+            /* @__PURE__ */ jsxs17(
+              Typography10,
               {
                 component: "span",
                 variant: "caption",
@@ -13027,13 +13272,13 @@ function ChatSidebarBody({
                 ]
               }
             ),
-            /* @__PURE__ */ jsxs16(Stack8, { direction: "row", spacing: 0.35, alignItems: "center", className: "paty-chat-conv-pager__controls", children: [
-              onConvListPageSizeChange ? /* @__PURE__ */ jsx19(
-                Tooltip2,
+            /* @__PURE__ */ jsxs17(Stack9, { direction: "row", spacing: 0.35, alignItems: "center", className: "paty-chat-conv-pager__controls", children: [
+              onConvListPageSizeChange ? /* @__PURE__ */ jsx20(
+                Tooltip3,
                 {
                   title: "Conversaciones por p\xE1gina",
                   slotProps: { popper: { sx: { pointerEvents: "none" } } },
-                  children: /* @__PURE__ */ jsx19(FormControl3, { className: "paty-chat-conv-pager__size", sx: { m: 0, minWidth: 44 }, children: /* @__PURE__ */ jsx19(
+                  children: /* @__PURE__ */ jsx20(FormControl3, { className: "paty-chat-conv-pager__size", sx: { m: 0, minWidth: 44 }, children: /* @__PURE__ */ jsx20(
                     Select3,
                     {
                       size: "small",
@@ -13043,32 +13288,32 @@ function ChatSidebarBody({
                       disabled: loadingList,
                       variant: "outlined",
                       MenuProps: { PaperProps: { sx: { "& .MuiMenuItem-root": { minHeight: 24, py: 0.2, fontSize: "0.68rem" } } } },
-                      children: CONV_LIST_PAGE_SIZE_OPTIONS.map((n) => /* @__PURE__ */ jsx19(MenuItem3, { value: n, children: n }, n))
+                      children: CONV_LIST_PAGE_SIZE_OPTIONS.map((n) => /* @__PURE__ */ jsx20(MenuItem3, { value: n, children: n }, n))
                     }
                   ) })
                 }
               ) : null,
-              convListMeta.pages > 1 ? /* @__PURE__ */ jsxs16(Stack8, { direction: "row", spacing: 0.5, className: "paty-chat-conv-pager__nav", children: [
-                /* @__PURE__ */ jsx19(Tooltip2, { title: "P\xE1gina anterior", children: /* @__PURE__ */ jsx19("span", { children: /* @__PURE__ */ jsx19(
-                  IconButton3,
+              convListMeta.pages > 1 ? /* @__PURE__ */ jsxs17(Stack9, { direction: "row", spacing: 0.5, className: "paty-chat-conv-pager__nav", children: [
+                /* @__PURE__ */ jsx20(Tooltip3, { title: "P\xE1gina anterior", children: /* @__PURE__ */ jsx20("span", { children: /* @__PURE__ */ jsx20(
+                  IconButton4,
                   {
                     size: "small",
                     className: "paty-chat-conv-pager__btn",
                     "aria-label": "P\xE1gina anterior",
                     disabled: loadingList || convListPage <= 1,
                     onClick: () => onConvListPageChange((p) => Math.max(1, p - 1)),
-                    children: /* @__PURE__ */ jsx19(Icon4, { icon: "mdi:chevron-left", size: 16 })
+                    children: /* @__PURE__ */ jsx20(Icon5, { icon: "mdi:chevron-left", size: 16 })
                   }
                 ) }) }),
-                /* @__PURE__ */ jsx19(Tooltip2, { title: "P\xE1gina siguiente", children: /* @__PURE__ */ jsx19("span", { children: /* @__PURE__ */ jsx19(
-                  IconButton3,
+                /* @__PURE__ */ jsx20(Tooltip3, { title: "P\xE1gina siguiente", children: /* @__PURE__ */ jsx20("span", { children: /* @__PURE__ */ jsx20(
+                  IconButton4,
                   {
                     size: "small",
                     className: "paty-chat-conv-pager__btn",
                     "aria-label": "P\xE1gina siguiente",
                     disabled: loadingList || convListPage >= convListMeta.pages,
                     onClick: () => onConvListPageChange((p) => p + 1),
-                    children: /* @__PURE__ */ jsx19(Icon4, { icon: "mdi:chevron-right", size: 16 })
+                    children: /* @__PURE__ */ jsx20(Icon5, { icon: "mdi:chevron-right", size: 16 })
                   }
                 ) }) })
               ] }) : null
@@ -13150,17 +13395,17 @@ function ChatThreadSidebar({
     onClose
   };
   if (splitMode) {
-    return /* @__PURE__ */ jsx19(
-      Box9,
+    return /* @__PURE__ */ jsx20(
+      Box10,
       {
         className: "paty-chat-sidebar-inner",
         sx: { display: "flex", flexDirection: "column", minHeight: 0, height: "100%", overflow: "hidden" },
-        children: /* @__PURE__ */ jsx19(ChatSidebarBody, { ...bodyProps })
+        children: /* @__PURE__ */ jsx20(ChatSidebarBody, { ...bodyProps })
       }
     );
   }
-  return /* @__PURE__ */ jsxs16(
-    Box9,
+  return /* @__PURE__ */ jsxs17(
+    Box10,
     {
       className: "conv-log-sidebar paty-chat-sidebar",
       sx: {
@@ -13180,8 +13425,8 @@ function ChatThreadSidebar({
         boxSizing: "border-box"
       },
       children: [
-        onClose || onMessageSourceChange || onChatModeChange || onLlmProviderChange ? /* @__PURE__ */ jsx19(
-          Stack8,
+        onClose || onMessageSourceChange || onChatModeChange || onLlmProviderChange ? /* @__PURE__ */ jsx20(
+          Stack9,
           {
             direction: "row",
             spacing: 1,
@@ -13189,7 +13434,7 @@ function ChatThreadSidebar({
             justifyContent: "flex-end",
             className: "conv-log-sidebar-block",
             sx: { py: 0.5, borderBottom: 1, borderColor: "divider", flexShrink: 0 },
-            children: /* @__PURE__ */ jsx19(
+            children: /* @__PURE__ */ jsx20(
               ChatSidebarHeaderActions,
               {
                 onClose,
@@ -13203,7 +13448,7 @@ function ChatThreadSidebar({
             )
           }
         ) : null,
-        /* @__PURE__ */ jsx19(ChatSidebarBody, { ...bodyProps })
+        /* @__PURE__ */ jsx20(ChatSidebarBody, { ...bodyProps })
       ]
     }
   );
@@ -13219,19 +13464,19 @@ init_patyia_jwt();
 // src/js/tools/chat/ChatPayloadPreview.jsx
 init_platform();
 init_patyiaChatApi();
-import { jsx as jsx20, jsxs as jsxs17 } from "react/jsx-runtime";
-var { useMemo: useMemo11 } = getReact();
-var { Icon: Icon5 } = UI;
+import { jsx as jsx21, jsxs as jsxs18 } from "react/jsx-runtime";
+var { useMemo: useMemo12 } = getReact();
+var { Icon: Icon6 } = UI;
 function ChatPayloadPreview({ open, body, endpoint, onClose }) {
-  const { Box: Box33, Typography: Typography28, Paper: Paper6, IconButton: IconButton14, Tooltip: Tooltip15 } = getMaterialUI();
-  const previewJson = useMemo11(
+  const { Box: Box34, Typography: Typography29, Paper: Paper6, IconButton: IconButton15, Tooltip: Tooltip16 } = getMaterialUI();
+  const previewJson = useMemo12(
     () => formatConversacionPostBodyPreview(body),
     [body]
   );
   const imageCount = Array.isArray(body.imagenes) ? body.imagenes.length : 0;
   const audioCount = Array.isArray(body.audios) ? body.audios.length : 0;
   if (!open) return null;
-  return /* @__PURE__ */ jsxs17(
+  return /* @__PURE__ */ jsxs18(
     Paper6,
     {
       className: "paty-chat-payload-preview",
@@ -13239,35 +13484,35 @@ function ChatPayloadPreview({ open, body, endpoint, onClose }) {
       role: "region",
       "aria-label": "Vista previa del body POST",
       children: [
-        /* @__PURE__ */ jsxs17(Box33, { className: "paty-chat-payload-preview__head", children: [
-          /* @__PURE__ */ jsxs17(Box33, { className: "paty-chat-payload-preview__head-main", children: [
-            /* @__PURE__ */ jsx20(Typography28, { variant: "caption", className: "paty-chat-payload-preview__method", children: "POST" }),
-            /* @__PURE__ */ jsx20(Typography28, { variant: "caption", component: "code", className: "paty-chat-payload-preview__path", children: endpoint }),
-            imageCount > 0 ? /* @__PURE__ */ jsxs17(Typography28, { variant: "caption", className: "paty-chat-payload-preview__meta", children: [
+        /* @__PURE__ */ jsxs18(Box34, { className: "paty-chat-payload-preview__head", children: [
+          /* @__PURE__ */ jsxs18(Box34, { className: "paty-chat-payload-preview__head-main", children: [
+            /* @__PURE__ */ jsx21(Typography29, { variant: "caption", className: "paty-chat-payload-preview__method", children: "POST" }),
+            /* @__PURE__ */ jsx21(Typography29, { variant: "caption", component: "code", className: "paty-chat-payload-preview__path", children: endpoint }),
+            imageCount > 0 ? /* @__PURE__ */ jsxs18(Typography29, { variant: "caption", className: "paty-chat-payload-preview__meta", children: [
               imageCount,
               " imagen",
               imageCount !== 1 ? "es" : "",
               " \xB7 base64"
             ] }) : null,
-            audioCount > 0 ? /* @__PURE__ */ jsxs17(Typography28, { variant: "caption", className: "paty-chat-payload-preview__meta", children: [
+            audioCount > 0 ? /* @__PURE__ */ jsxs18(Typography29, { variant: "caption", className: "paty-chat-payload-preview__meta", children: [
               audioCount,
               " audio",
               audioCount !== 1 ? "s" : "",
               " \xB7 base64"
             ] }) : null
           ] }),
-          /* @__PURE__ */ jsx20(Tooltip15, { title: "Cerrar vista previa", children: /* @__PURE__ */ jsx20(
-            IconButton14,
+          /* @__PURE__ */ jsx21(Tooltip16, { title: "Cerrar vista previa", children: /* @__PURE__ */ jsx21(
+            IconButton15,
             {
               size: "small",
               className: "paty-chat-payload-preview__close",
               "aria-label": "Cerrar vista previa del body POST",
               onClick: onClose,
-              children: /* @__PURE__ */ jsx20(Icon5, { icon: "mdi:close", size: 18 })
+              children: /* @__PURE__ */ jsx21(Icon6, { icon: "mdi:close", size: 18 })
             }
           ) })
         ] }),
-        /* @__PURE__ */ jsx20(Box33, { className: "paty-chat-payload-preview__body", children: /* @__PURE__ */ jsx20(
+        /* @__PURE__ */ jsx21(Box34, { className: "paty-chat-payload-preview__body", children: /* @__PURE__ */ jsx21(
           CodeMirrorPanel,
           {
             value: previewJson,
@@ -13282,17 +13527,17 @@ function ChatPayloadPreview({ open, body, endpoint, onClose }) {
             className: "paty-chat-payload-preview__cm"
           }
         ) }),
-        /* @__PURE__ */ jsxs17(Typography28, { variant: "caption", className: "paty-chat-payload-preview__foot", children: [
+        /* @__PURE__ */ jsxs18(Typography29, { variant: "caption", className: "paty-chat-payload-preview__foot", children: [
           "Vista previa en vivo \u2014 el env\xEDo incluye base64 completo en ",
-          /* @__PURE__ */ jsx20("code", { children: "imagenes[]" }),
+          /* @__PURE__ */ jsx21("code", { children: "imagenes[]" }),
           " y ",
-          /* @__PURE__ */ jsx20("code", { children: "audios[]" }),
+          /* @__PURE__ */ jsx21("code", { children: "audios[]" }),
           ".",
           " ",
           "ISS acepta im\xE1genes ",
-          /* @__PURE__ */ jsx20("code", { children: "data:image/(png|jpeg|webp|gif);base64,\u2026" }),
+          /* @__PURE__ */ jsx21("code", { children: "data:image/(png|jpeg|webp|gif);base64,\u2026" }),
           " (m\xE1x. 10) y audios ",
-          /* @__PURE__ */ jsx20("code", { children: "data:audio/*;base64,\u2026" }),
+          /* @__PURE__ */ jsx21("code", { children: "data:audio/*;base64,\u2026" }),
           " (m\xE1x. 5, transcritos con Whisper)."
         ] })
       ]
@@ -13301,17 +13546,17 @@ function ChatPayloadPreview({ open, body, endpoint, onClose }) {
 }
 
 // src/js/tools/chat/ChatComposer.jsx
-import { jsx as jsx21, jsxs as jsxs18 } from "react/jsx-runtime";
-var { useState: useState11, useMemo: useMemo12, useEffect: useEffect11 } = getReact();
+import { jsx as jsx22, jsxs as jsxs19 } from "react/jsx-runtime";
+var { useState: useState11, useMemo: useMemo13, useEffect: useEffect11 } = getReact();
 var {
-  Box: Box10,
+  Box: Box11,
   Button: Button5,
-  IconButton: IconButton4,
+  IconButton: IconButton5,
   TextField: TextField5,
   CircularProgress: CircularProgress5,
-  Tooltip: Tooltip3
+  Tooltip: Tooltip4
 } = getMaterialUI();
-var { Icon: Icon6 } = UI;
+var { Icon: Icon7 } = UI;
 function ChatComposer({
   canSend,
   sending,
@@ -13336,11 +13581,11 @@ function ChatComposer({
   const [lightboxSrc, setLightboxSrc] = useState11(null);
   const canRecord = isVoiceRecordingSupported();
   const hasContent = Boolean(draft.trim() || images.length || audios.length);
-  const imagePreviewUrls = useMemo12(
+  const imagePreviewUrls = useMemo13(
     () => images.map((img) => blobToPreviewUrl(img.blob)),
     [images]
   );
-  const audioPreviewUrls = useMemo12(
+  const audioPreviewUrls = useMemo13(
     () => audios.map((aud) => blobToPreviewUrl2(aud.blob)),
     [audios]
   );
@@ -13350,8 +13595,8 @@ function ChatComposer({
     });
   }, [imagePreviewUrls, audioPreviewUrls]);
   if (!canSend) return null;
-  return /* @__PURE__ */ jsxs18(Box10, { className: "paty-chat-compose", children: [
-    /* @__PURE__ */ jsx21(
+  return /* @__PURE__ */ jsxs19(Box11, { className: "paty-chat-compose", children: [
+    /* @__PURE__ */ jsx22(
       ChatPayloadPreview,
       {
         open: payloadPreviewOpen,
@@ -13360,17 +13605,17 @@ function ChatComposer({
         onClose: onTogglePayloadPreview
       }
     ),
-    images.length > 0 && /* @__PURE__ */ jsx21(Box10, { className: "paty-chat-image-previews", children: images.map((img, idx) => {
+    images.length > 0 && /* @__PURE__ */ jsx22(Box11, { className: "paty-chat-image-previews", children: images.map((img, idx) => {
       const previewSrc = img.uploadedUrl || imagePreviewUrls[idx] || "";
-      return /* @__PURE__ */ jsxs18("figure", { children: [
-        /* @__PURE__ */ jsx21(
+      return /* @__PURE__ */ jsxs19("figure", { children: [
+        /* @__PURE__ */ jsx22(
           "button",
           {
             type: "button",
             className: "paty-chat-image-previews__thumb-btn",
             "aria-label": `Ver ${img.name || "adjunto"} en tama\xF1o completo`,
             onClick: () => previewSrc && setLightboxSrc(previewSrc),
-            children: /* @__PURE__ */ jsx21(
+            children: /* @__PURE__ */ jsx22(
               "img",
               {
                 src: previewSrc,
@@ -13383,19 +13628,19 @@ function ChatComposer({
             )
           }
         ),
-        /* @__PURE__ */ jsx21("button", { type: "button", className: "paty-chat-image-previews__remove", "aria-label": "Quitar", onClick: () => onRemoveImage(idx), children: "\xD7" })
+        /* @__PURE__ */ jsx22("button", { type: "button", className: "paty-chat-image-previews__remove", "aria-label": "Quitar", onClick: () => onRemoveImage(idx), children: "\xD7" })
       ] }, idx);
     }) }),
-    audios.length > 0 && /* @__PURE__ */ jsx21(Box10, { className: "paty-chat-audio-previews", children: audios.map((aud, idx) => {
+    audios.length > 0 && /* @__PURE__ */ jsx22(Box11, { className: "paty-chat-audio-previews", children: audios.map((aud, idx) => {
       const previewSrc = aud.uploadedUrl || audioPreviewUrls[idx] || "";
-      return /* @__PURE__ */ jsxs18("figure", { children: [
-        /* @__PURE__ */ jsx21("audio", { controls: true, preload: "metadata", src: previewSrc, "aria-label": aud.name || `Nota de voz ${idx + 1}` }),
-        /* @__PURE__ */ jsx21("figcaption", { children: aud.name || `Nota ${idx + 1}` }),
-        /* @__PURE__ */ jsx21("button", { type: "button", className: "paty-chat-audio-previews__remove", "aria-label": "Quitar audio", onClick: () => onRemoveAudio(idx), children: "\xD7" })
+      return /* @__PURE__ */ jsxs19("figure", { children: [
+        /* @__PURE__ */ jsx22("audio", { controls: true, preload: "metadata", src: previewSrc, "aria-label": aud.name || `Nota de voz ${idx + 1}` }),
+        /* @__PURE__ */ jsx22("figcaption", { children: aud.name || `Nota ${idx + 1}` }),
+        /* @__PURE__ */ jsx22("button", { type: "button", className: "paty-chat-audio-previews__remove", "aria-label": "Quitar audio", onClick: () => onRemoveAudio(idx), children: "\xD7" })
       ] }, idx);
     }) }),
-    /* @__PURE__ */ jsxs18(Box10, { className: "paty-chat-input-wrap", children: [
-      /* @__PURE__ */ jsx21(
+    /* @__PURE__ */ jsxs19(Box11, { className: "paty-chat-input-wrap", children: [
+      /* @__PURE__ */ jsx22(
         "input",
         {
           ref: attachInputRef,
@@ -13408,9 +13653,9 @@ function ChatComposer({
           onChange: onAttachChange
         }
       ),
-      /* @__PURE__ */ jsx21(Tooltip3, { title: payloadPreviewOpen ? "Ocultar body POST" : "Ver body POST (JSON en vivo)", children: /* @__PURE__ */ jsx21("span", { children: /* @__PURE__ */ jsx21(IconButton4, { color: "inherit", className: `paty-chat-payload-btn${payloadPreviewOpen ? " paty-chat-payload-btn--active" : ""}`, "aria-label": payloadPreviewOpen ? "Ocultar vista previa JSON" : "Ver vista previa JSON del POST", "aria-pressed": payloadPreviewOpen, disabled: sending, onClick: onTogglePayloadPreview, size: "small", children: /* @__PURE__ */ jsx21(Icon6, { icon: "mdi:code-json", size: 22 }) }) }) }),
-      /* @__PURE__ */ jsx21(Tooltip3, { title: "Adjuntar imagen o audio", children: /* @__PURE__ */ jsx21("span", { children: /* @__PURE__ */ jsx21(
-        IconButton4,
+      /* @__PURE__ */ jsx22(Tooltip4, { title: payloadPreviewOpen ? "Ocultar body POST" : "Ver body POST (JSON en vivo)", children: /* @__PURE__ */ jsx22("span", { children: /* @__PURE__ */ jsx22(IconButton5, { color: "inherit", className: `paty-chat-payload-btn${payloadPreviewOpen ? " paty-chat-payload-btn--active" : ""}`, "aria-label": payloadPreviewOpen ? "Ocultar vista previa JSON" : "Ver vista previa JSON del POST", "aria-pressed": payloadPreviewOpen, disabled: sending, onClick: onTogglePayloadPreview, size: "small", children: /* @__PURE__ */ jsx22(Icon7, { icon: "mdi:code-json", size: 22 }) }) }) }),
+      /* @__PURE__ */ jsx22(Tooltip4, { title: "Adjuntar imagen o audio", children: /* @__PURE__ */ jsx22("span", { children: /* @__PURE__ */ jsx22(
+        IconButton5,
         {
           color: "inherit",
           className: "paty-chat-attach-btn",
@@ -13418,11 +13663,11 @@ function ChatComposer({
           disabled: sending || images.length >= MAX_CHAT_IMAGES && audios.length >= MAX_CHAT_AUDIOS,
           onClick: onAttachClick,
           size: "small",
-          children: /* @__PURE__ */ jsx21(Icon6, { icon: "mdi:paperclip", size: 22 })
+          children: /* @__PURE__ */ jsx22(Icon7, { icon: "mdi:paperclip", size: 22 })
         }
       ) }) }),
-      /* @__PURE__ */ jsx21(Tooltip3, { title: canRecord ? isRecording ? "Detener grabaci\xF3n" : "Grabar nota de voz" : "Grabaci\xF3n no disponible en este navegador", children: /* @__PURE__ */ jsx21("span", { children: /* @__PURE__ */ jsx21(
-        IconButton4,
+      /* @__PURE__ */ jsx22(Tooltip4, { title: canRecord ? isRecording ? "Detener grabaci\xF3n" : "Grabar nota de voz" : "Grabaci\xF3n no disponible en este navegador", children: /* @__PURE__ */ jsx22("span", { children: /* @__PURE__ */ jsx22(
+        IconButton5,
         {
           color: isRecording ? "error" : "inherit",
           className: `paty-chat-mic-btn${isRecording ? " paty-chat-mic-btn--recording" : ""}`,
@@ -13431,10 +13676,10 @@ function ChatComposer({
           disabled: sending || !canRecord || audios.length >= MAX_CHAT_AUDIOS,
           onClick: onToggleVoiceRecord,
           size: "small",
-          children: /* @__PURE__ */ jsx21(Icon6, { icon: isRecording ? "mdi:stop-circle-outline" : "mdi:microphone-outline", size: 22 })
+          children: /* @__PURE__ */ jsx22(Icon7, { icon: isRecording ? "mdi:stop-circle-outline" : "mdi:microphone-outline", size: 22 })
         }
       ) }) }),
-      /* @__PURE__ */ jsx21(
+      /* @__PURE__ */ jsx22(
         TextField5,
         {
           inputRef,
@@ -13455,27 +13700,27 @@ function ChatComposer({
           disabled: sending || isRecording
         }
       ),
-      /* @__PURE__ */ jsx21(Button5, { variant: "contained", disabled: sending || isRecording || !hasContent, onClick: () => onSend(), children: sending ? /* @__PURE__ */ jsx21(CircularProgress5, { size: 20, color: "inherit" }) : "Enviar" })
+      /* @__PURE__ */ jsx22(Button5, { variant: "contained", disabled: sending || isRecording || !hasContent, onClick: () => onSend(), children: sending ? /* @__PURE__ */ jsx22(CircularProgress5, { size: 20, color: "inherit" }) : "Enviar" })
     ] }),
-    /* @__PURE__ */ jsx21(ImageLightboxDialog, { open: Boolean(lightboxSrc), src: lightboxSrc, onClose: () => setLightboxSrc(null) })
+    /* @__PURE__ */ jsx22(ImageLightboxDialog, { open: Boolean(lightboxSrc), src: lightboxSrc, onClose: () => setLightboxSrc(null) })
   ] });
 }
 
 // src/js/tools/chat/ChatMainPanel.jsx
-import { jsx as jsx22, jsxs as jsxs19 } from "react/jsx-runtime";
+import { jsx as jsx23, jsxs as jsxs20 } from "react/jsx-runtime";
 var {
-  Box: Box11,
-  Typography: Typography10,
+  Box: Box12,
+  Typography: Typography11,
   Button: Button6,
-  IconButton: IconButton5,
-  Tooltip: Tooltip4,
+  IconButton: IconButton6,
+  Tooltip: Tooltip5,
   Alert: Alert7,
-  Stack: Stack9
+  Stack: Stack10
 } = getMaterialUI();
-var { Icon: Icon7 } = UI;
+var { Icon: Icon8 } = UI;
 function RefreshConvButton({ onClick, busy = false }) {
-  return /* @__PURE__ */ jsx22(Tooltip4, { title: "Actualizar conversaci\xF3n", arrow: true, children: /* @__PURE__ */ jsx22("span", { children: /* @__PURE__ */ jsx22(
-    IconButton5,
+  return /* @__PURE__ */ jsx23(Tooltip5, { title: "Actualizar conversaci\xF3n", arrow: true, children: /* @__PURE__ */ jsx23("span", { children: /* @__PURE__ */ jsx23(
+    IconButton6,
     {
       size: "small",
       onClick,
@@ -13483,15 +13728,15 @@ function RefreshConvButton({ onClick, busy = false }) {
       "aria-label": "Actualizar",
       title: "Actualizar",
       className: busy ? "paty-chat-refresh-spin" : void 0,
-      children: /* @__PURE__ */ jsx22(Icon7, { icon: busy ? "mdi:loading" : "mdi:refresh", size: 20 })
+      children: /* @__PURE__ */ jsx23(Icon8, { icon: busy ? "mdi:loading" : "mdi:refresh", size: 20 })
     }
   ) }) });
 }
 function ChatMainPanel({ jwt, needsJwt, viewingAuditOther, selectedId, detail, canSend, loadingThread, refreshingThread = false, sending, showThread, logError, displayMensajes, chatUserDisplayName, chatUserNick, ratingMsgId, threadScrollRef, onThreadScroll, onOpenJwt, onClearAuditFilter, onRefreshConv, draft, images, audios, isRecording, payloadPreviewOpen, postBodyPreview, inputRef, attachInputRef, onDraftChange, onPaste, onSend, onTogglePayloadPreview, onAttachClick, onAttachChange, onToggleVoiceRecord, onRemoveImage, onRemoveAudio, onMeta, onRateMessage, onOpenSidebar, messageSource = "logs", mode, llmProvider = "openai", onMessageSourceChange, onChatModeChange, onLlmProviderChange, onContapymeLoginDone = null }) {
   const isProdView = messageSource === "prod";
   const hasThread = Boolean(selectedId || detail);
-  const providerBtn = onLlmProviderChange ? /* @__PURE__ */ jsx22(LlmProviderSwitch, { provider: llmProvider, onChange: onLlmProviderChange }) : null;
-  const headerActions = /* @__PURE__ */ jsx22(
+  const providerBtn = onLlmProviderChange ? /* @__PURE__ */ jsx23(LlmProviderSwitch, { provider: llmProvider, onChange: onLlmProviderChange }) : null;
+  const headerActions = /* @__PURE__ */ jsx23(
     ChatSidebarHeaderActions,
     {
       messageSource,
@@ -13500,9 +13745,9 @@ function ChatMainPanel({ jwt, needsJwt, viewingAuditOther, selectedId, detail, c
       onChatModeChange
     }
   );
-  return /* @__PURE__ */ jsxs19(Box11, { sx: { flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }, children: [
-    onOpenSidebar ? /* @__PURE__ */ jsxs19(
-      Stack9,
+  return /* @__PURE__ */ jsxs20(Box12, { sx: { flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }, children: [
+    onOpenSidebar ? /* @__PURE__ */ jsxs20(
+      Stack10,
       {
         direction: "row",
         spacing: 1,
@@ -13510,15 +13755,15 @@ function ChatMainPanel({ jwt, needsJwt, viewingAuditOther, selectedId, detail, c
         className: "paty-chat-main-toolbar",
         sx: { px: 1, py: 0.5, minHeight: 40, flexShrink: 0 },
         children: [
-          /* @__PURE__ */ jsx22(Tooltip4, { title: "Conversaciones", arrow: true, children: /* @__PURE__ */ jsx22(IconButton5, { size: "small", onClick: onOpenSidebar, "aria-label": "Abrir conversaciones", children: /* @__PURE__ */ jsx22(Icon7, { icon: "mdi:menu-open", size: 20 }) }) }),
+          /* @__PURE__ */ jsx23(Tooltip5, { title: "Conversaciones", arrow: true, children: /* @__PURE__ */ jsx23(IconButton6, { size: "small", onClick: onOpenSidebar, "aria-label": "Abrir conversaciones", children: /* @__PURE__ */ jsx23(Icon8, { icon: "mdi:menu-open", size: 20 }) }) }),
           providerBtn,
-          /* @__PURE__ */ jsx22(Typography10, { variant: "subtitle2", sx: { fontWeight: 700, flex: 1, minWidth: 0 }, noWrap: true, children: "Conversaciones" }),
+          /* @__PURE__ */ jsx23(Typography11, { variant: "subtitle2", sx: { fontWeight: 700, flex: 1, minWidth: 0 }, noWrap: true, children: "Conversaciones" }),
           headerActions,
-          hasThread ? /* @__PURE__ */ jsx22(RefreshConvButton, { onClick: onRefreshConv, busy: refreshingThread }) : null
+          hasThread ? /* @__PURE__ */ jsx23(RefreshConvButton, { onClick: onRefreshConv, busy: refreshingThread }) : null
         ]
       }
-    ) : /* @__PURE__ */ jsxs19(
-      Stack9,
+    ) : /* @__PURE__ */ jsxs20(
+      Stack10,
       {
         direction: "row",
         spacing: 1,
@@ -13527,39 +13772,39 @@ function ChatMainPanel({ jwt, needsJwt, viewingAuditOther, selectedId, detail, c
         sx: { px: 2, py: 0.75, flexShrink: 0 },
         children: [
           providerBtn,
-          /* @__PURE__ */ jsx22(Box11, { sx: { flex: 1 } }),
+          /* @__PURE__ */ jsx23(Box12, { sx: { flex: 1 } }),
           headerActions,
-          hasThread ? /* @__PURE__ */ jsx22(RefreshConvButton, { onClick: onRefreshConv, busy: refreshingThread }) : null
+          hasThread ? /* @__PURE__ */ jsx23(RefreshConvButton, { onClick: onRefreshConv, busy: refreshingThread }) : null
         ]
       }
     ),
-    needsJwt && /* @__PURE__ */ jsx22(
+    needsJwt && /* @__PURE__ */ jsx23(
       Alert7,
       {
         severity: "info",
         sx: { mx: 2, mt: 1, flexShrink: 0 },
-        action: /* @__PURE__ */ jsx22(Button6, { color: "inherit", size: "small", onClick: onOpenJwt, children: "Configurar JWT" }),
+        action: /* @__PURE__ */ jsx23(Button6, { color: "inherit", size: "small", onClick: onOpenJwt, children: "Configurar JWT" }),
         children: "Modo lectura \u2014 puedes explorar conversaciones. Para enviar mensajes inicia sesi\xF3n con tu cuenta ContaPyme o configura un JWT de portal (v\xE1lido en staging y producci\xF3n)."
       }
     ),
-    viewingAuditOther && /* @__PURE__ */ jsx22(Alert7, { severity: "info", sx: { mx: 2, mt: 1, flexShrink: 0 }, action: /* @__PURE__ */ jsx22(
-      IconButton5,
+    viewingAuditOther && /* @__PURE__ */ jsx23(Alert7, { severity: "info", sx: { mx: 2, mt: 1, flexShrink: 0 }, action: /* @__PURE__ */ jsx23(
+      IconButton6,
       {
         color: "inherit",
         size: "small",
         "aria-label": jwt?.claims?.itercero ? "Volver a mi JWT" : "Ver recientes",
         onClick: onClearAuditFilter,
-        children: /* @__PURE__ */ jsx22(Icon7, { icon: "mdi:close", size: 18 })
+        children: /* @__PURE__ */ jsx23(Icon8, { icon: "mdi:close", size: 18 })
       }
     ), children: "Viendo conversaciones de otro usuario \u2014 lectura." }),
-    !showThread ? /* @__PURE__ */ jsx22(
-      Box11,
+    !showThread ? /* @__PURE__ */ jsx23(
+      Box12,
       {
         className: "paty-chat-thread-surface",
         sx: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 0, ...convLogSurfaceSx({ flex: 1 }) },
-        children: /* @__PURE__ */ jsx22(Box11, { sx: { textAlign: "center", maxWidth: 420, p: 2, borderRadius: 2, border: 1, borderColor: "divider", borderStyle: "dashed" }, children: /* @__PURE__ */ jsx22(Typography10, { variant: "body1", children: canSend ? "Escribe un mensaje abajo para iniciar una conversaci\xF3n." : needsJwt ? "Selecciona una conversaci\xF3n del listado o inicia sesi\xF3n / configura JWT para chatear." : "Selecciona una conversaci\xF3n o crea una nueva." }) })
+        children: /* @__PURE__ */ jsx23(Box12, { sx: { textAlign: "center", maxWidth: 420, p: 2, borderRadius: 2, border: 1, borderColor: "divider", borderStyle: "dashed" }, children: /* @__PURE__ */ jsx23(Typography11, { variant: "body1", children: canSend ? "Escribe un mensaje abajo para iniciar una conversaci\xF3n." : needsJwt ? "Selecciona una conversaci\xF3n del listado o inicia sesi\xF3n / configura JWT para chatear." : "Selecciona una conversaci\xF3n o crea una nueva." }) })
       }
-    ) : /* @__PURE__ */ jsx22(
+    ) : /* @__PURE__ */ jsx23(
       ConvLogThread,
       {
         scrollRef: threadScrollRef,
@@ -13583,7 +13828,7 @@ function ChatMainPanel({ jwt, needsJwt, viewingAuditOther, selectedId, detail, c
         onContapymeLoginDone
       }
     ),
-    /* @__PURE__ */ jsx22(
+    /* @__PURE__ */ jsx23(
       ChatComposer,
       {
         canSend,
@@ -13614,7 +13859,7 @@ function ChatMainPanel({ jwt, needsJwt, viewingAuditOther, selectedId, detail, c
 init_platform();
 init_patyia_jwt();
 init_platform();
-import { jsx as jsx23, jsxs as jsxs20 } from "react/jsx-runtime";
+import { jsx as jsx24, jsxs as jsxs21 } from "react/jsx-runtime";
 var { useState: useState12, useEffect: useEffect12 } = getReact();
 var { Button: Button7, TextField: TextField6, DialogContent: DialogContent6, DialogActions: DialogActions4, CircularProgress: CircularProgress6 } = getMaterialUI();
 function JwtModal({ open, onClose, initialToken, onSave }) {
@@ -13638,7 +13883,7 @@ function JwtModal({ open, onClose, initialToken, onSave }) {
       setSaving(false);
     }
   }
-  return /* @__PURE__ */ jsxs20(
+  return /* @__PURE__ */ jsxs21(
     GlassDialog,
     {
       open,
@@ -13646,7 +13891,7 @@ function JwtModal({ open, onClose, initialToken, onSave }) {
       maxWidth: "sm",
       fullWidth: true,
       paperClassName: "paty-chat-jwt-dialog",
-      header: /* @__PURE__ */ jsx23(
+      header: /* @__PURE__ */ jsx24(
         GlassDialogHeader,
         {
           icon: "mdi:key-chain",
@@ -13657,7 +13902,7 @@ function JwtModal({ open, onClose, initialToken, onSave }) {
         }
       ),
       children: [
-        /* @__PURE__ */ jsx23(DialogContent6, { sx: glassDialogContentSx({ px: { xs: 2, sm: 2.5 }, pt: 2, pb: 1 }), children: /* @__PURE__ */ jsx23(
+        /* @__PURE__ */ jsx24(DialogContent6, { sx: glassDialogContentSx({ px: { xs: 2, sm: 2.5 }, pt: 2, pb: 1 }), children: /* @__PURE__ */ jsx24(
           TextField6,
           {
             fullWidth: true,
@@ -13669,9 +13914,9 @@ function JwtModal({ open, onClose, initialToken, onSave }) {
             inputProps: { spellCheck: false }
           }
         ) }),
-        /* @__PURE__ */ jsxs20(DialogActions4, { sx: glassDialogActionsSx(), children: [
-          /* @__PURE__ */ jsx23(Button7, { onClick: onClose, disabled: saving, children: "Cancelar" }),
-          /* @__PURE__ */ jsx23(Button7, { variant: "contained", onClick: submit, disabled: saving, children: saving ? /* @__PURE__ */ jsx23(CircularProgress6, { size: 20, color: "inherit" }) : "Guardar" })
+        /* @__PURE__ */ jsxs21(DialogActions4, { sx: glassDialogActionsSx(), children: [
+          /* @__PURE__ */ jsx24(Button7, { onClick: onClose, disabled: saving, children: "Cancelar" }),
+          /* @__PURE__ */ jsx24(Button7, { variant: "contained", onClick: submit, disabled: saving, children: saving ? /* @__PURE__ */ jsx24(CircularProgress6, { size: 20, color: "inherit" }) : "Guardar" })
         ] })
       ]
     }
@@ -13682,11 +13927,11 @@ function JwtModal({ open, onClose, initialToken, onSave }) {
 init_platform();
 init_patyia_jwt();
 init_apiClient();
-import { jsx as jsx24, jsxs as jsxs21 } from "react/jsx-runtime";
-var { useState: useState13, useEffect: useEffect13, useMemo: useMemo13 } = getReact();
+import { jsx as jsx25, jsxs as jsxs22 } from "react/jsx-runtime";
+var { useState: useState13, useEffect: useEffect13, useMemo: useMemo14 } = getReact();
 var {
-  Box: Box12,
-  Typography: Typography11,
+  Box: Box13,
+  Typography: Typography12,
   Button: Button8,
   TextField: TextField7,
   Dialog: Dialog5,
@@ -13695,16 +13940,16 @@ var {
   DialogActions: DialogActions5,
   CircularProgress: CircularProgress7,
   Alert: Alert8,
-  Stack: Stack10,
+  Stack: Stack11,
   Table: Table2,
   TableBody: TableBody2,
   TableCell: TableCell2,
   TableContainer: TableContainer2,
   TableHead: TableHead2,
   TableRow: TableRow2,
-  Chip: Chip7
+  Chip: Chip8
 } = getMaterialUI();
-var { Icon: Icon8 } = UI;
+var { Icon: Icon9 } = UI;
 var CELL_SX = { py: 0.5, px: 1, fontSize: "0.75rem", lineHeight: 1.25 };
 var HEAD_SX = { ...CELL_SX, fontWeight: 650, whiteSpace: "nowrap" };
 function rowsWithActiveFirst(rows, currentKey, currentScope) {
@@ -13789,7 +14034,7 @@ function TercerosAuditDialog({ open, onClose, jwt, sessionUser, onSelect, curren
     };
   }, [open, page, qDebounced, jwt?.token, jwt?.claims?.itercero, jwt?.claims?.icontacto, sessionUser, canAudit, currentScope?.itercero, currentScope?.icontacto]);
   const currentKey = auditScopeKey(currentScope);
-  const rows = useMemo13(() => {
+  const rows = useMemo14(() => {
     if (!canAudit) {
       const own = currentScope?.itercero ? [{
         itercero: String(currentScope.itercero),
@@ -13805,10 +14050,10 @@ function TercerosAuditDialog({ open, onClose, jwt, sessionUser, onSelect, curren
     }
     return rowsWithActiveFirst(data?.rows, currentKey, currentScope);
   }, [canAudit, data?.rows, currentKey, currentScope]);
-  return /* @__PURE__ */ jsxs21(Dialog5, { open, onClose, maxWidth: "md", fullWidth: true, scroll: "paper", className: "paty-chat-terceros-dialog", children: [
-    /* @__PURE__ */ jsx24(DialogTitle5, { sx: { py: 1.25, px: 2, fontSize: "1rem" }, children: canAudit ? "Filtrar por usuario" : "Tu usuario" }),
-    /* @__PURE__ */ jsxs21(DialogContent7, { dividers: true, sx: { pt: 1.25, px: 2, pb: 1 }, children: [
-      canAudit ? /* @__PURE__ */ jsx24(
+  return /* @__PURE__ */ jsxs22(Dialog5, { open, onClose, maxWidth: "md", fullWidth: true, scroll: "paper", className: "paty-chat-terceros-dialog", children: [
+    /* @__PURE__ */ jsx25(DialogTitle5, { sx: { py: 1.25, px: 2, fontSize: "1rem" }, children: canAudit ? "Filtrar por usuario" : "Tu usuario" }),
+    /* @__PURE__ */ jsxs22(DialogContent7, { dividers: true, sx: { pt: 1.25, px: 2, pb: 1 }, children: [
+      canAudit ? /* @__PURE__ */ jsx25(
         TextField7,
         {
           size: "small",
@@ -13819,30 +14064,30 @@ function TercerosAuditDialog({ open, onClose, jwt, sessionUser, onSelect, curren
           className: "paty-chat-terceros-search",
           sx: { mb: 1 },
           InputProps: {
-            startAdornment: /* @__PURE__ */ jsx24(Icon8, { icon: "mdi:magnify", size: 16, style: { marginRight: 6, opacity: 0.6 } })
+            startAdornment: /* @__PURE__ */ jsx25(Icon9, { icon: "mdi:magnify", size: 16, style: { marginRight: 6, opacity: 0.6 } })
           }
         }
-      ) : /* @__PURE__ */ jsx24(Alert8, { severity: "info", sx: { mb: 1, py: 0.5 }, children: "Tu rol solo puede ver tus propias conversaciones." }),
-      error ? /* @__PURE__ */ jsx24(Alert8, { severity: "error", sx: { mb: 1, py: 0.5 }, children: error }) : null,
-      loading ? /* @__PURE__ */ jsx24(Box12, { sx: { py: 3, textAlign: "center" }, children: /* @__PURE__ */ jsx24(CircularProgress7, { size: 24 }) }) : /* @__PURE__ */ jsx24(TableContainer2, { className: "paty-chat-terceros-table", children: /* @__PURE__ */ jsxs21(Table2, { size: "small", stickyHeader: true, children: [
-        /* @__PURE__ */ jsx24(TableHead2, { children: /* @__PURE__ */ jsxs21(TableRow2, { children: [
-          /* @__PURE__ */ jsx24(TableCell2, { sx: HEAD_SX, children: "Nombre (Tercero / Contacto)" }),
-          /* @__PURE__ */ jsx24(TableCell2, { align: "right", sx: HEAD_SX, children: "Convs" }),
-          /* @__PURE__ */ jsx24(TableCell2, { align: "right", sx: HEAD_SX, children: "Msgs" }),
-          /* @__PURE__ */ jsx24(TableCell2, { sx: HEAD_SX, children: "\xDAltima act." }),
-          /* @__PURE__ */ jsx24(TableCell2, { align: "center", sx: HEAD_SX, children: "Ver" })
+      ) : /* @__PURE__ */ jsx25(Alert8, { severity: "info", sx: { mb: 1, py: 0.5 }, children: "Tu rol solo puede ver tus propias conversaciones." }),
+      error ? /* @__PURE__ */ jsx25(Alert8, { severity: "error", sx: { mb: 1, py: 0.5 }, children: error }) : null,
+      loading ? /* @__PURE__ */ jsx25(Box13, { sx: { py: 3, textAlign: "center" }, children: /* @__PURE__ */ jsx25(CircularProgress7, { size: 24 }) }) : /* @__PURE__ */ jsx25(TableContainer2, { className: "paty-chat-terceros-table", children: /* @__PURE__ */ jsxs22(Table2, { size: "small", stickyHeader: true, children: [
+        /* @__PURE__ */ jsx25(TableHead2, { children: /* @__PURE__ */ jsxs22(TableRow2, { children: [
+          /* @__PURE__ */ jsx25(TableCell2, { sx: HEAD_SX, children: "Nombre (Tercero / Contacto)" }),
+          /* @__PURE__ */ jsx25(TableCell2, { align: "right", sx: HEAD_SX, children: "Convs" }),
+          /* @__PURE__ */ jsx25(TableCell2, { align: "right", sx: HEAD_SX, children: "Msgs" }),
+          /* @__PURE__ */ jsx25(TableCell2, { sx: HEAD_SX, children: "\xDAltima act." }),
+          /* @__PURE__ */ jsx25(TableCell2, { align: "center", sx: HEAD_SX, children: "Ver" })
         ] }) }),
-        /* @__PURE__ */ jsxs21(TableBody2, { children: [
+        /* @__PURE__ */ jsxs22(TableBody2, { children: [
           rows.map((row) => {
             const key = `${row.itercero}|${row.icontacto}`;
             const selected = currentKey === key;
             const codes = [row.itercero, row.icontacto].filter(Boolean).join(" \xB7 ");
-            return /* @__PURE__ */ jsxs21(TableRow2, { hover: true, selected, children: [
-              /* @__PURE__ */ jsx24(TableCell2, { sx: CELL_SX, children: /* @__PURE__ */ jsxs21(Stack10, { direction: "row", spacing: 0.5, alignItems: "center", flexWrap: "wrap", useFlexGap: true, children: [
-                /* @__PURE__ */ jsxs21(Box12, { sx: { minWidth: 0 }, children: [
-                  row.nombre ? /* @__PURE__ */ jsx24(Typography11, { variant: "body2", sx: { fontWeight: 600, lineHeight: 1.2, fontSize: "0.78rem" }, children: shortDisplayName(row.nombre) }) : null,
-                  /* @__PURE__ */ jsx24(
-                    Typography11,
+            return /* @__PURE__ */ jsxs22(TableRow2, { hover: true, selected, children: [
+              /* @__PURE__ */ jsx25(TableCell2, { sx: CELL_SX, children: /* @__PURE__ */ jsxs22(Stack11, { direction: "row", spacing: 0.5, alignItems: "center", flexWrap: "wrap", useFlexGap: true, children: [
+                /* @__PURE__ */ jsxs22(Box13, { sx: { minWidth: 0 }, children: [
+                  row.nombre ? /* @__PURE__ */ jsx25(Typography12, { variant: "body2", sx: { fontWeight: 600, lineHeight: 1.2, fontSize: "0.78rem" }, children: shortDisplayName(row.nombre) }) : null,
+                  /* @__PURE__ */ jsx25(
+                    Typography12,
                     {
                       component: "span",
                       variant: "caption",
@@ -13859,13 +14104,13 @@ function TercerosAuditDialog({ open, onClose, jwt, sessionUser, onSelect, curren
                     }
                   )
                 ] }),
-                selected ? /* @__PURE__ */ jsx24(Chip7, { size: "small", label: "Viendo", color: "primary", sx: { height: 18, "& .MuiChip-label": { px: 0.5, fontSize: "0.65rem" } } }) : null,
-                row.es_sesion ? /* @__PURE__ */ jsx24(Chip7, { size: "small", label: "Sesi\xF3n", color: "success", sx: { height: 18, "& .MuiChip-label": { px: 0.5, fontSize: "0.65rem" } } }) : null
+                selected ? /* @__PURE__ */ jsx25(Chip8, { size: "small", label: "Viendo", color: "primary", sx: { height: 18, "& .MuiChip-label": { px: 0.5, fontSize: "0.65rem" } } }) : null,
+                row.es_sesion ? /* @__PURE__ */ jsx25(Chip8, { size: "small", label: "Sesi\xF3n", color: "success", sx: { height: 18, "& .MuiChip-label": { px: 0.5, fontSize: "0.65rem" } } }) : null
               ] }) }),
-              /* @__PURE__ */ jsx24(TableCell2, { align: "right", sx: CELL_SX, children: Number(row.total_conversaciones || 0).toLocaleString("es-CO") }),
-              /* @__PURE__ */ jsx24(TableCell2, { align: "right", sx: CELL_SX, children: Number(row.total_mensajes || 0).toLocaleString("es-CO") }),
-              /* @__PURE__ */ jsx24(TableCell2, { sx: CELL_SX, children: formatAuditTs(row.ultima_actividad) }),
-              /* @__PURE__ */ jsx24(TableCell2, { align: "center", sx: CELL_SX, children: /* @__PURE__ */ jsx24(
+              /* @__PURE__ */ jsx25(TableCell2, { align: "right", sx: CELL_SX, children: Number(row.total_conversaciones || 0).toLocaleString("es-CO") }),
+              /* @__PURE__ */ jsx25(TableCell2, { align: "right", sx: CELL_SX, children: Number(row.total_mensajes || 0).toLocaleString("es-CO") }),
+              /* @__PURE__ */ jsx25(TableCell2, { sx: CELL_SX, children: formatAuditTs(row.ultima_actividad) }),
+              /* @__PURE__ */ jsx25(TableCell2, { align: "center", sx: CELL_SX, children: /* @__PURE__ */ jsx25(
                 Button8,
                 {
                   size: "small",
@@ -13887,7 +14132,7 @@ function TercerosAuditDialog({ open, onClose, jwt, sessionUser, onSelect, curren
               ) })
             ] }, key);
           }),
-          !loading && !error && !rows.length ? /* @__PURE__ */ jsx24(TableRow2, { children: /* @__PURE__ */ jsxs21(TableCell2, { colSpan: 5, align: "center", sx: { py: 2.5, color: "text.secondary", fontSize: "0.8rem" }, children: [
+          !loading && !error && !rows.length ? /* @__PURE__ */ jsx25(TableRow2, { children: /* @__PURE__ */ jsxs22(TableCell2, { colSpan: 5, align: "center", sx: { py: 2.5, color: "text.secondary", fontSize: "0.8rem" }, children: [
             "Sin resultados",
             qDebounced ? ` para \u201C${qDebounced}\u201D` : "",
             "."
@@ -13895,40 +14140,40 @@ function TercerosAuditDialog({ open, onClose, jwt, sessionUser, onSelect, curren
         ] })
       ] }) })
     ] }),
-    /* @__PURE__ */ jsxs21(DialogActions5, { sx: { justifyContent: "space-between", px: 2, py: 1 }, children: [
-      /* @__PURE__ */ jsx24(Typography11, { variant: "caption", color: "text.secondary", children: data ? `${data.total.toLocaleString("es-CO")} contactos \xB7 p\xE1g. ${data.page}/${Math.max(data.pages, 1)}` : "\u2014" }),
-      /* @__PURE__ */ jsxs21(Stack10, { direction: "row", spacing: 1, alignItems: "center", children: [
-        /* @__PURE__ */ jsx24(
+    /* @__PURE__ */ jsxs22(DialogActions5, { sx: { justifyContent: "space-between", px: 2, py: 1 }, children: [
+      /* @__PURE__ */ jsx25(Typography12, { variant: "caption", color: "text.secondary", children: data ? `${data.total.toLocaleString("es-CO")} contactos \xB7 p\xE1g. ${data.page}/${Math.max(data.pages, 1)}` : "\u2014" }),
+      /* @__PURE__ */ jsxs22(Stack11, { direction: "row", spacing: 1, alignItems: "center", children: [
+        /* @__PURE__ */ jsx25(
           Button8,
           {
             size: "small",
             disabled: !canAudit || loading || !data || page <= 1,
             onClick: () => setPage((p) => Math.max(1, p - 1)),
-            startIcon: /* @__PURE__ */ jsx24(Icon8, { icon: "mdi:chevron-left", size: 16 }),
+            startIcon: /* @__PURE__ */ jsx25(Icon9, { icon: "mdi:chevron-left", size: 16 }),
             children: "Anterior"
           }
         ),
-        /* @__PURE__ */ jsx24(
+        /* @__PURE__ */ jsx25(
           Button8,
           {
             size: "small",
             disabled: !canAudit || loading || !data || page >= (data.pages || 1),
             onClick: () => setPage((p) => p + 1),
-            endIcon: /* @__PURE__ */ jsx24(Icon8, { icon: "mdi:chevron-right", size: 16 }),
+            endIcon: /* @__PURE__ */ jsx25(Icon9, { icon: "mdi:chevron-right", size: 16 }),
             children: "Siguiente"
           }
         ),
-        /* @__PURE__ */ jsx24(Button8, { size: "small", onClick: onClose, children: "Cerrar" })
+        /* @__PURE__ */ jsx25(Button8, { size: "small", onClick: onClose, children: "Cerrar" })
       ] })
     ] })
   ] });
 }
 
 // src/js/tools/ChatTool.jsx
-import { Fragment as Fragment8, jsx as jsx25, jsxs as jsxs22 } from "react/jsx-runtime";
-var { Box: Box13, Drawer: Drawer2, Fab: Fab2, IconButton: IconButton6, Tooltip: Tooltip5, useTheme: useTheme2, useMediaQuery: useMediaQuery2 } = getMaterialUI();
+import { Fragment as Fragment8, jsx as jsx26, jsxs as jsxs23 } from "react/jsx-runtime";
+var { Box: Box14, Drawer: Drawer2, IconButton: IconButton7, Tooltip: Tooltip6, useTheme: useTheme2, useMediaQuery: useMediaQuery2 } = getMaterialUI();
 var { useState: useState14 } = getReact();
-var { Icon: Icon9 } = UI;
+var { Icon: Icon10 } = UI;
 function ChatTool({ bootChat, onNeedLogin }) {
   const chat = useChatTool({ bootChat });
   const theme2 = useTheme2();
@@ -13936,7 +14181,7 @@ function ChatTool({ bootChat, onNeedLogin }) {
   const [sidebarOpen, setSidebarOpen] = useState14(false);
   const [refreshingThread, setRefreshingThread] = useState14(false);
   if (!chat.loggedIn) {
-    return /* @__PURE__ */ jsx25(ChatLoggedOutShell, {});
+    return /* @__PURE__ */ jsx26(ChatLoggedOutShell, {});
   }
   const IsaSplitView = getIsaSplitView();
   const sidebarProps = {
@@ -13983,7 +14228,7 @@ function ChatTool({ bootChat, onNeedLogin }) {
     onConvListPageChange: chat.setConvListPage,
     onConvListPageSizeChange: chat.onConvListPageSizeChange
   };
-  const mainPanel = /* @__PURE__ */ jsx25(
+  const mainPanel = /* @__PURE__ */ jsx26(
     ChatMainPanel,
     {
       jwt: chat.jwt,
@@ -14043,14 +14288,14 @@ function ChatTool({ bootChat, onNeedLogin }) {
       onOpenSidebar: isMobile ? () => setSidebarOpen(true) : void 0
     }
   );
-  return /* @__PURE__ */ jsxs22(
-    Box13,
+  return /* @__PURE__ */ jsxs23(
+    Box14,
     {
       className: "conv-log-shell paty-chat-shell",
       sx: { display: "flex", height: "100%", minHeight: 0, flexDirection: "column", position: "relative" },
       children: [
-        isMobile ? /* @__PURE__ */ jsxs22(Fragment8, { children: [
-          /* @__PURE__ */ jsx25(
+        isMobile ? /* @__PURE__ */ jsxs23(Fragment8, { children: [
+          /* @__PURE__ */ jsx26(
             Drawer2,
             {
               anchor: "left",
@@ -14058,7 +14303,7 @@ function ChatTool({ bootChat, onNeedLogin }) {
               onClose: () => setSidebarOpen(false),
               ModalProps: { keepMounted: true },
               PaperProps: mobileDrawerPaperProps("paty-mobile-sidebar-drawer"),
-              children: /* @__PURE__ */ jsx25(
+              children: /* @__PURE__ */ jsx26(
                 ChatThreadSidebar,
                 {
                   ...sidebarProps,
@@ -14069,7 +14314,7 @@ function ChatTool({ bootChat, onNeedLogin }) {
             }
           ),
           mainPanel
-        ] }) : /* @__PURE__ */ jsx25(
+        ] }) : /* @__PURE__ */ jsx26(
           IsaSplitView,
           {
             className: "conv-log-shell-split paty-chat-shell-split",
@@ -14081,9 +14326,9 @@ function ChatTool({ bootChat, onNeedLogin }) {
             panelTitle: "Conversaciones",
             panelIcon: "mdi:chat-outline",
             UI,
-            collapsedRail: ({ expand }) => /* @__PURE__ */ jsxs22(Box13, { className: "conv-log-collapsed-rail paty-chat-collapsed-rail", children: [
-              /* @__PURE__ */ jsx25(Tooltip5, { title: "Nueva conversaci\xF3n", placement: "right", children: /* @__PURE__ */ jsx25(
-                IconButton6,
+            collapsedRail: ({ expand }) => /* @__PURE__ */ jsxs23(Box14, { className: "conv-log-collapsed-rail paty-chat-collapsed-rail", children: [
+              /* @__PURE__ */ jsx26(Tooltip6, { title: "Nueva conversaci\xF3n", placement: "right", children: /* @__PURE__ */ jsx26(
+                IconButton7,
                 {
                   size: "small",
                   className: "isa-neon-rail-btn isa-neon-rail-btn--new",
@@ -14093,11 +14338,11 @@ function ChatTool({ bootChat, onNeedLogin }) {
                     chat.onNewChat();
                     expand();
                   },
-                  children: /* @__PURE__ */ jsx25(Icon9, { icon: "mdi:plus", size: 20 })
+                  children: /* @__PURE__ */ jsx26(Icon10, { icon: "mdi:plus", size: 20 })
                 }
               ) }),
-              /* @__PURE__ */ jsx25(Tooltip5, { title: "Cambiar token JWT", placement: "right", children: /* @__PURE__ */ jsx25(
-                IconButton6,
+              /* @__PURE__ */ jsx26(Tooltip6, { title: "Cambiar token JWT", placement: "right", children: /* @__PURE__ */ jsx26(
+                IconButton7,
                 {
                   size: "small",
                   className: "isa-neon-rail-btn isa-neon-rail-btn--jwt",
@@ -14106,32 +14351,15 @@ function ChatTool({ bootChat, onNeedLogin }) {
                     chat.setJwtOpen(true);
                     expand();
                   },
-                  children: /* @__PURE__ */ jsx25(Icon9, { icon: "mdi:key-variant", size: 20 })
+                  children: /* @__PURE__ */ jsx26(Icon10, { icon: "mdi:key-variant", size: 20 })
                 }
               ) })
             ] }),
-            panel: /* @__PURE__ */ jsx25(ChatThreadSidebar, { ...sidebarProps, splitMode: true }),
+            panel: /* @__PURE__ */ jsx26(ChatThreadSidebar, { ...sidebarProps, splitMode: true }),
             children: mainPanel
           }
         ),
-        isMobile ? /* @__PURE__ */ jsx25(
-          Fab2,
-          {
-            color: "primary",
-            size: "medium",
-            className: "paty-mobile-sidebar-fab paty-mobile-sidebar-fab--chat",
-            "aria-label": "Abrir conversaciones",
-            onClick: () => setSidebarOpen(true),
-            sx: {
-              position: "absolute",
-              left: 12,
-              zIndex: 6,
-              display: sidebarOpen ? "none" : "flex"
-            },
-            children: /* @__PURE__ */ jsx25(Icon9, { icon: "mdi:forum-outline", size: 22 })
-          }
-        ) : null,
-        /* @__PURE__ */ jsx25(
+        /* @__PURE__ */ jsx26(
           JwtModal,
           {
             open: chat.jwtOpen,
@@ -14140,7 +14368,7 @@ function ChatTool({ bootChat, onNeedLogin }) {
             onSave: chat.setJwt
           }
         ),
-        /* @__PURE__ */ jsx25(
+        /* @__PURE__ */ jsx26(
           MetaDialog,
           {
             open: chat.metaOpen,
@@ -14150,10 +14378,12 @@ function ChatTool({ bootChat, onNeedLogin }) {
             title: chat.metaMsg ? `Trazabilidad \xB7 ${chat.metaMsg.rol}` : "",
             isUserMessage: Boolean(chat.metaMsg?.esUsuario),
             userContent: chat.metaMsg?.contenido ?? "",
-            imagenes: chat.metaMsg?.imagenes ?? null
+            imagenes: chat.metaMsg?.imagenes ?? null,
+            logFragment: chat.metaMsg?.logFragment ?? null,
+            showLog: chat.messageSource !== "prod"
           }
         ),
-        /* @__PURE__ */ jsx25(
+        /* @__PURE__ */ jsx26(
           TercerosAuditDialog,
           {
             open: chat.auditDialogOpen,
@@ -14960,13 +15190,13 @@ init_platform();
 
 // src/js/tools/todos/TaskAssigneeLabel.jsx
 init_platform();
-import { jsx as jsx26 } from "react/jsx-runtime";
-var { Typography: Typography12 } = getMaterialUI();
+import { jsx as jsx27 } from "react/jsx-runtime";
+var { Typography: Typography13 } = getMaterialUI();
 function TaskAssigneeLabel({ assignedTo }) {
   const theme2 = assigneeTheme(assignedTo);
   const empty = !String(assignedTo ?? "").trim();
-  return /* @__PURE__ */ jsx26(
-    Typography12,
+  return /* @__PURE__ */ jsx27(
+    Typography13,
     {
       className: `paty-todos-card__assignee${empty ? " paty-todos-card__assignee--empty" : ""}`,
       component: "div",
@@ -14981,10 +15211,10 @@ function TaskAssigneeLabel({ assignedTo }) {
 }
 
 // src/js/tools/todos/TodosKanban.jsx
-import { Fragment as Fragment9, jsx as jsx27, jsxs as jsxs23 } from "react/jsx-runtime";
-var { useState: useState16, useMemo: useMemo14, useRef: useRef8, useEffect: useEffect15, memo: memo2 } = getReact();
-var { Box: Box14, Paper: Paper2, Typography: Typography13, TextField: TextField8, Button: Button9, Stack: Stack11, Chip: Chip8 } = getMaterialUI();
-var { Icon: Icon10 } = UI;
+import { Fragment as Fragment9, jsx as jsx28, jsxs as jsxs24 } from "react/jsx-runtime";
+var { useState: useState16, useMemo: useMemo15, useRef: useRef8, useEffect: useEffect15, memo: memo2 } = getReact();
+var { Box: Box15, Paper: Paper2, Typography: Typography14, TextField: TextField8, Button: Button9, Stack: Stack12, Chip: Chip9 } = getMaterialUI();
+var { Icon: Icon11 } = UI;
 var DRAG_THRESHOLD_PX = 6;
 var COLUMN_THEME = {
   pending: {
@@ -15018,15 +15248,15 @@ function columnAtPoint(columnIds, listRefs, clientX, clientY) {
 }
 function TaskCardBody({ task }) {
   const modDate = formatTaskDate(taskModDate(task));
-  return /* @__PURE__ */ jsxs23(Fragment9, { children: [
-    /* @__PURE__ */ jsx27(Typography13, { className: "paty-todos-card__title", component: "div", variant: "body2", children: task.title }),
-    /* @__PURE__ */ jsx27(TaskAssigneeLabel, { assignedTo: task.assignedTo }),
-    /* @__PURE__ */ jsx27(Typography13, { className: "paty-todos-card__date paty-todos-card__date--bottom", component: "div", variant: "caption", color: "text.secondary", children: modDate })
+  return /* @__PURE__ */ jsxs24(Fragment9, { children: [
+    /* @__PURE__ */ jsx28(Typography14, { className: "paty-todos-card__title", component: "div", variant: "body2", children: task.title }),
+    /* @__PURE__ */ jsx28(TaskAssigneeLabel, { assignedTo: task.assignedTo }),
+    /* @__PURE__ */ jsx28(Typography14, { className: "paty-todos-card__date paty-todos-card__date--bottom", component: "div", variant: "caption", color: "text.secondary", children: modDate })
   ] });
 }
 function DragGhost({ task, x, y, width }) {
   if (!task) return null;
-  return /* @__PURE__ */ jsx27(
+  return /* @__PURE__ */ jsx28(
     Paper2,
     {
       className: "paty-todos-card paty-todos-card--ghost isa-glass-card",
@@ -15040,7 +15270,7 @@ function DragGhost({ task, x, y, width }) {
         pointerEvents: "none"
       },
       "aria-hidden": true,
-      children: /* @__PURE__ */ jsx27(TaskCardBody, { task })
+      children: /* @__PURE__ */ jsx28(TaskCardBody, { task })
     }
   );
 }
@@ -15055,7 +15285,7 @@ var TaskCard = memo2(function TaskCard2({
   suppressClickRef
 }) {
   const canDrag = !readOnly && !isOptimistic;
-  return /* @__PURE__ */ jsx27(
+  return /* @__PURE__ */ jsx28(
     Paper2,
     {
       className: `paty-todos-card isa-glass-card${isOptimistic ? " paty-todos-card--optimistic" : ""}${canDrag ? " paty-todos-card--draggable" : ""}${isDragSource ? " paty-todos-card--drag-source" : ""}`,
@@ -15077,7 +15307,7 @@ var TaskCard = memo2(function TaskCard2({
       onKeyDown: (e) => {
         if (e.key === "Enter") onOpen(task.id);
       },
-      children: /* @__PURE__ */ jsx27(TaskCardBody, { task })
+      children: /* @__PURE__ */ jsx28(TaskCardBody, { task })
     }
   );
 });
@@ -15085,21 +15315,21 @@ function ColumnAddForm({ onAdd }) {
   const [open, setOpen] = useState16(false);
   const [title, setTitle] = useState16("");
   if (!open) {
-    return /* @__PURE__ */ jsx27(
+    return /* @__PURE__ */ jsx28(
       Button9,
       {
         fullWidth: true,
         size: "small",
         className: "paty-todos-add-card",
-        startIcon: /* @__PURE__ */ jsx27(Icon10, { icon: "mdi:plus", size: 16 }),
+        startIcon: /* @__PURE__ */ jsx28(Icon11, { icon: "mdi:plus", size: 16 }),
         onClick: () => setOpen(true),
         sx: { justifyContent: "flex-start", color: "text.secondary" },
         children: "A\xF1adir tarjeta"
       }
     );
   }
-  return /* @__PURE__ */ jsxs23(Box14, { className: "paty-todos-add-card", children: [
-    /* @__PURE__ */ jsx27(
+  return /* @__PURE__ */ jsxs24(Box15, { className: "paty-todos-add-card", children: [
+    /* @__PURE__ */ jsx28(
       TextField8,
       {
         autoFocus: true,
@@ -15121,8 +15351,8 @@ function ColumnAddForm({ onAdd }) {
         }
       }
     ),
-    /* @__PURE__ */ jsxs23(Stack11, { direction: "row", spacing: 1, sx: { mt: 1 }, children: [
-      /* @__PURE__ */ jsx27(
+    /* @__PURE__ */ jsxs24(Stack12, { direction: "row", spacing: 1, sx: { mt: 1 }, children: [
+      /* @__PURE__ */ jsx28(
         Button9,
         {
           variant: "contained",
@@ -15136,7 +15366,7 @@ function ColumnAddForm({ onAdd }) {
           children: "A\xF1adir"
         }
       ),
-      /* @__PURE__ */ jsx27(Button9, { size: "small", onClick: () => {
+      /* @__PURE__ */ jsx28(Button9, { size: "small", onClick: () => {
         setOpen(false);
         setTitle("");
       }, children: "Cancelar" })
@@ -15152,12 +15382,12 @@ function TodosKanban({ boardData, readOnly = false, preview = false, onOpenTask,
   const dragRef = useRef8(null);
   const cardElRef = useRef8(null);
   const suppressClickRef = useRef8(false);
-  const tasksByColumn = useMemo14(() => groupTasksByColumn(boardData), [boardData]);
-  const ghostTask = useMemo14(() => {
+  const tasksByColumn = useMemo15(() => groupTasksByColumn(boardData), [boardData]);
+  const ghostTask = useMemo15(() => {
     if (!dragGhost?.taskId) return null;
     return boardData?.tasks?.find((t) => t.id === dragGhost.taskId) ?? null;
   }, [dragGhost, boardData?.tasks]);
-  const columnIds = useMemo14(
+  const columnIds = useMemo15(
     () => (boardData?.columns ?? []).map((c) => c.id),
     [boardData?.columns]
   );
@@ -15245,29 +15475,29 @@ function TodosKanban({ boardData, readOnly = false, preview = false, onOpenTask,
   if (!boardData) return null;
   const { columns } = boardData;
   const fullBoard = !preview;
-  return /* @__PURE__ */ jsxs23(
-    Box14,
+  return /* @__PURE__ */ jsxs24(
+    Box15,
     {
       className: `paty-todos-kanban-wrap${readOnly && !preview ? " paty-todos-kanban-wrap--readonly" : ""}`,
       sx: fullBoard ? { flex: 1, minHeight: 0, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", p: 0 } : void 0,
       children: [
-        readOnly && !preview ? /* @__PURE__ */ jsx27(
-          Chip8,
+        readOnly && !preview ? /* @__PURE__ */ jsx28(
+          Chip9,
           {
             size: "small",
             className: "paty-todos-kanban__readonly-chip",
             label: "Solo lectura",
-            icon: /* @__PURE__ */ jsx27(Icon10, { icon: "mdi:eye-outline", size: 14 }),
+            icon: /* @__PURE__ */ jsx28(Icon11, { icon: "mdi:eye-outline", size: 14 }),
             sx: { alignSelf: "flex-start", width: "auto", flex: "0 0 auto", ml: "18px", mt: 1.5 }
           }
         ) : null,
-        /* @__PURE__ */ jsxs23(
-          Box14,
+        /* @__PURE__ */ jsxs24(
+          Box15,
           {
             className: `paty-todos-kanban${preview ? " paty-todos-kanban--preview" : ""}${draggingTaskId ? " paty-todos-kanban--dragging" : ""}`,
             sx: fullBoard ? { flex: 1, minHeight: 0, height: "100%", display: "flex", alignItems: "stretch", alignSelf: "stretch" } : void 0,
             children: [
-              dragGhost ? /* @__PURE__ */ jsx27(DragGhost, { task: ghostTask, x: dragGhost.x, y: dragGhost.y, width: dragGhost.width }) : null,
+              dragGhost ? /* @__PURE__ */ jsx28(DragGhost, { task: ghostTask, x: dragGhost.x, y: dragGhost.y, width: dragGhost.width }) : null,
               columns.map((col) => {
                 const colTasks = tasksByColumn.get(col.id) ?? [];
                 const isExpanded = expandedCols.has(col.id);
@@ -15276,14 +15506,14 @@ function TodosKanban({ boardData, readOnly = false, preview = false, onOpenTask,
                 const hiddenCount = hasMore && !isExpanded ? colTasks.length - MAX_COLUMN_TASKS : 0;
                 const isOver = dragOverCol === col.id;
                 const theme2 = themeForColumn(col.columnKey);
-                return /* @__PURE__ */ jsxs23(
-                  Box14,
+                return /* @__PURE__ */ jsxs24(
+                  Box15,
                   {
                     className: `paty-todos-column ${theme2.className}`,
                     style: { "--col-accent": theme2.accent },
                     children: [
-                      /* @__PURE__ */ jsxs23(
-                        Stack11,
+                      /* @__PURE__ */ jsxs24(
+                        Stack12,
                         {
                           direction: "row",
                           alignItems: "center",
@@ -15292,12 +15522,12 @@ function TodosKanban({ boardData, readOnly = false, preview = false, onOpenTask,
                           className: "paty-todos-column__head",
                           sx: { flexShrink: 0, px: 1.75, py: 1.25, pb: 1 },
                           children: [
-                            /* @__PURE__ */ jsxs23(Stack11, { direction: "row", alignItems: "center", spacing: 0.75, className: "paty-todos-column__title", sx: { minWidth: 0, flex: 1 }, children: [
-                              /* @__PURE__ */ jsx27(Icon10, { icon: theme2.icon, size: 16 }),
-                              /* @__PURE__ */ jsx27(Box14, { component: "span", sx: { display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }, title: col.title, children: col.title })
+                            /* @__PURE__ */ jsxs24(Stack12, { direction: "row", alignItems: "center", spacing: 0.75, className: "paty-todos-column__title", sx: { minWidth: 0, flex: 1 }, children: [
+                              /* @__PURE__ */ jsx28(Icon11, { icon: theme2.icon, size: 16 }),
+                              /* @__PURE__ */ jsx28(Box15, { component: "span", sx: { display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }, title: col.title, children: col.title })
                             ] }),
-                            /* @__PURE__ */ jsx27(
-                              Box14,
+                            /* @__PURE__ */ jsx28(
+                              Box15,
                               {
                                 component: "span",
                                 className: "paty-todos-column__count",
@@ -15308,8 +15538,8 @@ function TodosKanban({ boardData, readOnly = false, preview = false, onOpenTask,
                           ]
                         }
                       ),
-                      /* @__PURE__ */ jsxs23(
-                        Stack11,
+                      /* @__PURE__ */ jsxs24(
+                        Stack12,
                         {
                           ref: (el) => {
                             listRefs.current[col.id] = el;
@@ -15327,7 +15557,7 @@ function TodosKanban({ boardData, readOnly = false, preview = false, onOpenTask,
                             boxSizing: "border-box"
                           },
                           children: [
-                            visibleTasks.map((task) => /* @__PURE__ */ jsx27(
+                            visibleTasks.map((task) => /* @__PURE__ */ jsx28(
                               TaskCard,
                               {
                                 task,
@@ -15341,7 +15571,7 @@ function TodosKanban({ boardData, readOnly = false, preview = false, onOpenTask,
                               },
                               task.id
                             )),
-                            hiddenCount > 0 ? /* @__PURE__ */ jsxs23(
+                            hiddenCount > 0 ? /* @__PURE__ */ jsxs24(
                               Button9,
                               {
                                 fullWidth: true,
@@ -15355,7 +15585,7 @@ function TodosKanban({ boardData, readOnly = false, preview = false, onOpenTask,
                                 ]
                               }
                             ) : null,
-                            isExpanded && hasMore ? /* @__PURE__ */ jsx27(
+                            isExpanded && hasMore ? /* @__PURE__ */ jsx28(
                               Button9,
                               {
                                 fullWidth: true,
@@ -15372,7 +15602,7 @@ function TodosKanban({ boardData, readOnly = false, preview = false, onOpenTask,
                           ]
                         }
                       ),
-                      !readOnly && !preview && col.columnKey === "pending" ? /* @__PURE__ */ jsx27(ColumnAddForm, { onAdd: (title) => onQuickAdd(col.id, title) }) : null
+                      !readOnly && !preview && col.columnKey === "pending" ? /* @__PURE__ */ jsx28(ColumnAddForm, { onAdd: (title) => onQuickAdd(col.id, title) }) : null
                     ]
                   },
                   col.id
@@ -15391,10 +15621,10 @@ init_platform();
 
 // src/js/tools/todos/UserAssignAutocomplete.jsx
 init_platform();
-import { jsx as jsx28 } from "react/jsx-runtime";
+import { jsx as jsx29 } from "react/jsx-runtime";
 import { createElement as createElement3 } from "react";
 var { useState: useState17, useEffect: useEffect16, useRef: useRef9, useCallback: useCallback9 } = getReact();
-var { Autocomplete: Autocomplete2, TextField: TextField9, Typography: Typography14, Box: Box15 } = getMaterialUI();
+var { Autocomplete: Autocomplete2, TextField: TextField9, Typography: Typography15, Box: Box16 } = getMaterialUI();
 var DEBOUNCE_MS2 = 300;
 function optionLabel(row) {
   if (!row) return "";
@@ -15478,7 +15708,7 @@ function UserAssignAutocomplete({ value, onChange, disabled = false, label = "As
     runSearch("");
   }, [disabled, runSearch]);
   if (disabled) {
-    return /* @__PURE__ */ jsx28(
+    return /* @__PURE__ */ jsx29(
       TextField9,
       {
         label,
@@ -15490,7 +15720,7 @@ function UserAssignAutocomplete({ value, onChange, disabled = false, label = "As
       }
     );
   }
-  return /* @__PURE__ */ jsx28(
+  return /* @__PURE__ */ jsx29(
     Autocomplete2,
     {
       fullWidth: true,
@@ -15524,8 +15754,8 @@ function UserAssignAutocomplete({ value, onChange, disabled = false, label = "As
         setInputValue(row ? optionLabel(row) : "");
         setInvalidHint("");
       },
-      renderOption: (props, row) => /* @__PURE__ */ createElement3(Box15, { component: "li", ...props, key: row.username, sx: { display: "flex", flexDirection: "column", py: 0.75 } }, /* @__PURE__ */ jsx28(Typography14, { variant: "body2", sx: { fontWeight: 600 }, children: row.displayName || row.username }), row.displayName ? /* @__PURE__ */ jsx28(Typography14, { variant: "caption", color: "text.secondary", children: row.username }) : null),
-      renderInput: (params) => /* @__PURE__ */ jsx28(
+      renderOption: (props, row) => /* @__PURE__ */ createElement3(Box16, { component: "li", ...props, key: row.username, sx: { display: "flex", flexDirection: "column", py: 0.75 } }, /* @__PURE__ */ jsx29(Typography15, { variant: "body2", sx: { fontWeight: 600 }, children: row.displayName || row.username }), row.displayName ? /* @__PURE__ */ jsx29(Typography15, { variant: "caption", color: "text.secondary", children: row.username }) : null),
+      renderInput: (params) => /* @__PURE__ */ jsx29(
         TextField9,
         {
           ...params,
@@ -15599,19 +15829,19 @@ function pathDepth(path) {
 }
 
 // src/js/tools/todos/TaskConvoThread.jsx
-import { jsx as jsx29, jsxs as jsxs24 } from "react/jsx-runtime";
+import { jsx as jsx30, jsxs as jsxs25 } from "react/jsx-runtime";
 var { useState: useState18, useEffect: useEffect17, useCallback: useCallback10 } = getReact();
 var {
-  Box: Box16,
-  Stack: Stack12,
-  Typography: Typography15,
+  Box: Box17,
+  Stack: Stack13,
+  Typography: Typography16,
   Button: Button10,
-  IconButton: IconButton7,
-  Tooltip: Tooltip6,
+  IconButton: IconButton8,
+  Tooltip: Tooltip7,
   CircularProgress: CircularProgress8,
   Alert: Alert9
 } = getMaterialUI();
-var { Icon: Icon11 } = UI;
+var { Icon: Icon12 } = UI;
 function formatMsgDate(iso) {
   if (!iso) return "";
   try {
@@ -15631,38 +15861,38 @@ function MessageBubble({ msg, messages, readOnly, busy, onReply, onQuote, onDele
   const depth = Math.max(0, pathDepth(msg.treePath) - 1);
   const author = msg.jlog?.author || "\u2014";
   const quote = msg.jlog?.quotePath ? quotedSnippet(messages, msg.jlog.quotePath) : "";
-  return /* @__PURE__ */ jsxs24(
-    Box16,
+  return /* @__PURE__ */ jsxs25(
+    Box17,
     {
       className: `paty-task-msg paty-task-msg--${msg.jlog?.kind || "message"}`,
       sx: { ml: depth * 2.5, pl: 1.5, borderLeft: depth ? 2 : 0, borderColor: "divider" },
       children: [
-        /* @__PURE__ */ jsxs24(Stack12, { direction: "row", spacing: 1, alignItems: "center", sx: { mb: 0.5 }, children: [
-          /* @__PURE__ */ jsx29(Typography15, { variant: "caption", sx: { fontWeight: 700 }, children: author }),
-          /* @__PURE__ */ jsx29(Typography15, { variant: "caption", color: "text.secondary", children: formatMsgDate(msg.updatedAt || msg.createdAt) }),
-          msg.jlog?.kind === "reply" && msg.jlog?.replyToPath ? /* @__PURE__ */ jsxs24(Typography15, { variant: "caption", color: "text.secondary", children: [
+        /* @__PURE__ */ jsxs25(Stack13, { direction: "row", spacing: 1, alignItems: "center", sx: { mb: 0.5 }, children: [
+          /* @__PURE__ */ jsx30(Typography16, { variant: "caption", sx: { fontWeight: 700 }, children: author }),
+          /* @__PURE__ */ jsx30(Typography16, { variant: "caption", color: "text.secondary", children: formatMsgDate(msg.updatedAt || msg.createdAt) }),
+          msg.jlog?.kind === "reply" && msg.jlog?.replyToPath ? /* @__PURE__ */ jsxs25(Typography16, { variant: "caption", color: "text.secondary", children: [
             "\u21A9 ",
             msg.jlog.replyToPath
           ] }) : null
         ] }),
-        quote ? /* @__PURE__ */ jsxs24(Box16, { className: "paty-task-msg__quote", children: [
-          /* @__PURE__ */ jsxs24(Typography15, { variant: "caption", color: "text.secondary", sx: { display: "block", mb: 0.5 }, children: [
+        quote ? /* @__PURE__ */ jsxs25(Box17, { className: "paty-task-msg__quote", children: [
+          /* @__PURE__ */ jsxs25(Typography16, { variant: "caption", color: "text.secondary", sx: { display: "block", mb: 0.5 }, children: [
             "Cita ",
             msg.jlog.quotePath
           ] }),
-          /* @__PURE__ */ jsx29(Typography15, { variant: "body2", color: "text.secondary", sx: { fontStyle: "italic" }, children: quote })
+          /* @__PURE__ */ jsx30(Typography16, { variant: "body2", color: "text.secondary", sx: { fontStyle: "italic" }, children: quote })
         ] }) : null,
-        msg.body.trim() ? /* @__PURE__ */ jsx29(
-          Box16,
+        msg.body.trim() ? /* @__PURE__ */ jsx30(
+          Box17,
           {
             className: "paty-task-msg__body prompt-md-preview msg-body",
             dangerouslySetInnerHTML: { __html: mdToHtml(msg.body) }
           }
-        ) : /* @__PURE__ */ jsx29(Typography15, { variant: "body2", color: "text.secondary", children: "(sin texto)" }),
-        !readOnly ? /* @__PURE__ */ jsxs24(Stack12, { direction: "row", spacing: 0.5, sx: { mt: 0.75 }, children: [
-          /* @__PURE__ */ jsx29(Tooltip6, { title: "Responder", children: /* @__PURE__ */ jsx29(IconButton7, { size: "small", disabled: busy, onClick: () => onReply(msg), "aria-label": "Responder", children: /* @__PURE__ */ jsx29(Icon11, { icon: "mdi:reply-outline", size: 16 }) }) }),
-          /* @__PURE__ */ jsx29(Tooltip6, { title: "Citar", children: /* @__PURE__ */ jsx29(IconButton7, { size: "small", disabled: busy, onClick: () => onQuote(msg), "aria-label": "Citar", children: /* @__PURE__ */ jsx29(Icon11, { icon: "mdi:format-quote-close-outline", size: 16 }) }) }),
-          /* @__PURE__ */ jsx29(Tooltip6, { title: "Eliminar (soft)", children: /* @__PURE__ */ jsx29(IconButton7, { size: "small", color: "error", disabled: busy, onClick: () => onDelete(msg), "aria-label": "Eliminar", children: /* @__PURE__ */ jsx29(Icon11, { icon: "mdi:delete-outline", size: 16 }) }) })
+        ) : /* @__PURE__ */ jsx30(Typography16, { variant: "body2", color: "text.secondary", children: "(sin texto)" }),
+        !readOnly ? /* @__PURE__ */ jsxs25(Stack13, { direction: "row", spacing: 0.5, sx: { mt: 0.75 }, children: [
+          /* @__PURE__ */ jsx30(Tooltip7, { title: "Responder", children: /* @__PURE__ */ jsx30(IconButton8, { size: "small", disabled: busy, onClick: () => onReply(msg), "aria-label": "Responder", children: /* @__PURE__ */ jsx30(Icon12, { icon: "mdi:reply-outline", size: 16 }) }) }),
+          /* @__PURE__ */ jsx30(Tooltip7, { title: "Citar", children: /* @__PURE__ */ jsx30(IconButton8, { size: "small", disabled: busy, onClick: () => onQuote(msg), "aria-label": "Citar", children: /* @__PURE__ */ jsx30(Icon12, { icon: "mdi:format-quote-close-outline", size: 16 }) }) }),
+          /* @__PURE__ */ jsx30(Tooltip7, { title: "Eliminar (soft)", children: /* @__PURE__ */ jsx30(IconButton8, { size: "small", color: "error", disabled: busy, onClick: () => onDelete(msg), "aria-label": "Eliminar", children: /* @__PURE__ */ jsx30(Icon12, { icon: "mdi:delete-outline", size: 16 }) }) })
         ] }) : null
       ]
     }
@@ -15719,16 +15949,16 @@ function TaskConvoThread({ contextKey, readOnly = false, appId = SCRUM_APP_ID })
     });
   }
   if (!contextKey) return null;
-  return /* @__PURE__ */ jsxs24(Box16, { className: "paty-task-convo", children: [
-    /* @__PURE__ */ jsx29(Typography15, { variant: "caption", color: "text.secondary", sx: { mb: 0.75, display: "block", flexShrink: 0 }, children: "Conversaci\xF3n" }),
-    error ? /* @__PURE__ */ jsxs24(Alert9, { severity: "warning", sx: { mb: 1, flexShrink: 0 }, children: [
+  return /* @__PURE__ */ jsxs25(Box17, { className: "paty-task-convo", children: [
+    /* @__PURE__ */ jsx30(Typography16, { variant: "caption", color: "text.secondary", sx: { mb: 0.75, display: "block", flexShrink: 0 }, children: "Conversaci\xF3n" }),
+    error ? /* @__PURE__ */ jsxs25(Alert9, { severity: "warning", sx: { mb: 1, flexShrink: 0 }, children: [
       "No se pudo cargar el hilo: ",
       error
     ] }) : null,
-    /* @__PURE__ */ jsxs24(Box16, { className: "paty-task-convo__thread custom-scrollbar", children: [
-      loading ? /* @__PURE__ */ jsx29(Box16, { sx: { display: "flex", justifyContent: "center", py: 3 }, children: /* @__PURE__ */ jsx29(CircularProgress8, { size: 24 }) }) : null,
-      !loading && !messages.length && !error ? /* @__PURE__ */ jsx29(Typography15, { variant: "body2", color: "text.secondary", sx: { py: 2 }, children: "Sin mensajes publicados." }) : null,
-      !loading && messages.length ? /* @__PURE__ */ jsx29(Stack12, { spacing: 1.5, sx: { py: 0.5 }, children: messages.map((msg) => /* @__PURE__ */ jsx29(
+    /* @__PURE__ */ jsxs25(Box17, { className: "paty-task-convo__thread custom-scrollbar", children: [
+      loading ? /* @__PURE__ */ jsx30(Box17, { sx: { display: "flex", justifyContent: "center", py: 3 }, children: /* @__PURE__ */ jsx30(CircularProgress8, { size: 24 }) }) : null,
+      !loading && !messages.length && !error ? /* @__PURE__ */ jsx30(Typography16, { variant: "body2", color: "text.secondary", sx: { py: 2 }, children: "Sin mensajes publicados." }) : null,
+      !loading && messages.length ? /* @__PURE__ */ jsx30(Stack13, { spacing: 1.5, sx: { py: 0.5 }, children: messages.map((msg) => /* @__PURE__ */ jsx30(
         MessageBubble,
         {
           msg,
@@ -15751,19 +15981,19 @@ function TaskConvoThread({ contextKey, readOnly = false, appId = SCRUM_APP_ID })
         msg.treePath
       )) }) : null
     ] }),
-    !readOnly ? /* @__PURE__ */ jsxs24(Box16, { className: "paty-task-convo__composer", children: [
-      replyTo ? /* @__PURE__ */ jsxs24(Stack12, { direction: "row", spacing: 1, alignItems: "center", sx: { mb: 1 }, children: [
-        /* @__PURE__ */ jsxs24(Typography15, { variant: "caption", color: "text.secondary", children: [
+    !readOnly ? /* @__PURE__ */ jsxs25(Box17, { className: "paty-task-convo__composer", children: [
+      replyTo ? /* @__PURE__ */ jsxs25(Stack13, { direction: "row", spacing: 1, alignItems: "center", sx: { mb: 1 }, children: [
+        /* @__PURE__ */ jsxs25(Typography16, { variant: "caption", color: "text.secondary", children: [
           "Respondiendo a ",
           replyTo.jlog?.author || replyTo.treePath,
           quotePath ? ` \xB7 citando ${quotePath}` : ""
         ] }),
-        /* @__PURE__ */ jsx29(Button10, { size: "small", onClick: () => {
+        /* @__PURE__ */ jsx30(Button10, { size: "small", onClick: () => {
           setReplyTo(null);
           setQuotePath(null);
         }, children: "Cancelar" })
       ] }) : null,
-      /* @__PURE__ */ jsx29(Box16, { className: "paty-task-convo__editor paty-task-convo__editor--reply", children: /* @__PURE__ */ jsx29(
+      /* @__PURE__ */ jsx30(Box17, { className: "paty-task-convo__editor paty-task-convo__editor--reply", children: /* @__PURE__ */ jsx30(
         PromptBodyEditor,
         {
           body: draft,
@@ -15775,19 +16005,19 @@ function TaskConvoThread({ contextKey, readOnly = false, appId = SCRUM_APP_ID })
           loading: false
         }
       ) }),
-      /* @__PURE__ */ jsxs24(Stack12, { direction: "row", spacing: 1, alignItems: "center", justifyContent: "flex-end", sx: { mt: 1 }, children: [
-        /* @__PURE__ */ jsxs24(Typography15, { variant: "caption", color: "text.secondary", sx: { mr: "auto" }, children: [
+      /* @__PURE__ */ jsxs25(Stack13, { direction: "row", spacing: 1, alignItems: "center", justifyContent: "flex-end", sx: { mt: 1 }, children: [
+        /* @__PURE__ */ jsxs25(Typography16, { variant: "caption", color: "text.secondary", sx: { mr: "auto" }, children: [
           "Autor: ",
           Session.username() || "\u2014"
         ] }),
-        /* @__PURE__ */ jsx29(Button10, { variant: "contained", disabled: busy || !draft.trim(), onClick: handlePost, children: "Publicar" })
+        /* @__PURE__ */ jsx30(Button10, { variant: "contained", disabled: busy || !draft.trim(), onClick: handlePost, children: "Publicar" })
       ] })
     ] }) : null
   ] });
 }
 
 // src/js/tools/todos/TaskDetailDialog.jsx
-import { jsx as jsx30, jsxs as jsxs25 } from "react/jsx-runtime";
+import { jsx as jsx31, jsxs as jsxs26 } from "react/jsx-runtime";
 var { useState: useState19, useEffect: useEffect18, useRef: useRef10 } = getReact();
 var {
   Dialog: Dialog6,
@@ -15796,23 +16026,23 @@ var {
   DialogActions: DialogActions6,
   Button: Button11,
   TextField: TextField10,
-  Stack: Stack13,
-  Typography: Typography16,
+  Stack: Stack14,
+  Typography: Typography17,
   Tabs: Tabs3,
   Tab: Tab3,
-  Box: Box17,
+  Box: Box18,
   Accordion,
   AccordionSummary,
   AccordionDetails,
   Checkbox,
   FormControlLabel: FormControlLabel2,
   CircularProgress: CircularProgress9,
-  Chip: Chip9,
+  Chip: Chip10,
   Divider: Divider4,
-  IconButton: IconButton8,
-  Tooltip: Tooltip7
+  IconButton: IconButton9,
+  Tooltip: Tooltip8
 } = getMaterialUI();
-var { Icon: Icon12 } = UI;
+var { Icon: Icon13 } = UI;
 function formatShortId(id) {
   const s = String(id ?? "");
   if (s.length <= 5) return s;
@@ -15843,8 +16073,8 @@ function SubtaskEditor({ subtask, readOnly, busy, onSave, onDelete }) {
     setTitle(subtask.title);
     setDoc(subtask.descriptionDoc || "");
   }, [subtask.id, subtask.title, subtask.descriptionDoc]);
-  return /* @__PURE__ */ jsxs25(Accordion, { className: "paty-todos-subtask-acc", disableGutters: true, children: [
-    /* @__PURE__ */ jsx30(AccordionSummary, { expandIcon: /* @__PURE__ */ jsx30(Icon12, { icon: "mdi:chevron-down", size: 18 }), children: readOnly ? /* @__PURE__ */ jsx30(Typography16, { variant: "body2", sx: { fontWeight: 600 }, children: subtask.title }) : /* @__PURE__ */ jsx30(
+  return /* @__PURE__ */ jsxs26(Accordion, { className: "paty-todos-subtask-acc", disableGutters: true, children: [
+    /* @__PURE__ */ jsx31(AccordionSummary, { expandIcon: /* @__PURE__ */ jsx31(Icon13, { icon: "mdi:chevron-down", size: 18 }), children: readOnly ? /* @__PURE__ */ jsx31(Typography17, { variant: "body2", sx: { fontWeight: 600 }, children: subtask.title }) : /* @__PURE__ */ jsx31(
       TextField10,
       {
         size: "small",
@@ -15856,8 +16086,8 @@ function SubtaskEditor({ subtask, readOnly, busy, onSave, onDelete }) {
         placeholder: "T\xEDtulo subtarea"
       }
     ) }),
-    /* @__PURE__ */ jsx30(AccordionDetails, { children: /* @__PURE__ */ jsxs25(Stack13, { spacing: 1.5, children: [
-      /* @__PURE__ */ jsx30(
+    /* @__PURE__ */ jsx31(AccordionDetails, { children: /* @__PURE__ */ jsxs26(Stack14, { spacing: 1.5, children: [
+      /* @__PURE__ */ jsx31(
         TextField10,
         {
           label: "Documentaci\xF3n (Markdown)",
@@ -15871,8 +16101,8 @@ function SubtaskEditor({ subtask, readOnly, busy, onSave, onDelete }) {
           placeholder: "Opcional\u2026"
         }
       ),
-      !readOnly ? /* @__PURE__ */ jsxs25(Stack13, { direction: "row", spacing: 1, justifyContent: "flex-end", children: [
-        /* @__PURE__ */ jsx30(
+      !readOnly ? /* @__PURE__ */ jsxs26(Stack14, { direction: "row", spacing: 1, justifyContent: "flex-end", children: [
+        /* @__PURE__ */ jsx31(
           Button11,
           {
             size: "small",
@@ -15882,15 +16112,15 @@ function SubtaskEditor({ subtask, readOnly, busy, onSave, onDelete }) {
             children: "Guardar"
           }
         ),
-        /* @__PURE__ */ jsx30(Tooltip7, { title: "Eliminar subtarea", children: /* @__PURE__ */ jsx30(
-          IconButton8,
+        /* @__PURE__ */ jsx31(Tooltip8, { title: "Eliminar subtarea", children: /* @__PURE__ */ jsx31(
+          IconButton9,
           {
             size: "small",
             color: "error",
             disabled: busy,
             onClick: () => onDelete(subtask.id),
             "aria-label": "Eliminar subtarea",
-            children: /* @__PURE__ */ jsx30(Icon12, { icon: "mdi:delete-outline", size: 18 })
+            children: /* @__PURE__ */ jsx31(Icon13, { icon: "mdi:delete-outline", size: 18 })
           }
         ) })
       ] }) : null
@@ -15905,22 +16135,22 @@ function MilestoneEditor({ milestone, readOnly, busy, onSave, onDelete, onToggle
     setDueDate(toDateInputValue(milestone.dueDate));
   }, [milestone.id, milestone.title, milestone.dueDate]);
   if (readOnly) {
-    return /* @__PURE__ */ jsxs25(Stack13, { direction: "row", alignItems: "center", spacing: 1, className: "paty-todos-ms-row", children: [
-      /* @__PURE__ */ jsx30(Checkbox, { checked: !!milestone.completedAt, disabled: true }),
-      /* @__PURE__ */ jsxs25(Box17, { sx: { flex: 1 }, children: [
-        /* @__PURE__ */ jsx30(Typography16, { variant: "body2", sx: { fontWeight: 600, textDecoration: milestone.completedAt ? "line-through" : "none" }, children: milestone.title }),
-        milestone.dueDate ? /* @__PURE__ */ jsxs25(Typography16, { variant: "caption", color: "text.secondary", children: [
+    return /* @__PURE__ */ jsxs26(Stack14, { direction: "row", alignItems: "center", spacing: 1, className: "paty-todos-ms-row", children: [
+      /* @__PURE__ */ jsx31(Checkbox, { checked: !!milestone.completedAt, disabled: true }),
+      /* @__PURE__ */ jsxs26(Box18, { sx: { flex: 1 }, children: [
+        /* @__PURE__ */ jsx31(Typography17, { variant: "body2", sx: { fontWeight: 600, textDecoration: milestone.completedAt ? "line-through" : "none" }, children: milestone.title }),
+        milestone.dueDate ? /* @__PURE__ */ jsxs26(Typography17, { variant: "caption", color: "text.secondary", children: [
           "Vence: ",
           toDateInputValue(milestone.dueDate)
         ] }) : null
       ] })
     ] });
   }
-  return /* @__PURE__ */ jsxs25(Stack13, { direction: { xs: "column", sm: "row" }, spacing: 1, alignItems: { sm: "center" }, className: "paty-todos-ms-row", children: [
-    /* @__PURE__ */ jsx30(
+  return /* @__PURE__ */ jsxs26(Stack14, { direction: { xs: "column", sm: "row" }, spacing: 1, alignItems: { sm: "center" }, className: "paty-todos-ms-row", children: [
+    /* @__PURE__ */ jsx31(
       FormControlLabel2,
       {
-        control: /* @__PURE__ */ jsx30(
+        control: /* @__PURE__ */ jsx31(
           Checkbox,
           {
             checked: !!milestone.completedAt,
@@ -15931,7 +16161,7 @@ function MilestoneEditor({ milestone, readOnly, busy, onSave, onDelete, onToggle
         sx: { mr: 0 }
       }
     ),
-    /* @__PURE__ */ jsx30(
+    /* @__PURE__ */ jsx31(
       TextField10,
       {
         size: "small",
@@ -15941,7 +16171,7 @@ function MilestoneEditor({ milestone, readOnly, busy, onSave, onDelete, onToggle
         sx: { flex: 1 }
       }
     ),
-    /* @__PURE__ */ jsx30(
+    /* @__PURE__ */ jsx31(
       TextField10,
       {
         size: "small",
@@ -15953,8 +16183,8 @@ function MilestoneEditor({ milestone, readOnly, busy, onSave, onDelete, onToggle
         sx: { minWidth: 160 }
       }
     ),
-    /* @__PURE__ */ jsxs25(Stack13, { direction: "row", spacing: 0.5, sx: { flexShrink: 0 }, children: [
-      /* @__PURE__ */ jsx30(
+    /* @__PURE__ */ jsxs26(Stack14, { direction: "row", spacing: 0.5, sx: { flexShrink: 0 }, children: [
+      /* @__PURE__ */ jsx31(
         Button11,
         {
           size: "small",
@@ -15964,15 +16194,15 @@ function MilestoneEditor({ milestone, readOnly, busy, onSave, onDelete, onToggle
           children: "Guardar"
         }
       ),
-      /* @__PURE__ */ jsx30(Tooltip7, { title: "Eliminar hito", children: /* @__PURE__ */ jsx30(
-        IconButton8,
+      /* @__PURE__ */ jsx31(Tooltip8, { title: "Eliminar hito", children: /* @__PURE__ */ jsx31(
+        IconButton9,
         {
           size: "small",
           color: "error",
           disabled: busy,
           onClick: () => onDelete(milestone.id),
           "aria-label": "Eliminar hito",
-          children: /* @__PURE__ */ jsx30(Icon12, { icon: "mdi:delete-outline", size: 18 })
+          children: /* @__PURE__ */ jsx31(Icon13, { icon: "mdi:delete-outline", size: 18 })
         }
       ) })
     ] })
@@ -16006,7 +16236,7 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
     }
   }
   if (!open) return null;
-  return /* @__PURE__ */ jsxs25(
+  return /* @__PURE__ */ jsxs26(
     Dialog6,
     {
       open,
@@ -16015,11 +16245,11 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
       scroll: "paper",
       className: "paty-todos-task-dialog",
       children: [
-        /* @__PURE__ */ jsxs25(DialogTitle6, { sx: { display: "flex", alignItems: "center", gap: 1 }, children: [
-          /* @__PURE__ */ jsx30(Icon12, { icon: "mdi:card-text-outline", size: 22 }),
-          /* @__PURE__ */ jsx30(Typography16, { component: "span", variant: "h6", sx: { flex: 1, fontWeight: 700, lineHeight: 1.3 }, children: loading ? "Cargando\u2026" : task?.title || "Tarea" }),
-          task?.id ? /* @__PURE__ */ jsx30(
-            Typography16,
+        /* @__PURE__ */ jsxs26(DialogTitle6, { sx: { display: "flex", alignItems: "center", gap: 1 }, children: [
+          /* @__PURE__ */ jsx31(Icon13, { icon: "mdi:card-text-outline", size: 22 }),
+          /* @__PURE__ */ jsx31(Typography17, { component: "span", variant: "h6", sx: { flex: 1, fontWeight: 700, lineHeight: 1.3 }, children: loading ? "Cargando\u2026" : task?.title || "Tarea" }),
+          task?.id ? /* @__PURE__ */ jsx31(
+            Typography17,
             {
               component: "span",
               variant: "caption",
@@ -16029,18 +16259,18 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
               children: formatShortId(task.id)
             }
           ) : null,
-          loading ? /* @__PURE__ */ jsx30(CircularProgress9, { size: 20 }) : null
+          loading ? /* @__PURE__ */ jsx31(CircularProgress9, { size: 20 }) : null
         ] }),
-        /* @__PURE__ */ jsx30(DialogContent8, { dividers: true, className: "paty-todos-task-dialog__content", children: task ? /* @__PURE__ */ jsxs25(Box17, { className: "paty-todos-task-dialog__inner", children: [
-          /* @__PURE__ */ jsxs25(Tabs3, { value: tab, onChange: (_, v) => setTab(v), sx: { mb: 2, flexShrink: 0 }, children: [
-            /* @__PURE__ */ jsx30(Tab3, { label: "Detalle" }),
-            /* @__PURE__ */ jsx30(Tab3, { label: `Subtareas (${task.subtasks?.length ?? 0})` }),
-            /* @__PURE__ */ jsx30(Tab3, { label: `Hitos (${task.milestones?.length ?? 0})` }),
-            /* @__PURE__ */ jsx30(Tab3, { label: "Trazabilidad" })
+        /* @__PURE__ */ jsx31(DialogContent8, { dividers: true, className: "paty-todos-task-dialog__content", children: task ? /* @__PURE__ */ jsxs26(Box18, { className: "paty-todos-task-dialog__inner", children: [
+          /* @__PURE__ */ jsxs26(Tabs3, { value: tab, onChange: (_, v) => setTab(v), sx: { mb: 2, flexShrink: 0 }, children: [
+            /* @__PURE__ */ jsx31(Tab3, { label: "Detalle" }),
+            /* @__PURE__ */ jsx31(Tab3, { label: `Subtareas (${task.subtasks?.length ?? 0})` }),
+            /* @__PURE__ */ jsx31(Tab3, { label: `Hitos (${task.milestones?.length ?? 0})` }),
+            /* @__PURE__ */ jsx31(Tab3, { label: "Trazabilidad" })
           ] }),
-          tab === 0 ? /* @__PURE__ */ jsxs25(Stack13, { spacing: 2, className: "paty-todos-task-dialog__detail", children: [
-            /* @__PURE__ */ jsxs25(Stack13, { direction: { xs: "column", sm: "row" }, spacing: 2, alignItems: "flex-start", sx: { flexShrink: 0 }, children: [
-              /* @__PURE__ */ jsx30(
+          tab === 0 ? /* @__PURE__ */ jsxs26(Stack14, { spacing: 2, className: "paty-todos-task-dialog__detail", children: [
+            /* @__PURE__ */ jsxs26(Stack14, { direction: { xs: "column", sm: "row" }, spacing: 2, alignItems: "flex-start", sx: { flexShrink: 0 }, children: [
+              /* @__PURE__ */ jsx31(
                 TextField10,
                 {
                   label: "T\xEDtulo",
@@ -16053,7 +16283,7 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
                   sx: { flex: 1, minWidth: 0 }
                 }
               ),
-              /* @__PURE__ */ jsx30(Box17, { sx: { flex: 1, minWidth: 0, width: "100%" }, children: /* @__PURE__ */ jsx30(
+              /* @__PURE__ */ jsx31(Box18, { sx: { flex: 1, minWidth: 0, width: "100%" }, children: /* @__PURE__ */ jsx31(
                 UserAssignAutocomplete,
                 {
                   label: "Asignado a",
@@ -16064,9 +16294,9 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
                 }
               ) })
             ] }),
-            /* @__PURE__ */ jsxs25(Box17, { className: "paty-todos-task-objective", children: [
-              /* @__PURE__ */ jsx30(Typography16, { variant: "caption", color: "text.secondary", sx: { mb: 0.75, display: "block" }, children: "Objetivo" }),
-              /* @__PURE__ */ jsx30(Box17, { className: "paty-todos-task-objective__editor", children: /* @__PURE__ */ jsx30(
+            /* @__PURE__ */ jsxs26(Box18, { className: "paty-todos-task-objective", children: [
+              /* @__PURE__ */ jsx31(Typography17, { variant: "caption", color: "text.secondary", sx: { mb: 0.75, display: "block" }, children: "Objetivo" }),
+              /* @__PURE__ */ jsx31(Box18, { className: "paty-todos-task-objective__editor", children: /* @__PURE__ */ jsx31(
                 PromptBodyEditor,
                 {
                   body: doc,
@@ -16088,20 +16318,20 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
                 }
               ) })
             ] }),
-            /* @__PURE__ */ jsx30(Box17, { className: "paty-todos-task-dialog__convo", children: /* @__PURE__ */ jsx30(
+            /* @__PURE__ */ jsx31(Box18, { className: "paty-todos-task-dialog__convo", children: /* @__PURE__ */ jsx31(
               TaskConvoThread,
               {
                 contextKey: scrumTaskContext(task.id),
                 readOnly
               }
             ) }),
-            /* @__PURE__ */ jsxs25(Stack13, { direction: "row", spacing: 1, flexWrap: "wrap", sx: { flexShrink: 0 }, children: [
-              /* @__PURE__ */ jsx30(Chip9, { size: "small", label: `Creada por ${task.createdBy}` }),
-              task.completedAt ? /* @__PURE__ */ jsx30(Chip9, { size: "small", color: "success", label: "Finalizada" }) : null
+            /* @__PURE__ */ jsxs26(Stack14, { direction: "row", spacing: 1, flexWrap: "wrap", sx: { flexShrink: 0 }, children: [
+              /* @__PURE__ */ jsx31(Chip10, { size: "small", label: `Creada por ${task.createdBy}` }),
+              task.completedAt ? /* @__PURE__ */ jsx31(Chip10, { size: "small", color: "success", label: "Finalizada" }) : null
             ] })
           ] }) : null,
-          tab === 1 ? /* @__PURE__ */ jsx30(Box17, { className: "paty-todos-task-dialog__scroll", children: /* @__PURE__ */ jsxs25(Stack13, { spacing: 1, children: [
-            (task.subtasks ?? []).map((st) => /* @__PURE__ */ jsx30(
+          tab === 1 ? /* @__PURE__ */ jsx31(Box18, { className: "paty-todos-task-dialog__scroll", children: /* @__PURE__ */ jsxs26(Stack14, { spacing: 1, children: [
+            (task.subtasks ?? []).map((st) => /* @__PURE__ */ jsx31(
               SubtaskEditor,
               {
                 subtask: st,
@@ -16112,9 +16342,9 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
               },
               st.id
             )),
-            /* @__PURE__ */ jsx30(Divider4, { sx: { my: 1 } }),
-            !readOnly ? /* @__PURE__ */ jsxs25(Stack13, { direction: "row", spacing: 1, children: [
-              /* @__PURE__ */ jsx30(
+            /* @__PURE__ */ jsx31(Divider4, { sx: { my: 1 } }),
+            !readOnly ? /* @__PURE__ */ jsxs26(Stack14, { direction: "row", spacing: 1, children: [
+              /* @__PURE__ */ jsx31(
                 TextField10,
                 {
                   size: "small",
@@ -16132,7 +16362,7 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
                   }
                 }
               ),
-              /* @__PURE__ */ jsx30(
+              /* @__PURE__ */ jsx31(
                 Button11,
                 {
                   variant: "contained",
@@ -16147,8 +16377,8 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
               )
             ] }) : null
           ] }) }) : null,
-          tab === 2 ? /* @__PURE__ */ jsx30(Box17, { className: "paty-todos-task-dialog__scroll", children: /* @__PURE__ */ jsxs25(Stack13, { spacing: 1.5, children: [
-            (task.milestones ?? []).map((ms) => /* @__PURE__ */ jsx30(
+          tab === 2 ? /* @__PURE__ */ jsx31(Box18, { className: "paty-todos-task-dialog__scroll", children: /* @__PURE__ */ jsxs26(Stack14, { spacing: 1.5, children: [
+            (task.milestones ?? []).map((ms) => /* @__PURE__ */ jsx31(
               MilestoneEditor,
               {
                 milestone: ms,
@@ -16160,10 +16390,10 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
               },
               ms.id
             )),
-            /* @__PURE__ */ jsx30(Divider4, { sx: { my: 1 } }),
-            !readOnly ? /* @__PURE__ */ jsxs25(Stack13, { direction: { xs: "column", sm: "row" }, spacing: 1, children: [
-              /* @__PURE__ */ jsx30(TextField10, { size: "small", fullWidth: true, label: "Hito", value: msTitle, onChange: (e) => setMsTitle(e.target.value) }),
-              /* @__PURE__ */ jsx30(
+            /* @__PURE__ */ jsx31(Divider4, { sx: { my: 1 } }),
+            !readOnly ? /* @__PURE__ */ jsxs26(Stack14, { direction: { xs: "column", sm: "row" }, spacing: 1, children: [
+              /* @__PURE__ */ jsx31(TextField10, { size: "small", fullWidth: true, label: "Hito", value: msTitle, onChange: (e) => setMsTitle(e.target.value) }),
+              /* @__PURE__ */ jsx31(
                 TextField10,
                 {
                   size: "small",
@@ -16175,7 +16405,7 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
                   sx: { minWidth: 160 }
                 }
               ),
-              /* @__PURE__ */ jsx30(
+              /* @__PURE__ */ jsx31(
                 Button11,
                 {
                   variant: "contained",
@@ -16191,9 +16421,9 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
               )
             ] }) : null
           ] }) }) : null,
-          tab === 3 ? /* @__PURE__ */ jsx30(Box17, { className: "paty-todos-task-dialog__scroll", children: /* @__PURE__ */ jsxs25(Stack13, { spacing: 0, children: [
-            !readOnly ? /* @__PURE__ */ jsxs25(Stack13, { direction: "row", spacing: 1, sx: { mb: 2 }, children: [
-              /* @__PURE__ */ jsx30(
+          tab === 3 ? /* @__PURE__ */ jsx31(Box18, { className: "paty-todos-task-dialog__scroll", children: /* @__PURE__ */ jsxs26(Stack14, { spacing: 0, children: [
+            !readOnly ? /* @__PURE__ */ jsxs26(Stack14, { direction: "row", spacing: 1, sx: { mb: 2 }, children: [
+              /* @__PURE__ */ jsx31(
                 TextField10,
                 {
                   size: "small",
@@ -16205,7 +16435,7 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
                   onChange: (e) => setComment(e.target.value)
                 }
               ),
-              /* @__PURE__ */ jsx30(
+              /* @__PURE__ */ jsx31(
                 Button11,
                 {
                   variant: "outlined",
@@ -16220,22 +16450,22 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
                 }
               )
             ] }) : null,
-            (task.events ?? []).map((ev) => /* @__PURE__ */ jsxs25(Box17, { className: "paty-todos-event", children: [
-              /* @__PURE__ */ jsxs25("div", { className: "paty-todos-event__meta", children: [
-                /* @__PURE__ */ jsx30("strong", { children: ev.author }),
+            (task.events ?? []).map((ev) => /* @__PURE__ */ jsxs26(Box18, { className: "paty-todos-event", children: [
+              /* @__PURE__ */ jsxs26("div", { className: "paty-todos-event__meta", children: [
+                /* @__PURE__ */ jsx31("strong", { children: ev.author }),
                 " \xB7 ",
                 ev.eventType,
                 " \xB7 ",
                 formatDt(ev.createdAt)
               ] }),
-              /* @__PURE__ */ jsx30("div", { children: ev.body || "\u2014" })
+              /* @__PURE__ */ jsx31("div", { children: ev.body || "\u2014" })
             ] }, ev.id)),
-            !(task.events ?? []).length ? /* @__PURE__ */ jsx30(Typography16, { variant: "body2", color: "text.secondary", children: "Sin eventos a\xFAn." }) : null
+            !(task.events ?? []).length ? /* @__PURE__ */ jsx31(Typography17, { variant: "body2", color: "text.secondary", children: "Sin eventos a\xFAn." }) : null
           ] }) }) : null
-        ] }) : /* @__PURE__ */ jsx30(Typography16, { color: "text.secondary", children: "Selecciona una tarea." }) }),
-        /* @__PURE__ */ jsxs25(DialogActions6, { children: [
-          /* @__PURE__ */ jsx30(Button11, { onClick: onClose, children: "Cerrar" }),
-          tab === 0 && task && !readOnly ? /* @__PURE__ */ jsx30(
+        ] }) : /* @__PURE__ */ jsx31(Typography17, { color: "text.secondary", children: "Selecciona una tarea." }) }),
+        /* @__PURE__ */ jsxs26(DialogActions6, { children: [
+          /* @__PURE__ */ jsx31(Button11, { onClick: onClose, children: "Cerrar" }),
+          tab === 0 && task && !readOnly ? /* @__PURE__ */ jsx31(
             Button11,
             {
               variant: "contained",
@@ -16258,7 +16488,7 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
 
 // src/js/tools/todos/NewBoardDialog.jsx
 init_platform();
-import { jsx as jsx31, jsxs as jsxs26 } from "react/jsx-runtime";
+import { jsx as jsx32, jsxs as jsxs27 } from "react/jsx-runtime";
 var { useState: useState20 } = getReact();
 var {
   Dialog: Dialog7,
@@ -16267,16 +16497,16 @@ var {
   DialogActions: DialogActions7,
   Button: Button12,
   TextField: TextField11,
-  Stack: Stack14,
+  Stack: Stack15,
   FormControl: FormControl4,
   InputLabel,
   Select: Select4,
   MenuItem: MenuItem4,
   FormHelperText,
-  Chip: Chip10,
-  Box: Box18
+  Chip: Chip11,
+  Box: Box19
 } = getMaterialUI();
-var { Icon: Icon13 } = UI;
+var { Icon: Icon14 } = UI;
 function parseMembers(raw) {
   return raw.split(/[,;\n]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
 }
@@ -16295,13 +16525,13 @@ function NewBoardDialog({ open, onClose, onCreate, busy }) {
     reset();
     onClose();
   }
-  return /* @__PURE__ */ jsxs26(Dialog7, { open, onClose: handleClose, maxWidth: "sm", fullWidth: true, children: [
-    /* @__PURE__ */ jsxs26(DialogTitle7, { sx: { display: "flex", alignItems: "center", gap: 1 }, children: [
-      /* @__PURE__ */ jsx31(Icon13, { icon: "mdi:view-column", size: 22 }),
+  return /* @__PURE__ */ jsxs27(Dialog7, { open, onClose: handleClose, maxWidth: "sm", fullWidth: true, children: [
+    /* @__PURE__ */ jsxs27(DialogTitle7, { sx: { display: "flex", alignItems: "center", gap: 1 }, children: [
+      /* @__PURE__ */ jsx32(Icon14, { icon: "mdi:view-column", size: 22 }),
       "Nuevo tablero SCRUM"
     ] }),
-    /* @__PURE__ */ jsx31(DialogContent9, { children: /* @__PURE__ */ jsxs26(Stack14, { spacing: 2, sx: { pt: 1 }, children: [
-      /* @__PURE__ */ jsx31(
+    /* @__PURE__ */ jsx32(DialogContent9, { children: /* @__PURE__ */ jsxs27(Stack15, { spacing: 2, sx: { pt: 1 }, children: [
+      /* @__PURE__ */ jsx32(
         TextField11,
         {
           autoFocus: true,
@@ -16312,7 +16542,7 @@ function NewBoardDialog({ open, onClose, onCreate, busy }) {
           onChange: (e) => setTitle(e.target.value)
         }
       ),
-      /* @__PURE__ */ jsx31(
+      /* @__PURE__ */ jsx32(
         TextField11,
         {
           label: "Descripci\xF3n",
@@ -16324,9 +16554,9 @@ function NewBoardDialog({ open, onClose, onCreate, busy }) {
           onChange: (e) => setDescription(e.target.value)
         }
       ),
-      /* @__PURE__ */ jsxs26(FormControl4, { size: "small", fullWidth: true, children: [
-        /* @__PURE__ */ jsx31(InputLabel, { id: "paty-board-vis-label", children: "Visibilidad" }),
-        /* @__PURE__ */ jsxs26(
+      /* @__PURE__ */ jsxs27(FormControl4, { size: "small", fullWidth: true, children: [
+        /* @__PURE__ */ jsx32(InputLabel, { id: "paty-board-vis-label", children: "Visibilidad" }),
+        /* @__PURE__ */ jsxs27(
           Select4,
           {
             labelId: "paty-board-vis-label",
@@ -16334,14 +16564,14 @@ function NewBoardDialog({ open, onClose, onCreate, busy }) {
             value: visibility,
             onChange: (e) => setVisibility(e.target.value),
             children: [
-              /* @__PURE__ */ jsx31(MenuItem4, { value: "private", children: "Privado \u2014 solo integrantes" }),
-              /* @__PURE__ */ jsx31(MenuItem4, { value: "public", children: "P\xFAblico \u2014 equipo ISA puede editar" })
+              /* @__PURE__ */ jsx32(MenuItem4, { value: "private", children: "Privado \u2014 solo integrantes" }),
+              /* @__PURE__ */ jsx32(MenuItem4, { value: "public", children: "P\xFAblico \u2014 equipo ISA puede editar" })
             ]
           }
         ),
-        /* @__PURE__ */ jsx31(FormHelperText, { children: visibility === "public" ? "Cualquier usuario con acceso a isa-patyia puede ver y editar. El enlace p\xFAblico sigue siendo solo lectura." : "Solo integrantes y administradores ven el tablero." })
+        /* @__PURE__ */ jsx32(FormHelperText, { children: visibility === "public" ? "Cualquier usuario con acceso a isa-patyia puede ver y editar. El enlace p\xFAblico sigue siendo solo lectura." : "Solo integrantes y administradores ven el tablero." })
       ] }),
-      /* @__PURE__ */ jsx31(
+      /* @__PURE__ */ jsx32(
         TextField11,
         {
           label: "Integrantes adicionales",
@@ -16355,11 +16585,11 @@ function NewBoardDialog({ open, onClose, onCreate, busy }) {
           helperText: "T\xFA quedas como editor. Indica usuarios BD_AUTH y rol por defecto editor."
         }
       ),
-      membersRaw.trim() ? /* @__PURE__ */ jsx31(Box18, { sx: { display: "flex", flexWrap: "wrap", gap: 0.5 }, children: parseMembers(membersRaw).map((u) => /* @__PURE__ */ jsx31(Chip10, { size: "small", label: u, icon: /* @__PURE__ */ jsx31(Icon13, { icon: "mdi:account", size: 14 }) }, u)) }) : null
+      membersRaw.trim() ? /* @__PURE__ */ jsx32(Box19, { sx: { display: "flex", flexWrap: "wrap", gap: 0.5 }, children: parseMembers(membersRaw).map((u) => /* @__PURE__ */ jsx32(Chip11, { size: "small", label: u, icon: /* @__PURE__ */ jsx32(Icon14, { icon: "mdi:account", size: 14 }) }, u)) }) : null
     ] }) }),
-    /* @__PURE__ */ jsxs26(DialogActions7, { children: [
-      /* @__PURE__ */ jsx31(Button12, { onClick: handleClose, children: "Cancelar" }),
-      /* @__PURE__ */ jsx31(
+    /* @__PURE__ */ jsxs27(DialogActions7, { children: [
+      /* @__PURE__ */ jsx32(Button12, { onClick: handleClose, children: "Cancelar" }),
+      /* @__PURE__ */ jsx32(
         Button12,
         {
           variant: "contained",
@@ -16386,10 +16616,10 @@ function NewBoardDialog({ open, onClose, onCreate, busy }) {
 
 // src/js/tools/todos/PublicScrumBoard.jsx
 init_platform();
-import { jsx as jsx32, jsxs as jsxs27 } from "react/jsx-runtime";
+import { jsx as jsx33, jsxs as jsxs28 } from "react/jsx-runtime";
 var { useState: useState21, useEffect: useEffect19 } = getReact();
-var { Box: Box19, Alert: Alert10, CircularProgress: CircularProgress10 } = getMaterialUI();
-var { Icon: Icon14 } = UI;
+var { Box: Box20, Alert: Alert10, CircularProgress: CircularProgress10 } = getMaterialUI();
+var { Icon: Icon15 } = UI;
 function PublicScrumBoard({ publicSlug }) {
   const [boardData, setBoardData] = useState21(null);
   const [loading, setLoading] = useState21(true);
@@ -16421,13 +16651,13 @@ function PublicScrumBoard({ publicSlug }) {
       cancelled = true;
     };
   }, [publicSlug]);
-  return /* @__PURE__ */ jsxs27(Box19, { className: "paty-todos-shell", children: [
-    /* @__PURE__ */ jsxs27(Box19, { className: "paty-todos-toolbar", children: [
-      /* @__PURE__ */ jsx32(Icon14, { icon: "mdi:view-column", size: 22 }),
-      /* @__PURE__ */ jsx32("span", { className: "paty-todos-board-title", children: boardData?.board?.title || "Tablero SCRUM" })
+  return /* @__PURE__ */ jsxs28(Box20, { className: "paty-todos-shell", children: [
+    /* @__PURE__ */ jsxs28(Box20, { className: "paty-todos-toolbar", children: [
+      /* @__PURE__ */ jsx33(Icon15, { icon: "mdi:view-column", size: 22 }),
+      /* @__PURE__ */ jsx33("span", { className: "paty-todos-board-title", children: boardData?.board?.title || "Tablero SCRUM" })
     ] }),
-    error ? /* @__PURE__ */ jsx32(Alert10, { severity: "error", sx: { m: 2 }, children: error }) : null,
-    loading ? /* @__PURE__ */ jsx32(Box19, { sx: { display: "flex", justifyContent: "center", p: 4 }, children: /* @__PURE__ */ jsx32(CircularProgress10, {}) }) : /* @__PURE__ */ jsx32(
+    error ? /* @__PURE__ */ jsx33(Alert10, { severity: "error", sx: { m: 2 }, children: error }) : null,
+    loading ? /* @__PURE__ */ jsx33(Box20, { sx: { display: "flex", justifyContent: "center", p: 4 }, children: /* @__PURE__ */ jsx33(CircularProgress10, {}) }) : /* @__PURE__ */ jsx33(
       TodosKanban,
       {
         boardData,
@@ -16447,10 +16677,10 @@ function PublicScrumBoard({ publicSlug }) {
 
 // src/js/tools/todos/BoardsHome.jsx
 init_platform();
-import { jsx as jsx33, jsxs as jsxs28 } from "react/jsx-runtime";
-var { useState: useState22, useEffect: useEffect20, useMemo: useMemo15 } = getReact();
-var { Box: Box20, Typography: Typography17, Button: Button13, Stack: Stack15, Chip: Chip11, CircularProgress: CircularProgress11, Skeleton, Accordion: Accordion2, AccordionSummary: AccordionSummary2, AccordionDetails: AccordionDetails2, IconButton: IconButton9, Tooltip: Tooltip8 } = getMaterialUI();
-var { Icon: Icon15 } = UI;
+import { jsx as jsx34, jsxs as jsxs29 } from "react/jsx-runtime";
+var { useState: useState22, useEffect: useEffect20, useMemo: useMemo16 } = getReact();
+var { Box: Box21, Typography: Typography18, Button: Button13, Stack: Stack16, Chip: Chip12, CircularProgress: CircularProgress11, Skeleton, Accordion: Accordion2, AccordionSummary: AccordionSummary2, AccordionDetails: AccordionDetails2, IconButton: IconButton10, Tooltip: Tooltip9 } = getMaterialUI();
+var { Icon: Icon16 } = UI;
 function formatBoardDate(iso) {
   if (!iso) return "";
   try {
@@ -16460,11 +16690,11 @@ function formatBoardDate(iso) {
   }
 }
 function BoardPreviewSkeleton() {
-  return /* @__PURE__ */ jsx33(Box20, { className: "paty-todos-kanban paty-todos-kanban--preview paty-todos-kanban--preview-loading", children: [0, 1].map((i) => /* @__PURE__ */ jsxs28(Box20, { className: "paty-todos-column paty-todos-column--pending", children: [
-    /* @__PURE__ */ jsx33(Skeleton, { variant: "rounded", height: 24, className: "paty-todos-column__head-skeleton" }),
-    /* @__PURE__ */ jsxs28(Stack15, { spacing: 1, className: "paty-todos-column__list paty-todos-column__list--skeleton", children: [
-      /* @__PURE__ */ jsx33(Skeleton, { variant: "rounded", height: 88 }),
-      /* @__PURE__ */ jsx33(Skeleton, { variant: "rounded", height: 88 })
+  return /* @__PURE__ */ jsx34(Box21, { className: "paty-todos-kanban paty-todos-kanban--preview paty-todos-kanban--preview-loading", children: [0, 1].map((i) => /* @__PURE__ */ jsxs29(Box21, { className: "paty-todos-column paty-todos-column--pending", children: [
+    /* @__PURE__ */ jsx34(Skeleton, { variant: "rounded", height: 24, className: "paty-todos-column__head-skeleton" }),
+    /* @__PURE__ */ jsxs29(Stack16, { spacing: 1, className: "paty-todos-column__list paty-todos-column__list--skeleton", children: [
+      /* @__PURE__ */ jsx34(Skeleton, { variant: "rounded", height: 88 }),
+      /* @__PURE__ */ jsx34(Skeleton, { variant: "rounded", height: 88 })
     ] })
   ] }, i)) });
 }
@@ -16486,11 +16716,11 @@ function BoardAccordionRow({ board, preview, previewReady, loadingPreviews, expa
     if (!ok) return;
     await onDeleteBoard(board.id);
   }
-  return /* @__PURE__ */ jsxs28(Accordion2, { expanded, onChange: (_, next) => onToggleExpand(board.id, next), className: "paty-todos-board-acc", disableGutters: true, elevation: 0, children: [
-    /* @__PURE__ */ jsx33(AccordionSummary2, { expandIcon: /* @__PURE__ */ jsx33(Icon15, { icon: "mdi:chevron-down", size: 18 }), className: "paty-todos-board-acc__summary", children: /* @__PURE__ */ jsxs28(Box20, { className: "paty-todos-board-row__header paty-todos-board-row__header--acc", children: [
-      /* @__PURE__ */ jsxs28(Box20, { className: "paty-todos-board-row__title-wrap", children: [
-        /* @__PURE__ */ jsx33(Icon15, { icon: "mdi:view-column", size: 15 }),
-        /* @__PURE__ */ jsx33(
+  return /* @__PURE__ */ jsxs29(Accordion2, { expanded, onChange: (_, next) => onToggleExpand(board.id, next), className: "paty-todos-board-acc", disableGutters: true, elevation: 0, children: [
+    /* @__PURE__ */ jsx34(AccordionSummary2, { expandIcon: /* @__PURE__ */ jsx34(Icon16, { icon: "mdi:chevron-down", size: 18 }), className: "paty-todos-board-acc__summary", children: /* @__PURE__ */ jsxs29(Box21, { className: "paty-todos-board-row__header paty-todos-board-row__header--acc", children: [
+      /* @__PURE__ */ jsxs29(Box21, { className: "paty-todos-board-row__title-wrap", children: [
+        /* @__PURE__ */ jsx34(Icon16, { icon: "mdi:view-column", size: 15 }),
+        /* @__PURE__ */ jsx34(
           "span",
           {
             className: "paty-todos-board-row__title paty-todos-board-row__title--link",
@@ -16511,42 +16741,42 @@ function BoardAccordionRow({ board, preview, previewReady, loadingPreviews, expa
           }
         )
       ] }),
-      /* @__PURE__ */ jsxs28(Stack15, { direction: "row", spacing: 0.35, flexWrap: "nowrap", useFlexGap: true, className: "paty-todos-board-row__chips", onClick: stopBubble, children: [
-        board.visibility === "public" ? /* @__PURE__ */ jsx33(
-          Chip11,
+      /* @__PURE__ */ jsxs29(Stack16, { direction: "row", spacing: 0.35, flexWrap: "nowrap", useFlexGap: true, className: "paty-todos-board-row__chips", onClick: stopBubble, children: [
+        board.visibility === "public" ? /* @__PURE__ */ jsx34(
+          Chip12,
           {
             size: "small",
             className: "paty-todos-board-card__chip paty-todos-board-card__chip--visibility paty-todos-board-card__chip--public",
             label: "P\xFAblico",
-            icon: /* @__PURE__ */ jsx33(Icon15, { icon: "mdi:earth", size: 11 })
+            icon: /* @__PURE__ */ jsx34(Icon16, { icon: "mdi:earth", size: 11 })
           }
-        ) : /* @__PURE__ */ jsx33(
-          Chip11,
+        ) : /* @__PURE__ */ jsx34(
+          Chip12,
           {
             size: "small",
             className: "paty-todos-board-card__chip paty-todos-board-card__chip--visibility",
             label: "Privado",
-            icon: /* @__PURE__ */ jsx33(Icon15, { icon: "mdi:lock-outline", size: 11 })
+            icon: /* @__PURE__ */ jsx34(Icon16, { icon: "mdi:lock-outline", size: 11 })
           }
         ),
-        roleChips.map((chip) => /* @__PURE__ */ jsx33(
-          Chip11,
+        roleChips.map((chip) => /* @__PURE__ */ jsx34(
+          Chip12,
           {
             size: "small",
             className: `paty-todos-board-card__chip paty-todos-board-card__chip--${chip.variant}`,
             label: chip.label,
             variant: chip.variant === "role" ? "outlined" : "filled",
-            icon: /* @__PURE__ */ jsx33(Icon15, { icon: chip.icon, size: 11 })
+            icon: /* @__PURE__ */ jsx34(Icon16, { icon: chip.icon, size: 11 })
           },
           chip.id
         ))
       ] }),
-      /* @__PURE__ */ jsxs28(Box20, { className: "paty-todos-board-row__tail", onClick: stopBubble, children: [
-        /* @__PURE__ */ jsx33(Typography17, { className: "paty-todos-board-row__meta", component: "span", variant: "caption", children: formatBoardDate(board.updatedAt) }),
-        deletable ? /* @__PURE__ */ jsx33(Tooltip8, { title: "Eliminar tablero (solo admin global)", children: /* @__PURE__ */ jsx33("span", { children: /* @__PURE__ */ jsx33(IconButton9, { size: "small", className: "paty-todos-board-row__delete", "aria-label": "Eliminar tablero", disabled: deleting, onClick: handleDelete, children: /* @__PURE__ */ jsx33(Icon15, { icon: "mdi:delete-outline", size: 16 }) }) }) }) : null
+      /* @__PURE__ */ jsxs29(Box21, { className: "paty-todos-board-row__tail", onClick: stopBubble, children: [
+        /* @__PURE__ */ jsx34(Typography18, { className: "paty-todos-board-row__meta", component: "span", variant: "caption", children: formatBoardDate(board.updatedAt) }),
+        deletable ? /* @__PURE__ */ jsx34(Tooltip9, { title: "Eliminar tablero (solo admin global)", children: /* @__PURE__ */ jsx34("span", { children: /* @__PURE__ */ jsx34(IconButton10, { size: "small", className: "paty-todos-board-row__delete", "aria-label": "Eliminar tablero", disabled: deleting, onClick: handleDelete, children: /* @__PURE__ */ jsx34(Icon16, { icon: "mdi:delete-outline", size: 16 }) }) }) }) : null
       ] })
     ] }) }),
-    /* @__PURE__ */ jsx33(AccordionDetails2, { className: "paty-todos-board-acc__details", children: /* @__PURE__ */ jsx33(Box20, { className: "paty-todos-board-row__preview", children: !previewReady && loadingPreviews ? /* @__PURE__ */ jsx33(BoardPreviewSkeleton, {}) : preview ? /* @__PURE__ */ jsx33(
+    /* @__PURE__ */ jsx34(AccordionDetails2, { className: "paty-todos-board-acc__details", children: /* @__PURE__ */ jsx34(Box21, { className: "paty-todos-board-row__preview", children: !previewReady && loadingPreviews ? /* @__PURE__ */ jsx34(BoardPreviewSkeleton, {}) : preview ? /* @__PURE__ */ jsx34(
       TodosKanban,
       {
         preview: true,
@@ -16558,20 +16788,20 @@ function BoardAccordionRow({ board, preview, previewReady, loadingPreviews, expa
         onDragStart: (taskId) => onPreviewDragStart(board.id, taskId),
         onDropColumn: (columnId) => onPreviewDropColumn(board.id, columnId)
       }
-    ) : previewReady ? /* @__PURE__ */ jsx33(Typography17, { variant: "body2", color: "text.secondary", sx: { py: 2, px: 1 }, children: "No se pudo cargar la vista previa del tablero." }) : /* @__PURE__ */ jsx33(BoardPreviewSkeleton, {}) }) })
+    ) : previewReady ? /* @__PURE__ */ jsx34(Typography18, { variant: "body2", color: "text.secondary", sx: { py: 2, px: 1 }, children: "No se pudo cargar la vista previa del tablero." }) : /* @__PURE__ */ jsx34(BoardPreviewSkeleton, {}) }) })
   ] });
 }
 function BoardsHomeToolbar({ loading, onNewBoard, onRefresh }) {
-  return /* @__PURE__ */ jsxs28(Box20, { className: "paty-todos-toolbar", children: [
-    /* @__PURE__ */ jsx33(Icon15, { icon: "mdi:view-dashboard-outline", size: 22 }),
-    /* @__PURE__ */ jsx33("span", { className: "paty-todos-board-title", children: "Mis tableros SCRUM" }),
-    /* @__PURE__ */ jsx33(Box20, { sx: { flex: 1 } }),
-    /* @__PURE__ */ jsx33(Button13, { size: "small", variant: "outlined", startIcon: /* @__PURE__ */ jsx33(Icon15, { icon: "mdi:plus", size: 16 }), onClick: onNewBoard, children: "Nuevo" }),
-    /* @__PURE__ */ jsx33(Button13, { size: "small", variant: "text", onClick: onRefresh, disabled: loading, startIcon: loading ? /* @__PURE__ */ jsx33(CircularProgress11, { size: 14 }) : /* @__PURE__ */ jsx33(Icon15, { icon: "mdi:refresh", size: 16 }), children: "Actualizar" })
+  return /* @__PURE__ */ jsxs29(Box21, { className: "paty-todos-toolbar", children: [
+    /* @__PURE__ */ jsx34(Icon16, { icon: "mdi:view-dashboard-outline", size: 22 }),
+    /* @__PURE__ */ jsx34("span", { className: "paty-todos-board-title", children: "Mis tableros SCRUM" }),
+    /* @__PURE__ */ jsx34(Box21, { sx: { flex: 1 } }),
+    /* @__PURE__ */ jsx34(Button13, { size: "small", variant: "outlined", startIcon: /* @__PURE__ */ jsx34(Icon16, { icon: "mdi:plus", size: 16 }), onClick: onNewBoard, children: "Nuevo" }),
+    /* @__PURE__ */ jsx34(Button13, { size: "small", variant: "text", onClick: onRefresh, disabled: loading, startIcon: loading ? /* @__PURE__ */ jsx34(CircularProgress11, { size: 14 }) : /* @__PURE__ */ jsx34(Icon16, { icon: "mdi:refresh", size: 16 }), children: "Actualizar" })
   ] });
 }
 function BoardsHome({ boards, boardPreviews = {}, loadingPreviews = false, loading, onOpenBoard, onOpenTask, onPreviewDragStart, onPreviewDropColumn, onNewBoard, onDeleteBoard }) {
-  const sortedBoards = useMemo15(() => sortBoardsByRecent(boards), [boards]);
+  const sortedBoards = useMemo16(() => sortBoardsByRecent(boards), [boards]);
   const [expandState, setExpandState] = useState22(() => readBoardExpandState());
   const [deletingId, setDeletingId] = useState22("");
   useEffect20(() => {
@@ -16600,21 +16830,21 @@ function BoardsHome({ boards, boardPreviews = {}, loadingPreviews = false, loadi
     }
   }
   if (loading && !boards.length) {
-    return /* @__PURE__ */ jsx33(Box20, { className: "paty-todos-boards-home paty-todos-boards-home--loading", children: /* @__PURE__ */ jsx33(CircularProgress11, {}) });
+    return /* @__PURE__ */ jsx34(Box21, { className: "paty-todos-boards-home paty-todos-boards-home--loading", children: /* @__PURE__ */ jsx34(CircularProgress11, {}) });
   }
   if (!boards.length) {
-    return /* @__PURE__ */ jsx33(Box20, { className: "paty-todos-gate", children: /* @__PURE__ */ jsxs28(Stack15, { spacing: 2, alignItems: "center", sx: { maxWidth: 420, p: 2 }, children: [
-      /* @__PURE__ */ jsx33(Icon15, { icon: "mdi:view-column", width: "2.5em", height: "2.5em", style: { opacity: 0.7 } }),
-      /* @__PURE__ */ jsx33(Typography17, { variant: "body1", color: "text.secondary", textAlign: "center", children: "No hay tableros SCRUM. Crea el primero para empezar." }),
-      /* @__PURE__ */ jsx33(Button13, { variant: "contained", startIcon: /* @__PURE__ */ jsx33(Icon15, { icon: "mdi:plus", size: 18 }), onClick: onNewBoard, children: "Crear tablero" })
+    return /* @__PURE__ */ jsx34(Box21, { className: "paty-todos-gate", children: /* @__PURE__ */ jsxs29(Stack16, { spacing: 2, alignItems: "center", sx: { maxWidth: 420, p: 2 }, children: [
+      /* @__PURE__ */ jsx34(Icon16, { icon: "mdi:view-column", width: "2.5em", height: "2.5em", style: { opacity: 0.7 } }),
+      /* @__PURE__ */ jsx34(Typography18, { variant: "body1", color: "text.secondary", textAlign: "center", children: "No hay tableros SCRUM. Crea el primero para empezar." }),
+      /* @__PURE__ */ jsx34(Button13, { variant: "contained", startIcon: /* @__PURE__ */ jsx34(Icon16, { icon: "mdi:plus", size: 18 }), onClick: onNewBoard, children: "Crear tablero" })
     ] }) });
   }
-  return /* @__PURE__ */ jsx33(Box20, { className: "paty-todos-boards-home", children: /* @__PURE__ */ jsx33(Box20, { className: "paty-todos-boards-list", children: sortedBoards.map((board) => /* @__PURE__ */ jsx33(BoardAccordionRow, { board, preview: boardPreviews[board.id], previewReady: Object.prototype.hasOwnProperty.call(boardPreviews, board.id), loadingPreviews, expanded: isExpanded(board.id), onToggleExpand: handleToggleExpand, onOpenBoard, onOpenTask, onPreviewDragStart, onPreviewDropColumn, onDeleteBoard: handleDeleteBoard, deleting: deletingId === board.id }, board.id)) }) });
+  return /* @__PURE__ */ jsx34(Box21, { className: "paty-todos-boards-home", children: /* @__PURE__ */ jsx34(Box21, { className: "paty-todos-boards-list", children: sortedBoards.map((board) => /* @__PURE__ */ jsx34(BoardAccordionRow, { board, preview: boardPreviews[board.id], previewReady: Object.prototype.hasOwnProperty.call(boardPreviews, board.id), loadingPreviews, expanded: isExpanded(board.id), onToggleExpand: handleToggleExpand, onOpenBoard, onOpenTask, onPreviewDragStart, onPreviewDropColumn, onDeleteBoard: handleDeleteBoard, deleting: deletingId === board.id }, board.id)) }) });
 }
 
 // src/js/tools/todos/BoardSettingsDialog.jsx
 init_platform();
-import { Fragment as Fragment10, jsx as jsx34, jsxs as jsxs29 } from "react/jsx-runtime";
+import { Fragment as Fragment10, jsx as jsx35, jsxs as jsxs30 } from "react/jsx-runtime";
 var { useState: useState23, useEffect: useEffect21 } = getReact();
 var {
   Dialog: Dialog8,
@@ -16622,20 +16852,20 @@ var {
   DialogContent: DialogContent10,
   DialogActions: DialogActions8,
   Button: Button14,
-  Stack: Stack16,
+  Stack: Stack17,
   TextField: TextField12,
-  Box: Box21,
+  Box: Box22,
   FormControl: FormControl5,
   InputLabel: InputLabel2,
   Select: Select5,
   MenuItem: MenuItem5,
-  Typography: Typography18,
-  Chip: Chip12,
-  IconButton: IconButton10,
-  Tooltip: Tooltip9,
+  Typography: Typography19,
+  Chip: Chip13,
+  IconButton: IconButton11,
+  Tooltip: Tooltip10,
   CircularProgress: CircularProgress12
 } = getMaterialUI();
-var { Icon: Icon16 } = UI;
+var { Icon: Icon17 } = UI;
 function roleLabel2(boardRole) {
   return boardRole === "readonly" ? "Solo lectura" : "Editor";
 }
@@ -16696,23 +16926,23 @@ function BoardMembersSection({
     void persist([...members, { username: user, boardRole: "editor" }]);
     setAddKey((n) => n + 1);
   }
-  return /* @__PURE__ */ jsxs29(Box21, { className: "paty-todos-board-members", children: [
-    /* @__PURE__ */ jsx34(Typography18, { variant: "caption", color: "text.secondary", sx: { mb: 0.75, display: "block" }, children: "Integrantes" }),
-    loading ? /* @__PURE__ */ jsx34(Box21, { sx: { display: "flex", justifyContent: "center", py: 1.5 }, children: /* @__PURE__ */ jsx34(CircularProgress12, { size: 22 }) }) : members.length === 0 ? /* @__PURE__ */ jsx34(Typography18, { variant: "body2", color: "text.secondary", sx: { mb: 1 }, children: "Sin integrantes registrados." }) : /* @__PURE__ */ jsx34(Stack16, { spacing: 0.75, className: "paty-todos-board-members__list", sx: { mb: 1 }, children: members.map((m) => /* @__PURE__ */ jsxs29(
-      Stack16,
+  return /* @__PURE__ */ jsxs30(Box22, { className: "paty-todos-board-members", children: [
+    /* @__PURE__ */ jsx35(Typography19, { variant: "caption", color: "text.secondary", sx: { mb: 0.75, display: "block" }, children: "Integrantes" }),
+    loading ? /* @__PURE__ */ jsx35(Box22, { sx: { display: "flex", justifyContent: "center", py: 1.5 }, children: /* @__PURE__ */ jsx35(CircularProgress12, { size: 22 }) }) : members.length === 0 ? /* @__PURE__ */ jsx35(Typography19, { variant: "body2", color: "text.secondary", sx: { mb: 1 }, children: "Sin integrantes registrados." }) : /* @__PURE__ */ jsx35(Stack17, { spacing: 0.75, className: "paty-todos-board-members__list", sx: { mb: 1 }, children: members.map((m) => /* @__PURE__ */ jsxs30(
+      Stack17,
       {
         direction: "row",
         spacing: 1,
         alignItems: "center",
         className: "paty-todos-board-members__row",
         children: [
-          /* @__PURE__ */ jsx34(
-            Chip12,
+          /* @__PURE__ */ jsx35(
+            Chip13,
             {
               size: "small",
               label: m.username,
-              icon: /* @__PURE__ */ jsx34(
-                Icon16,
+              icon: /* @__PURE__ */ jsx35(
+                Icon17,
                 {
                   icon: m.boardRole === "readonly" ? "mdi:eye-outline" : "mdi:pencil-outline",
                   size: 14
@@ -16721,27 +16951,27 @@ function BoardMembersSection({
               sx: { flex: 1, minWidth: 0, justifyContent: "flex-start" }
             }
           ),
-          readOnly ? /* @__PURE__ */ jsx34(Typography18, { variant: "caption", color: "text.secondary", sx: { flexShrink: 0 }, children: roleLabel2(m.boardRole) }) : /* @__PURE__ */ jsxs29(Fragment10, { children: [
-            /* @__PURE__ */ jsx34(FormControl5, { size: "small", disabled, className: "paty-todos-board-members__role", children: /* @__PURE__ */ jsxs29(
+          readOnly ? /* @__PURE__ */ jsx35(Typography19, { variant: "caption", color: "text.secondary", sx: { flexShrink: 0 }, children: roleLabel2(m.boardRole) }) : /* @__PURE__ */ jsxs30(Fragment10, { children: [
+            /* @__PURE__ */ jsx35(FormControl5, { size: "small", disabled, className: "paty-todos-board-members__role", children: /* @__PURE__ */ jsxs30(
               Select5,
               {
                 value: m.boardRole,
                 onChange: (e) => updateRole(m.username, e.target.value),
                 "aria-label": `Rol de ${m.username}`,
                 children: [
-                  /* @__PURE__ */ jsx34(MenuItem5, { value: "editor", children: "Editor" }),
-                  /* @__PURE__ */ jsx34(MenuItem5, { value: "readonly", children: "Solo lectura" })
+                  /* @__PURE__ */ jsx35(MenuItem5, { value: "editor", children: "Editor" }),
+                  /* @__PURE__ */ jsx35(MenuItem5, { value: "readonly", children: "Solo lectura" })
                 ]
               }
             ) }),
-            /* @__PURE__ */ jsx34(Tooltip9, { title: "Quitar integrante", children: /* @__PURE__ */ jsx34("span", { children: /* @__PURE__ */ jsx34(
-              IconButton10,
+            /* @__PURE__ */ jsx35(Tooltip10, { title: "Quitar integrante", children: /* @__PURE__ */ jsx35("span", { children: /* @__PURE__ */ jsx35(
+              IconButton11,
               {
                 size: "small",
                 disabled,
                 "aria-label": `Quitar ${m.username}`,
                 onClick: () => removeMember(m.username),
-                children: /* @__PURE__ */ jsx34(Icon16, { icon: "mdi:account-remove-outline", size: 18 })
+                children: /* @__PURE__ */ jsx35(Icon17, { icon: "mdi:account-remove-outline", size: 18 })
               }
             ) }) })
           ] })
@@ -16749,7 +16979,7 @@ function BoardMembersSection({
       },
       m.username
     )) }),
-    !readOnly ? /* @__PURE__ */ jsx34(Box21, { className: "paty-todos-board-members__add", children: /* @__PURE__ */ jsx34(
+    !readOnly ? /* @__PURE__ */ jsx35(Box22, { className: "paty-todos-board-members__add", children: /* @__PURE__ */ jsx35(
       UserAssignAutocomplete,
       {
         value: null,
@@ -16760,7 +16990,7 @@ function BoardMembersSection({
       },
       addKey
     ) }) : null,
-    membersSaving ? /* @__PURE__ */ jsx34(Typography18, { variant: "caption", color: "text.secondary", sx: { mt: 0.5, display: "block" }, children: "Guardando integrantes\u2026" }) : null
+    membersSaving ? /* @__PURE__ */ jsx35(Typography19, { variant: "caption", color: "text.secondary", sx: { mt: 0.5, display: "block" }, children: "Guardando integrantes\u2026" }) : null
   ] });
 }
 function BoardSettingsDialog({
@@ -16787,14 +17017,14 @@ function BoardSettingsDialog({
     if (readOnly) return;
     await onSave(patch);
   }
-  return /* @__PURE__ */ jsxs29(Dialog8, { open, onClose, maxWidth: "sm", fullWidth: true, className: "paty-todos-board-settings-dialog", children: [
-    /* @__PURE__ */ jsxs29(DialogTitle8, { sx: { display: "flex", alignItems: "center", gap: 1 }, children: [
-      /* @__PURE__ */ jsx34(Icon16, { icon: "mdi:cog-outline", size: 22 }),
+  return /* @__PURE__ */ jsxs30(Dialog8, { open, onClose, maxWidth: "sm", fullWidth: true, className: "paty-todos-board-settings-dialog", children: [
+    /* @__PURE__ */ jsxs30(DialogTitle8, { sx: { display: "flex", alignItems: "center", gap: 1 }, children: [
+      /* @__PURE__ */ jsx35(Icon17, { icon: "mdi:cog-outline", size: 22 }),
       "Detalles del tablero"
     ] }),
-    /* @__PURE__ */ jsx34(DialogContent10, { className: "paty-todos-board-settings-dialog__content", children: readOnly ? /* @__PURE__ */ jsxs29(Stack16, { spacing: 1.5, sx: { pt: 0.5 }, children: [
-      /* @__PURE__ */ jsxs29(
-        Stack16,
+    /* @__PURE__ */ jsx35(DialogContent10, { className: "paty-todos-board-settings-dialog__content", children: readOnly ? /* @__PURE__ */ jsxs30(Stack17, { spacing: 1.5, sx: { pt: 0.5 }, children: [
+      /* @__PURE__ */ jsxs30(
+        Stack17,
         {
           direction: "row",
           spacing: 2,
@@ -16802,22 +17032,22 @@ function BoardSettingsDialog({
           flexWrap: "wrap",
           className: "paty-todos-board-settings-head",
           children: [
-            /* @__PURE__ */ jsxs29(Typography18, { variant: "body2", sx: { flex: 1, minWidth: 0 }, children: [
-              /* @__PURE__ */ jsx34("strong", { children: "T\xEDtulo:" }),
+            /* @__PURE__ */ jsxs30(Typography19, { variant: "body2", sx: { flex: 1, minWidth: 0 }, children: [
+              /* @__PURE__ */ jsx35("strong", { children: "T\xEDtulo:" }),
               " ",
               board.title
             ] }),
-            /* @__PURE__ */ jsxs29(Typography18, { variant: "body2", color: "text.secondary", children: [
-              /* @__PURE__ */ jsx34("strong", { children: "Visibilidad:" }),
+            /* @__PURE__ */ jsxs30(Typography19, { variant: "body2", color: "text.secondary", children: [
+              /* @__PURE__ */ jsx35("strong", { children: "Visibilidad:" }),
               " ",
               board.visibility === "public" ? "P\xFAblico" : "Privado"
             ] })
           ]
         }
       ),
-      /* @__PURE__ */ jsxs29(Box21, { className: "paty-todos-board-desc-field", children: [
-        /* @__PURE__ */ jsx34(Typography18, { variant: "caption", color: "text.secondary", sx: { mb: 0.5, display: "block" }, children: "Descripci\xF3n" }),
-        /* @__PURE__ */ jsx34(Box21, { className: "paty-todos-board-desc-editor", children: /* @__PURE__ */ jsx34(
+      /* @__PURE__ */ jsxs30(Box22, { className: "paty-todos-board-desc-field", children: [
+        /* @__PURE__ */ jsx35(Typography19, { variant: "caption", color: "text.secondary", sx: { mb: 0.5, display: "block" }, children: "Descripci\xF3n" }),
+        /* @__PURE__ */ jsx35(Box22, { className: "paty-todos-board-desc-editor", children: /* @__PURE__ */ jsx35(
           PromptBodyEditor,
           {
             body: board.description ?? "",
@@ -16828,7 +17058,7 @@ function BoardSettingsDialog({
           }
         ) })
       ] }),
-      /* @__PURE__ */ jsx34(
+      /* @__PURE__ */ jsx35(
         BoardMembersSection,
         {
           boardId,
@@ -16838,16 +17068,16 @@ function BoardSettingsDialog({
           onMembersChange
         }
       )
-    ] }) : /* @__PURE__ */ jsxs29(Stack16, { spacing: 1.5, className: "paty-todos-board-row__edit", sx: { pt: 0.5 }, children: [
-      /* @__PURE__ */ jsxs29(
-        Stack16,
+    ] }) : /* @__PURE__ */ jsxs30(Stack17, { spacing: 1.5, className: "paty-todos-board-row__edit", sx: { pt: 0.5 }, children: [
+      /* @__PURE__ */ jsxs30(
+        Stack17,
         {
           direction: "row",
           spacing: 1.5,
           alignItems: "flex-start",
           className: "paty-todos-board-settings-head",
           children: [
-            /* @__PURE__ */ jsx34(
+            /* @__PURE__ */ jsx35(
               TextField12,
               {
                 label: "T\xEDtulo",
@@ -16867,9 +17097,9 @@ function BoardSettingsDialog({
                 sx: { flex: 1, minWidth: 0 }
               }
             ),
-            /* @__PURE__ */ jsxs29(FormControl5, { size: "small", disabled: saving, className: "paty-todos-board-settings-vis", children: [
-              /* @__PURE__ */ jsx34(InputLabel2, { id: "paty-board-settings-vis", shrink: true, children: "Visibilidad" }),
-              /* @__PURE__ */ jsxs29(
+            /* @__PURE__ */ jsxs30(FormControl5, { size: "small", disabled: saving, className: "paty-todos-board-settings-vis", children: [
+              /* @__PURE__ */ jsx35(InputLabel2, { id: "paty-board-settings-vis", shrink: true, children: "Visibilidad" }),
+              /* @__PURE__ */ jsxs30(
                 Select5,
                 {
                   labelId: "paty-board-settings-vis",
@@ -16881,8 +17111,8 @@ function BoardSettingsDialog({
                     if (next !== board.visibility) void saveField({ visibility: next });
                   },
                   children: [
-                    /* @__PURE__ */ jsx34(MenuItem5, { value: "private", children: "Privado" }),
-                    /* @__PURE__ */ jsx34(MenuItem5, { value: "public", children: "P\xFAblico" })
+                    /* @__PURE__ */ jsx35(MenuItem5, { value: "private", children: "Privado" }),
+                    /* @__PURE__ */ jsx35(MenuItem5, { value: "public", children: "P\xFAblico" })
                   ]
                 }
               )
@@ -16890,9 +17120,9 @@ function BoardSettingsDialog({
           ]
         }
       ),
-      /* @__PURE__ */ jsxs29(Box21, { className: "paty-todos-board-desc-field", children: [
-        /* @__PURE__ */ jsx34(Typography18, { variant: "caption", color: "text.secondary", sx: { mb: 0.5, display: "block" }, children: "Descripci\xF3n" }),
-        /* @__PURE__ */ jsx34(Box21, { className: "paty-todos-board-desc-editor", children: /* @__PURE__ */ jsx34(
+      /* @__PURE__ */ jsxs30(Box22, { className: "paty-todos-board-desc-field", children: [
+        /* @__PURE__ */ jsx35(Typography19, { variant: "caption", color: "text.secondary", sx: { mb: 0.5, display: "block" }, children: "Descripci\xF3n" }),
+        /* @__PURE__ */ jsx35(Box22, { className: "paty-todos-board-desc-editor", children: /* @__PURE__ */ jsx35(
           PromptBodyEditor,
           {
             body: description,
@@ -16911,7 +17141,7 @@ function BoardSettingsDialog({
           }
         ) })
       ] }),
-      /* @__PURE__ */ jsx34(
+      /* @__PURE__ */ jsx35(
         BoardMembersSection,
         {
           boardId,
@@ -16922,15 +17152,15 @@ function BoardSettingsDialog({
         }
       )
     ] }) }),
-    /* @__PURE__ */ jsx34(DialogActions8, { children: /* @__PURE__ */ jsx34(Button14, { onClick: onClose, children: "Cerrar" }) })
+    /* @__PURE__ */ jsx35(DialogActions8, { children: /* @__PURE__ */ jsx35(Button14, { onClick: onClose, children: "Cerrar" }) })
   ] });
 }
 
 // src/js/tools/todos/TodosShellParts.jsx
 init_platform();
-import { jsx as jsx35, jsxs as jsxs30 } from "react/jsx-runtime";
-var { Box: Box22, Typography: Typography19, Button: Button15, Stack: Stack17, Alert: Alert11, CircularProgress: CircularProgress13, Tooltip: Tooltip10, IconButton: IconButton11 } = getMaterialUI();
-var { Icon: Icon17 } = UI;
+import { jsx as jsx36, jsxs as jsxs31 } from "react/jsx-runtime";
+var { Box: Box23, Typography: Typography20, Button: Button15, Stack: Stack18, Alert: Alert11, CircularProgress: CircularProgress13, Tooltip: Tooltip11, IconButton: IconButton12 } = getMaterialUI();
+var { Icon: Icon18 } = UI;
 function TodosBoardToolbar({
   boardTitle,
   boardMeta,
@@ -16947,40 +17177,40 @@ function TodosBoardToolbar({
     navigator.clipboard.writeText(url);
     toastSuccess("Enlace p\xFAblico copiado");
   }
-  return /* @__PURE__ */ jsxs30(Box22, { className: "paty-todos-toolbar", children: [
-    /* @__PURE__ */ jsx35(Tooltip10, { title: "Volver a mis tableros", children: /* @__PURE__ */ jsx35(
-      IconButton11,
+  return /* @__PURE__ */ jsxs31(Box23, { className: "paty-todos-toolbar", children: [
+    /* @__PURE__ */ jsx36(Tooltip11, { title: "Volver a mis tableros", children: /* @__PURE__ */ jsx36(
+      IconButton12,
       {
         size: "small",
         onClick: onHome,
         className: "paty-todos-back-btn",
         "aria-label": "Volver a mis tableros",
-        children: /* @__PURE__ */ jsx35(Icon17, { icon: "mdi:arrow-left", size: 22 })
+        children: /* @__PURE__ */ jsx36(Icon18, { icon: "mdi:arrow-left", size: 22 })
       }
     ) }),
-    /* @__PURE__ */ jsx35(Icon17, { icon: "mdi:view-column", size: 22 }),
-    /* @__PURE__ */ jsx35("span", { className: "paty-todos-board-title", children: boardTitle || "Tablero SCRUM" }),
-    /* @__PURE__ */ jsx35(Tooltip10, { title: "Detalles del tablero", children: /* @__PURE__ */ jsx35(
-      IconButton11,
+    /* @__PURE__ */ jsx36(Icon18, { icon: "mdi:view-column", size: 22 }),
+    /* @__PURE__ */ jsx36("span", { className: "paty-todos-board-title", children: boardTitle || "Tablero SCRUM" }),
+    /* @__PURE__ */ jsx36(Tooltip11, { title: "Detalles del tablero", children: /* @__PURE__ */ jsx36(
+      IconButton12,
       {
         size: "small",
         onClick: onOpenSettings,
         "aria-label": "Detalles del tablero",
         className: "paty-todos-settings-btn",
-        children: /* @__PURE__ */ jsx35(Icon17, { icon: "mdi:cog-outline", size: 20 })
+        children: /* @__PURE__ */ jsx36(Icon18, { icon: "mdi:cog-outline", size: 20 })
       }
     ) }),
-    /* @__PURE__ */ jsx35(Box22, { sx: { flex: 1 } }),
-    /* @__PURE__ */ jsx35(Button15, { size: "small", variant: "outlined", startIcon: /* @__PURE__ */ jsx35(Icon17, { icon: "mdi:plus", size: 16 }), onClick: onNewBoard, children: "Nuevo" }),
-    publicSlug ? /* @__PURE__ */ jsx35(Tooltip10, { title: "Copiar enlace p\xFAblico (solo lectura)", children: /* @__PURE__ */ jsx35(IconButton11, { size: "small", onClick: copyPublicLink, "aria-label": "Copiar enlace p\xFAblico", children: /* @__PURE__ */ jsx35(Icon17, { icon: "mdi:link-variant", size: 20 }) }) }) : null,
-    /* @__PURE__ */ jsx35(
+    /* @__PURE__ */ jsx36(Box23, { sx: { flex: 1 } }),
+    /* @__PURE__ */ jsx36(Button15, { size: "small", variant: "outlined", startIcon: /* @__PURE__ */ jsx36(Icon18, { icon: "mdi:plus", size: 16 }), onClick: onNewBoard, children: "Nuevo" }),
+    publicSlug ? /* @__PURE__ */ jsx36(Tooltip11, { title: "Copiar enlace p\xFAblico (solo lectura)", children: /* @__PURE__ */ jsx36(IconButton12, { size: "small", onClick: copyPublicLink, "aria-label": "Copiar enlace p\xFAblico", children: /* @__PURE__ */ jsx36(Icon18, { icon: "mdi:link-variant", size: 20 }) }) }) : null,
+    /* @__PURE__ */ jsx36(
       Button15,
       {
         size: "small",
         variant: "text",
         onClick: onRefresh,
         disabled: loadingBoard,
-        startIcon: loadingBoard ? /* @__PURE__ */ jsx35(CircularProgress13, { size: 14 }) : /* @__PURE__ */ jsx35(Icon17, { icon: "mdi:refresh", size: 16 }),
+        startIcon: loadingBoard ? /* @__PURE__ */ jsx36(CircularProgress13, { size: 14 }) : /* @__PURE__ */ jsx36(Icon18, { icon: "mdi:refresh", size: 16 }),
         children: "Actualizar"
       }
     )
@@ -16989,10 +17219,10 @@ function TodosBoardToolbar({
 
 // src/js/tools/todos/TodosPublicHome.jsx
 init_platform();
-import { jsx as jsx36, jsxs as jsxs31 } from "react/jsx-runtime";
+import { jsx as jsx37, jsxs as jsxs32 } from "react/jsx-runtime";
 var { useState: useState24, useEffect: useEffect22 } = getReact();
-var { Box: Box23, Typography: Typography20, Button: Button16, Stack: Stack18, Alert: Alert12, CircularProgress: CircularProgress14, Chip: Chip13 } = getMaterialUI();
-var { Icon: Icon18 } = UI;
+var { Box: Box24, Typography: Typography21, Button: Button16, Stack: Stack19, Alert: Alert12, CircularProgress: CircularProgress14, Chip: Chip14 } = getMaterialUI();
+var { Icon: Icon19 } = UI;
 var PUBLIC_CARD_ACCENTS = () => {
   const { NEON_COLORS } = getGlass();
   return [NEON_COLORS.blue, NEON_COLORS.cyan, NEON_COLORS.magenta, NEON_COLORS.green, NEON_COLORS.amber];
@@ -17026,29 +17256,29 @@ function TodosPublicHome() {
     };
   }, []);
   if (selectedSlug) {
-    return /* @__PURE__ */ jsxs31(Box23, { className: "paty-todos-shell", children: [
-      /* @__PURE__ */ jsx36(Box23, { className: "paty-todos-toolbar", children: /* @__PURE__ */ jsx36(
+    return /* @__PURE__ */ jsxs32(Box24, { className: "paty-todos-shell", children: [
+      /* @__PURE__ */ jsx37(Box24, { className: "paty-todos-toolbar", children: /* @__PURE__ */ jsx37(
         Button16,
         {
           size: "small",
           variant: "text",
-          startIcon: /* @__PURE__ */ jsx36(Icon18, { icon: "mdi:arrow-left", size: 16 }),
+          startIcon: /* @__PURE__ */ jsx37(Icon19, { icon: "mdi:arrow-left", size: 16 }),
           onClick: () => setSelectedSlug(""),
           children: "Volver"
         }
       ) }),
-      /* @__PURE__ */ jsx36(PublicScrumBoard, { publicSlug: selectedSlug })
+      /* @__PURE__ */ jsx37(PublicScrumBoard, { publicSlug: selectedSlug })
     ] });
   }
-  return /* @__PURE__ */ jsxs31(Box23, { className: "paty-todos-shell", children: [
-    /* @__PURE__ */ jsxs31(Box23, { className: "paty-todos-toolbar", children: [
-      /* @__PURE__ */ jsx36(Icon18, { icon: "mdi:view-column", size: 22 }),
-      /* @__PURE__ */ jsx36("span", { className: "paty-todos-board-title", children: "DevFlow" })
+  return /* @__PURE__ */ jsxs32(Box24, { className: "paty-todos-shell", children: [
+    /* @__PURE__ */ jsxs32(Box24, { className: "paty-todos-toolbar", children: [
+      /* @__PURE__ */ jsx37(Icon19, { icon: "mdi:view-column", size: 22 }),
+      /* @__PURE__ */ jsx37("span", { className: "paty-todos-board-title", children: "DevFlow" })
     ] }),
-    error ? /* @__PURE__ */ jsx36(Alert12, { severity: "error", sx: { mx: 2, mb: 2, mt: 2 }, children: error }) : null,
-    loading ? /* @__PURE__ */ jsx36(Box23, { sx: { display: "flex", justifyContent: "center", p: 4 }, children: /* @__PURE__ */ jsx36(CircularProgress14, {}) }) : boards.length ? /* @__PURE__ */ jsx36(Box23, { className: "paty-todos-public-list", component: "ul", sx: { listStyle: "none", m: 0, p: 0 }, children: boards.map((board, index) => {
+    error ? /* @__PURE__ */ jsx37(Alert12, { severity: "error", sx: { mx: 2, mb: 2, mt: 2 }, children: error }) : null,
+    loading ? /* @__PURE__ */ jsx37(Box24, { sx: { display: "flex", justifyContent: "center", p: 4 }, children: /* @__PURE__ */ jsx37(CircularProgress14, {}) }) : boards.length ? /* @__PURE__ */ jsx37(Box24, { className: "paty-todos-public-list", component: "ul", sx: { listStyle: "none", m: 0, p: 0 }, children: boards.map((board, index) => {
       const accent = accentColors[index % accentColors.length];
-      return /* @__PURE__ */ jsxs31(
+      return /* @__PURE__ */ jsxs32(
         GlassCard,
         {
           component: "li",
@@ -17063,48 +17293,48 @@ function TodosPublicHome() {
             listStyle: "none"
           },
           children: [
-            /* @__PURE__ */ jsx36(Box23, { className: "paty-todos-public-card__icon-wrap", "aria-hidden": true, children: /* @__PURE__ */ jsx36(Icon18, { icon: "mdi:view-column", size: 22 }) }),
-            /* @__PURE__ */ jsxs31(Box23, { className: "paty-todos-public-card__body", children: [
-              /* @__PURE__ */ jsx36(Typography20, { className: "paty-todos-public-card__title", component: "div", variant: "subtitle1", children: board.title }),
-              /* @__PURE__ */ jsx36(Typography20, { className: "paty-todos-public-card__desc", component: "div", variant: "body2", color: "text.secondary", children: board.description || "Tablero SCRUM" }),
-              /* @__PURE__ */ jsx36(
-                Chip13,
+            /* @__PURE__ */ jsx37(Box24, { className: "paty-todos-public-card__icon-wrap", "aria-hidden": true, children: /* @__PURE__ */ jsx37(Icon19, { icon: "mdi:view-column", size: 22 }) }),
+            /* @__PURE__ */ jsxs32(Box24, { className: "paty-todos-public-card__body", children: [
+              /* @__PURE__ */ jsx37(Typography21, { className: "paty-todos-public-card__title", component: "div", variant: "subtitle1", children: board.title }),
+              /* @__PURE__ */ jsx37(Typography21, { className: "paty-todos-public-card__desc", component: "div", variant: "body2", color: "text.secondary", children: board.description || "Tablero SCRUM" }),
+              /* @__PURE__ */ jsx37(
+                Chip14,
                 {
                   size: "small",
                   className: "paty-todos-public-card__chip",
                   label: "P\xFAblico",
-                  icon: /* @__PURE__ */ jsx36(Icon18, { icon: "mdi:earth", size: 12 })
+                  icon: /* @__PURE__ */ jsx37(Icon19, { icon: "mdi:earth", size: 12 })
                 }
               )
             ] }),
-            /* @__PURE__ */ jsx36(Box23, { className: "paty-todos-public-card__arrow", "aria-hidden": true, children: /* @__PURE__ */ jsx36(Icon18, { icon: "mdi:chevron-right", size: 22 }) })
+            /* @__PURE__ */ jsx37(Box24, { className: "paty-todos-public-card__arrow", "aria-hidden": true, children: /* @__PURE__ */ jsx37(Icon19, { icon: "mdi:chevron-right", size: 22 }) })
           ]
         },
         board.id
       );
-    }) }) : /* @__PURE__ */ jsxs31(Stack18, { spacing: 1, alignItems: "center", sx: { p: 4, opacity: 0.85 }, children: [
-      /* @__PURE__ */ jsx36(Icon18, { icon: "mdi:view-column-outline", width: "2.5em", height: "2.5em" }),
-      /* @__PURE__ */ jsx36(Typography20, { variant: "body2", color: "text.secondary", align: "center", children: "No hay tableros publicados todav\xEDa." })
+    }) }) : /* @__PURE__ */ jsxs32(Stack19, { spacing: 1, alignItems: "center", sx: { p: 4, opacity: 0.85 }, children: [
+      /* @__PURE__ */ jsx37(Icon19, { icon: "mdi:view-column-outline", width: "2.5em", height: "2.5em" }),
+      /* @__PURE__ */ jsx37(Typography21, { variant: "body2", color: "text.secondary", align: "center", children: "No hay tableros publicados todav\xEDa." })
     ] })
   ] });
 }
 
 // src/js/tools/TodosTool.jsx
-import { Fragment as Fragment11, jsx as jsx37, jsxs as jsxs32 } from "react/jsx-runtime";
+import { Fragment as Fragment11, jsx as jsx38, jsxs as jsxs33 } from "react/jsx-runtime";
 var { useState: useState25 } = getReact();
-var { Box: Box24, Alert: Alert13 } = getMaterialUI();
+var { Box: Box25, Alert: Alert13 } = getMaterialUI();
 function TodosTool({ bootTodos, onNeedLogin }) {
   if (bootTodos?.publicSlug) {
-    return /* @__PURE__ */ jsx37(PublicScrumBoard, { publicSlug: String(bootTodos.publicSlug) });
+    return /* @__PURE__ */ jsx38(PublicScrumBoard, { publicSlug: String(bootTodos.publicSlug) });
   }
   const todos = useTodosTool({ bootTodos });
   const [boardSettingsOpen, setBoardSettingsOpen] = useState25(false);
   if (!todos.loggedIn) {
-    return /* @__PURE__ */ jsx37(TodosPublicHome, {});
+    return /* @__PURE__ */ jsx38(TodosPublicHome, {});
   }
   const boardTitle = todos.boardData?.board?.title ?? "";
-  return /* @__PURE__ */ jsxs32(Box24, { className: "paty-todos-shell", children: [
-    todos.inBoardView ? /* @__PURE__ */ jsx37(
+  return /* @__PURE__ */ jsxs33(Box25, { className: "paty-todos-shell", children: [
+    todos.inBoardView ? /* @__PURE__ */ jsx38(
       TodosBoardToolbar,
       {
         boardTitle,
@@ -17115,7 +17345,7 @@ function TodosTool({ bootTodos, onNeedLogin }) {
         onRefresh: () => todos.reload(),
         onOpenSettings: () => setBoardSettingsOpen(true)
       }
-    ) : /* @__PURE__ */ jsx37(
+    ) : /* @__PURE__ */ jsx38(
       BoardsHomeToolbar,
       {
         loading: todos.loadingBoards,
@@ -17123,9 +17353,9 @@ function TodosTool({ bootTodos, onNeedLogin }) {
         onRefresh: () => todos.reloadBoards()
       }
     ),
-    todos.error ? /* @__PURE__ */ jsx37(Alert13, { severity: "error", sx: { m: 2 }, onClose: () => {
+    todos.error ? /* @__PURE__ */ jsx38(Alert13, { severity: "error", sx: { m: 2 }, onClose: () => {
     }, children: todos.error }) : null,
-    todos.inBoardView ? /* @__PURE__ */ jsx37(Fragment11, { children: /* @__PURE__ */ jsx37(
+    todos.inBoardView ? /* @__PURE__ */ jsx38(Fragment11, { children: /* @__PURE__ */ jsx38(
       TodosKanban,
       {
         boardData: todos.boardData,
@@ -17139,7 +17369,7 @@ function TodosTool({ bootTodos, onNeedLogin }) {
         onDragStart: todos.onDragStart,
         onDropColumn: todos.onDropColumn
       }
-    ) }) : /* @__PURE__ */ jsx37(
+    ) }) : /* @__PURE__ */ jsx38(
       BoardsHome,
       {
         boards: todos.boards,
@@ -17160,7 +17390,7 @@ function TodosTool({ bootTodos, onNeedLogin }) {
         }
       }
     ),
-    /* @__PURE__ */ jsx37(
+    /* @__PURE__ */ jsx38(
       BoardSettingsDialog,
       {
         open: boardSettingsOpen,
@@ -17180,7 +17410,7 @@ function TodosTool({ bootTodos, onNeedLogin }) {
         onMembersChange: todos.syncBoardMembers
       }
     ),
-    /* @__PURE__ */ jsx37(
+    /* @__PURE__ */ jsx38(
       NewBoardDialog,
       {
         open: todos.newBoardOpen,
@@ -17195,7 +17425,7 @@ function TodosTool({ bootTodos, onNeedLogin }) {
         }
       }
     ),
-    /* @__PURE__ */ jsx37(
+    /* @__PURE__ */ jsx38(
       TaskDetailDialog,
       {
         open: !!todos.selectedTask || todos.taskLoading,
@@ -17597,10 +17827,10 @@ function canAddUserToRole({ username } = {}) {
 // src/js/tools/PermisosUserAutocomplete.jsx
 init_platform();
 init_systemConfigApi();
-import { jsx as jsx38 } from "react/jsx-runtime";
+import { jsx as jsx39 } from "react/jsx-runtime";
 import { createElement as createElement4 } from "react";
 var { useState: useState26, useEffect: useEffect23, useRef: useRef11, useCallback: useCallback11 } = getReact();
-var { Autocomplete: Autocomplete3, TextField: TextField13, Typography: Typography21, Box: Box25 } = getMaterialUI();
+var { Autocomplete: Autocomplete3, TextField: TextField13, Typography: Typography22, Box: Box26 } = getMaterialUI();
 var DEBOUNCE_MS3 = 300;
 var DEFAULT_LIMIT = 10;
 function optionLabel2(row) {
@@ -17679,7 +17909,7 @@ function PermisosUserAutocomplete({
     runSearch("");
   }, [disabled, runSearch]);
   if (disabled) {
-    return /* @__PURE__ */ jsx38(
+    return /* @__PURE__ */ jsx39(
       TextField13,
       {
         label,
@@ -17694,7 +17924,7 @@ function PermisosUserAutocomplete({
     );
   }
   const ph = placeholder ?? (toolbar ? "Buscar usuario\u2026" : "Buscar login ISS\u2026");
-  return /* @__PURE__ */ jsx38(
+  return /* @__PURE__ */ jsx39(
     Autocomplete3,
     {
       fullWidth: !toolbar,
@@ -17738,8 +17968,8 @@ function PermisosUserAutocomplete({
         onChange(row?.username ?? null);
         setInputValue(row ? optionLabel2(row) : "");
       },
-      renderOption: (props, row) => /* @__PURE__ */ createElement4(Box25, { component: "li", ...props, key: row.username, sx: { display: "flex", flexDirection: "column", py: 0.75 } }, /* @__PURE__ */ jsx38(Typography21, { variant: "body2", sx: { fontWeight: 600 }, children: row.displayName || row.username }), row.displayName ? /* @__PURE__ */ jsx38(Typography21, { variant: "caption", color: "text.secondary", children: row.username }) : null),
-      renderInput: (params) => /* @__PURE__ */ jsx38(
+      renderOption: (props, row) => /* @__PURE__ */ createElement4(Box26, { component: "li", ...props, key: row.username, sx: { display: "flex", flexDirection: "column", py: 0.75 } }, /* @__PURE__ */ jsx39(Typography22, { variant: "body2", sx: { fontWeight: 600 }, children: row.displayName || row.username }), row.displayName ? /* @__PURE__ */ jsx39(Typography22, { variant: "caption", color: "text.secondary", children: row.username }) : null),
+      renderInput: (params) => /* @__PURE__ */ jsx39(
         TextField13,
         {
           ...params,
@@ -17772,15 +18002,15 @@ var VISITANTE_DEFAULT_PERMISOS = {
 };
 
 // src/js/tools/permisosRoleConfig.jsx
-import { Fragment as Fragment12, jsx as jsx39, jsxs as jsxs33 } from "react/jsx-runtime";
-var { useState: useState27, useEffect: useEffect24, useMemo: useMemo16 } = getReact();
+import { Fragment as Fragment12, jsx as jsx40, jsxs as jsxs34 } from "react/jsx-runtime";
+var { useState: useState27, useEffect: useEffect24, useMemo: useMemo17 } = getReact();
 var {
-  Typography: Typography22,
+  Typography: Typography23,
   TextField: TextField14,
-  Stack: Stack19,
+  Stack: Stack20,
   Alert: Alert14,
-  Chip: Chip14,
-  Box: Box26,
+  Chip: Chip15,
+  Box: Box27,
   Checkbox: Checkbox2,
   FormControlLabel: FormControlLabel3,
   Divider: Divider5,
@@ -17796,13 +18026,13 @@ var {
   DialogContent: DialogContent11,
   DialogActions: DialogActions9,
   Button: Button17,
-  Tooltip: Tooltip11,
+  Tooltip: Tooltip12,
   CircularProgress: CircularProgress15
 } = getMaterialUI();
-var { Icon: Icon19 } = UI;
+var { Icon: Icon20 } = UI;
 function renderImpactLine(text) {
   const parts = String(text ?? "").split(/\*\*(.*?)\*\*/g);
-  return parts.map((part, i) => i % 2 === 1 ? /* @__PURE__ */ jsx39("strong", { children: part }, i) : part);
+  return parts.map((part, i) => i % 2 === 1 ? /* @__PURE__ */ jsx40("strong", { children: part }, i) : part);
 }
 var MODE_LABEL = Object.fromEntries(ACCESS_MODES.map((m) => [m.value, m.label]));
 function RoleDragDialog({ open, pending, busy, sessionUsername, onClose, onConfirm }) {
@@ -17813,7 +18043,7 @@ function RoleDragDialog({ open, pending, busy, sessionUsername, onClose, onConfi
   const isSelf = isSamePermisosUser(username, sessionUsername);
   const leavesDevLead = isTopDevLeadRole(fromRole);
   const moveBullets = moveRoleImpactBullets({ username, fromRoleTitle: fromLabel, toRoleTitle: toLabel, isSelf, leavesDevLead });
-  return /* @__PURE__ */ jsxs33(
+  return /* @__PURE__ */ jsxs34(
     GlassDialog,
     {
       open,
@@ -17821,7 +18051,7 @@ function RoleDragDialog({ open, pending, busy, sessionUsername, onClose, onConfi
       maxWidth: "sm",
       fullWidth: true,
       disableEscapeKeyDown: busy,
-      header: /* @__PURE__ */ jsx39(
+      header: /* @__PURE__ */ jsx40(
         GlassDialogHeader,
         {
           icon: "mdi:alert-outline",
@@ -17832,29 +18062,29 @@ function RoleDragDialog({ open, pending, busy, sessionUsername, onClose, onConfi
         }
       ),
       children: [
-        /* @__PURE__ */ jsxs33(DialogContent11, { sx: glassDialogContentSx({ p: 2.5 }), children: [
-          /* @__PURE__ */ jsxs33(Alert14, { severity: "warning", sx: { mb: 2 }, children: [
+        /* @__PURE__ */ jsxs34(DialogContent11, { sx: glassDialogContentSx({ p: 2.5 }), children: [
+          /* @__PURE__ */ jsxs34(Alert14, { severity: "warning", sx: { mb: 2 }, children: [
             "Mover implica ",
-            /* @__PURE__ */ jsx39("strong", { children: "quitar" }),
+            /* @__PURE__ */ jsx40("strong", { children: "quitar" }),
             " a ",
             isSelf ? "ti" : username,
             " de ",
-            /* @__PURE__ */ jsx39("strong", { children: fromLabel }),
+            /* @__PURE__ */ jsx40("strong", { children: fromLabel }),
             ". Revisa el impacto antes de confirmar."
           ] }),
-          /* @__PURE__ */ jsxs33(Typography22, { variant: "body2", color: "text.secondary", sx: { mb: 1.5 }, children: [
+          /* @__PURE__ */ jsxs34(Typography23, { variant: "body2", color: "text.secondary", sx: { mb: 1.5 }, children: [
             username,
             " pasar\xE1 de ",
-            /* @__PURE__ */ jsx39("strong", { children: fromLabel }),
+            /* @__PURE__ */ jsx40("strong", { children: fromLabel }),
             " a ",
-            /* @__PURE__ */ jsx39("strong", { children: toLabel }),
+            /* @__PURE__ */ jsx40("strong", { children: toLabel }),
             "."
           ] }),
-          /* @__PURE__ */ jsx39(Box26, { component: "ul", sx: { m: 0, pl: 2.25, color: "text.secondary", fontSize: "0.875rem", "& li": { mb: 0.75 } }, children: moveBullets.map((line) => /* @__PURE__ */ jsx39("li", { children: renderImpactLine(line) }, line)) })
+          /* @__PURE__ */ jsx40(Box27, { component: "ul", sx: { m: 0, pl: 2.25, color: "text.secondary", fontSize: "0.875rem", "& li": { mb: 0.75 } }, children: moveBullets.map((line) => /* @__PURE__ */ jsx40("li", { children: renderImpactLine(line) }, line)) })
         ] }),
-        /* @__PURE__ */ jsxs33(DialogActions9, { sx: glassDialogActionsSx(), children: [
-          /* @__PURE__ */ jsx39(Button17, { onClick: onClose, disabled: busy, sx: { textTransform: "none" }, children: "Cancelar" }),
-          /* @__PURE__ */ jsx39(
+        /* @__PURE__ */ jsxs34(DialogActions9, { sx: glassDialogActionsSx(), children: [
+          /* @__PURE__ */ jsx40(Button17, { onClick: onClose, disabled: busy, sx: { textTransform: "none" }, children: "Cancelar" }),
+          /* @__PURE__ */ jsx40(
             Button17,
             {
               variant: "contained",
@@ -17864,7 +18094,7 @@ function RoleDragDialog({ open, pending, busy, sessionUsername, onClose, onConfi
                 if (!busy) onConfirm("move");
               },
               sx: { textTransform: "none", minWidth: 140 },
-              startIcon: busy ? /* @__PURE__ */ jsx39(CircularProgress15, { size: 16, color: "inherit" }) : /* @__PURE__ */ jsx39(Icon19, { icon: "mdi:arrow-right-bold", size: 18 }),
+              startIcon: busy ? /* @__PURE__ */ jsx40(CircularProgress15, { size: 16, color: "inherit" }) : /* @__PURE__ */ jsx40(Icon20, { icon: "mdi:arrow-right-bold", size: 18 }),
               children: busy ? "Moviendo\u2026" : "Confirmar movimiento"
             }
           )
@@ -17883,35 +18113,35 @@ function RoleAddDialog({ open, pending, busy, onClose, onConfirm }) {
   const roleLabel3 = roleTitle2 || role;
   const alreadyInRole = username && existingUsernames?.has(String(username).trim().toUpperCase());
   const addCheck = username && !alreadyInRole ? canAddUserToRole({ username }) : { ok: true };
-  return /* @__PURE__ */ jsxs33(
+  return /* @__PURE__ */ jsxs34(
     GlassDialog,
     {
       open,
       onClose: busy ? void 0 : onClose,
       maxWidth: "sm",
       fullWidth: true,
-      header: /* @__PURE__ */ jsx39(GlassDialogHeader, { icon: "mdi:account-plus-outline", title: "Agregar al rol", subtitle: roleLabel3, accent: "#10b981", onClose: busy ? void 0 : onClose }),
+      header: /* @__PURE__ */ jsx40(GlassDialogHeader, { icon: "mdi:account-plus-outline", title: "Agregar al rol", subtitle: roleLabel3, accent: "#10b981", onClose: busy ? void 0 : onClose }),
       children: [
-        /* @__PURE__ */ jsxs33(DialogContent11, { sx: glassDialogContentSx({ p: 2.5 }), children: [
-          /* @__PURE__ */ jsxs33(Typography22, { variant: "body2", color: "text.secondary", sx: { mb: 2 }, children: [
+        /* @__PURE__ */ jsxs34(DialogContent11, { sx: glassDialogContentSx({ p: 2.5 }), children: [
+          /* @__PURE__ */ jsxs34(Typography23, { variant: "body2", color: "text.secondary", sx: { mb: 2 }, children: [
             "Busque un usuario en permisos ISS o escriba un login nuevo para asignarlo al rol ",
-            /* @__PURE__ */ jsx39("strong", { children: roleLabel3 }),
+            /* @__PURE__ */ jsx40("strong", { children: roleLabel3 }),
             "."
           ] }),
-          /* @__PURE__ */ jsx39(PermisosUserAutocomplete, { value: username, onChange: setUsername, disabled: busy, label: "Usuario" }),
-          alreadyInRole ? /* @__PURE__ */ jsx39(Alert14, { severity: "warning", sx: { mt: 1.5 }, children: "Este usuario ya est\xE1 en el rol." }) : null,
-          username && !alreadyInRole && !addCheck.ok ? /* @__PURE__ */ jsx39(Alert14, { severity: "warning", sx: { mt: 1.5 }, children: addCheck.reason }) : null
+          /* @__PURE__ */ jsx40(PermisosUserAutocomplete, { value: username, onChange: setUsername, disabled: busy, label: "Usuario" }),
+          alreadyInRole ? /* @__PURE__ */ jsx40(Alert14, { severity: "warning", sx: { mt: 1.5 }, children: "Este usuario ya est\xE1 en el rol." }) : null,
+          username && !alreadyInRole && !addCheck.ok ? /* @__PURE__ */ jsx40(Alert14, { severity: "warning", sx: { mt: 1.5 }, children: addCheck.reason }) : null
         ] }),
-        /* @__PURE__ */ jsxs33(DialogActions9, { sx: glassDialogActionsSx(), children: [
-          /* @__PURE__ */ jsx39(Button17, { onClick: onClose, disabled: busy, sx: { textTransform: "none" }, children: "Cancelar" }),
-          /* @__PURE__ */ jsx39(
+        /* @__PURE__ */ jsxs34(DialogActions9, { sx: glassDialogActionsSx(), children: [
+          /* @__PURE__ */ jsx40(Button17, { onClick: onClose, disabled: busy, sx: { textTransform: "none" }, children: "Cancelar" }),
+          /* @__PURE__ */ jsx40(
             Button17,
             {
               variant: "contained",
               disabled: busy || !username || alreadyInRole || !addCheck.ok,
               onClick: () => onConfirm(username),
               sx: { textTransform: "none", minWidth: 120 },
-              startIcon: busy ? /* @__PURE__ */ jsx39(CircularProgress15, { size: 16, color: "inherit" }) : /* @__PURE__ */ jsx39(Icon19, { icon: "mdi:account-plus-outline", size: 18 }),
+              startIcon: busy ? /* @__PURE__ */ jsx40(CircularProgress15, { size: 16, color: "inherit" }) : /* @__PURE__ */ jsx40(Icon20, { icon: "mdi:account-plus-outline", size: 18 }),
               children: busy ? "Agregando\u2026" : "Agregar"
             }
           )
@@ -17927,7 +18157,7 @@ function RoleRemoveDialog({ open, pending, busy, sessionUsername, onClose, onCon
   const isSelf = isSamePermisosUser(username, sessionUsername);
   const isDevLead = isTopDevLeadRole(role);
   const bullets = removeRoleImpactBullets({ username, roleTitle: roleLabel3, isSelf, isDevLead });
-  return /* @__PURE__ */ jsxs33(
+  return /* @__PURE__ */ jsxs34(
     GlassDialog,
     {
       open,
@@ -17935,22 +18165,22 @@ function RoleRemoveDialog({ open, pending, busy, sessionUsername, onClose, onCon
       maxWidth: "sm",
       fullWidth: true,
       disableEscapeKeyDown: busy,
-      header: /* @__PURE__ */ jsx39(GlassDialogHeader, { icon: "mdi:account-remove-outline", title: "Quitar del rol", subtitle: `${username} \xB7 ${roleLabel3}`, accent: "#f59e0b", onClose: busy ? void 0 : onClose }),
+      header: /* @__PURE__ */ jsx40(GlassDialogHeader, { icon: "mdi:account-remove-outline", title: "Quitar del rol", subtitle: `${username} \xB7 ${roleLabel3}`, accent: "#f59e0b", onClose: busy ? void 0 : onClose }),
       children: [
-        /* @__PURE__ */ jsxs33(DialogContent11, { sx: glassDialogContentSx({ p: 2.5 }), children: [
-          /* @__PURE__ */ jsx39(Alert14, { severity: "warning", sx: { mb: 2 }, children: isSelf && isDevLead ? "Te quitar\xE1s DEVISS (m\xE1ximo privilegio). Otro DEVISS o un ajuste en BD ser\xE1 necesario para recuperarlo." : "Esta acci\xF3n revoca permisos de forma inmediata. Revise las consecuencias antes de confirmar." }),
-          /* @__PURE__ */ jsxs33(Typography22, { variant: "body2", color: "text.secondary", sx: { mb: 1.5 }, children: [
+        /* @__PURE__ */ jsxs34(DialogContent11, { sx: glassDialogContentSx({ p: 2.5 }), children: [
+          /* @__PURE__ */ jsx40(Alert14, { severity: "warning", sx: { mb: 2 }, children: isSelf && isDevLead ? "Te quitar\xE1s DEVISS (m\xE1ximo privilegio). Otro DEVISS o un ajuste en BD ser\xE1 necesario para recuperarlo." : "Esta acci\xF3n revoca permisos de forma inmediata. Revise las consecuencias antes de confirmar." }),
+          /* @__PURE__ */ jsxs34(Typography23, { variant: "body2", color: "text.secondary", sx: { mb: 1.5 }, children: [
             "\xBFQuitar a ",
-            /* @__PURE__ */ jsx39("strong", { children: username }),
+            /* @__PURE__ */ jsx40("strong", { children: username }),
             " del rol ",
-            /* @__PURE__ */ jsx39("strong", { children: roleLabel3 }),
+            /* @__PURE__ */ jsx40("strong", { children: roleLabel3 }),
             "?"
           ] }),
-          /* @__PURE__ */ jsx39(Box26, { component: "ul", sx: { m: 0, pl: 2.25, color: "text.secondary", fontSize: "0.875rem", "& li": { mb: 0.75 } }, children: bullets.map((line) => /* @__PURE__ */ jsx39("li", { children: renderImpactLine(line) }, line)) })
+          /* @__PURE__ */ jsx40(Box27, { component: "ul", sx: { m: 0, pl: 2.25, color: "text.secondary", fontSize: "0.875rem", "& li": { mb: 0.75 } }, children: bullets.map((line) => /* @__PURE__ */ jsx40("li", { children: renderImpactLine(line) }, line)) })
         ] }),
-        /* @__PURE__ */ jsxs33(DialogActions9, { sx: glassDialogActionsSx(), children: [
-          /* @__PURE__ */ jsx39(Button17, { onClick: onClose, disabled: busy, sx: { textTransform: "none" }, children: "Cancelar" }),
-          /* @__PURE__ */ jsx39(
+        /* @__PURE__ */ jsxs34(DialogActions9, { sx: glassDialogActionsSx(), children: [
+          /* @__PURE__ */ jsx40(Button17, { onClick: onClose, disabled: busy, sx: { textTransform: "none" }, children: "Cancelar" }),
+          /* @__PURE__ */ jsx40(
             Button17,
             {
               variant: "contained",
@@ -17958,7 +18188,7 @@ function RoleRemoveDialog({ open, pending, busy, sessionUsername, onClose, onCon
               disabled: busy,
               onClick: onConfirm,
               sx: { textTransform: "none", minWidth: 120 },
-              startIcon: busy ? /* @__PURE__ */ jsx39(CircularProgress15, { size: 16, color: "inherit" }) : /* @__PURE__ */ jsx39(Icon19, { icon: "mdi:account-remove-outline", size: 18 }),
+              startIcon: busy ? /* @__PURE__ */ jsx40(CircularProgress15, { size: 16, color: "inherit" }) : /* @__PURE__ */ jsx40(Icon20, { icon: "mdi:account-remove-outline", size: 18 }),
               children: busy ? "Quitando\u2026" : "Confirmar"
             }
           )
@@ -17969,11 +18199,11 @@ function RoleRemoveDialog({ open, pending, busy, sessionUsername, onClose, onCon
 }
 
 // src/js/tools/PermisosKanban.jsx
-import { Fragment as Fragment13, jsx as jsx40, jsxs as jsxs34 } from "react/jsx-runtime";
-var { useState: useState28, useMemo: useMemo17, useRef: useRef12, useEffect: useEffect25, memo: memo3 } = getReact();
+import { Fragment as Fragment13, jsx as jsx41, jsxs as jsxs35 } from "react/jsx-runtime";
+var { useState: useState28, useMemo: useMemo18, useRef: useRef12, useEffect: useEffect25, memo: memo3 } = getReact();
 var { createPortal } = getReactDOM();
-var { Box: Box27, Paper: Paper3, Typography: Typography23, Stack: Stack20, Chip: Chip15, IconButton: IconButton12, Tooltip: Tooltip12, CircularProgress: CircularProgress16 } = getMaterialUI();
-var { Icon: Icon20 } = UI;
+var { Box: Box28, Paper: Paper3, Typography: Typography24, Stack: Stack21, Chip: Chip16, IconButton: IconButton13, Tooltip: Tooltip13, CircularProgress: CircularProgress16 } = getMaterialUI();
+var { Icon: Icon21 } = UI;
 var DRAG_THRESHOLD_PX2 = 6;
 var UserCard = memo3(function UserCard2({ card, columnId, columnTitle, canDragUser, isDragSource, userBusy, isSelected, isDimmed, onPointerDragStart, onRoleRemoveRequest, onUserSelect, onUserSummary, suppressClickRef }) {
   const canDragRole = !!canDragUser && !userBusy;
@@ -17988,7 +18218,7 @@ var UserCard = memo3(function UserCard2({ card, columnId, columnTitle, canDragUs
     isSelected ? "paty-permisos-user-card--selected" : "",
     isDimmed ? "paty-permisos-user-card--dimmed" : ""
   ].filter(Boolean).join(" ");
-  return /* @__PURE__ */ jsx40(
+  return /* @__PURE__ */ jsx41(
     Paper3,
     {
       className: cardClass,
@@ -18013,16 +18243,16 @@ var UserCard = memo3(function UserCard2({ card, columnId, columnTitle, canDragUs
         e.stopPropagation();
         onUserSummary?.(card.username);
       },
-      children: /* @__PURE__ */ jsxs34(Stack20, { direction: "row", alignItems: "center", spacing: 0.25, className: "paty-permisos-user-card__row", sx: { minWidth: 0 }, children: [
-        /* @__PURE__ */ jsx40(Box27, { className: "paty-permisos-user-card__body", sx: { minWidth: 0, flex: 1 }, children: /* @__PURE__ */ jsxs34(Typography23, { className: "paty-todos-card__title", component: "div", variant: "body2", fontWeight: 700, noWrap: true, title: [labels.primary, labels.idsCaption].filter(Boolean).join(" "), children: [
-          /* @__PURE__ */ jsx40("span", { className: "paty-permisos-user-card__name", children: labels.primary }),
-          labels.idsCaption ? /* @__PURE__ */ jsxs34("span", { className: "paty-todos-card__caption paty-permisos-user-card__ids", children: [
+      children: /* @__PURE__ */ jsxs35(Stack21, { direction: "row", alignItems: "center", spacing: 0.25, className: "paty-permisos-user-card__row", sx: { minWidth: 0 }, children: [
+        /* @__PURE__ */ jsx41(Box28, { className: "paty-permisos-user-card__body", sx: { minWidth: 0, flex: 1 }, children: /* @__PURE__ */ jsxs35(Typography24, { className: "paty-todos-card__title", component: "div", variant: "body2", fontWeight: 700, noWrap: true, title: [labels.primary, labels.idsCaption].filter(Boolean).join(" "), children: [
+          /* @__PURE__ */ jsx41("span", { className: "paty-permisos-user-card__name", children: labels.primary }),
+          labels.idsCaption ? /* @__PURE__ */ jsxs35("span", { className: "paty-todos-card__caption paty-permisos-user-card__ids", children: [
             " ",
             labels.idsCaption
           ] }) : null
         ] }) }),
-        userBusy ? /* @__PURE__ */ jsx40(Tooltip12, { title: "Procesando\u2026", children: /* @__PURE__ */ jsx40("span", { className: "paty-permisos-user-card__busy", "aria-label": "Procesando", children: /* @__PURE__ */ jsx40(CircularProgress16, { size: 14, thickness: 5, color: "inherit" }) }) }) : canDragRole ? /* @__PURE__ */ jsx40(Tooltip12, { title: `Quitar de ${columnTitle || columnId}`, children: /* @__PURE__ */ jsx40("span", { className: "paty-permisos-user-card__remove-wrap", children: /* @__PURE__ */ jsx40(
-          IconButton12,
+        userBusy ? /* @__PURE__ */ jsx41(Tooltip13, { title: "Procesando\u2026", children: /* @__PURE__ */ jsx41("span", { className: "paty-permisos-user-card__busy", "aria-label": "Procesando", children: /* @__PURE__ */ jsx41(CircularProgress16, { size: 14, thickness: 5, color: "inherit" }) }) }) : canDragRole ? /* @__PURE__ */ jsx41(Tooltip13, { title: `Quitar de ${columnTitle || columnId}`, children: /* @__PURE__ */ jsx41("span", { className: "paty-permisos-user-card__remove-wrap", children: /* @__PURE__ */ jsx41(
+          IconButton13,
           {
             size: "small",
             type: "button",
@@ -18036,7 +18266,7 @@ var UserCard = memo3(function UserCard2({ card, columnId, columnTitle, canDragUs
               e.preventDefault();
               onRoleRemoveRequest?.({ cardId: card.id, username: card.username, role: columnId, roleTitle: columnTitle });
             },
-            children: /* @__PURE__ */ jsx40(Icon20, { icon: "mdi:close", size: 14 })
+            children: /* @__PURE__ */ jsx41(Icon21, { icon: "mdi:close", size: 14 })
           }
         ) }) }) : null
       ] })
@@ -18045,16 +18275,16 @@ var UserCard = memo3(function UserCard2({ card, columnId, columnTitle, canDragUs
 });
 function DragGhost2({ card, column, x, y, width }) {
   if (column) {
-    const node2 = /* @__PURE__ */ jsx40(
+    const node2 = /* @__PURE__ */ jsx41(
       Paper3,
       {
         className: "paty-todos-card paty-permisos-column-ghost paty-todos-card--ghost isa-glass-card",
         elevation: 8,
         style: { position: "fixed", left: x, top: y, width, zIndex: 1e4, pointerEvents: "none", margin: 0 },
         "aria-hidden": true,
-        children: /* @__PURE__ */ jsxs34(Stack20, { direction: "row", alignItems: "center", spacing: 0.75, sx: { minWidth: 0 }, children: [
-          /* @__PURE__ */ jsx40(Icon20, { icon: column.icon, size: 16 }),
-          /* @__PURE__ */ jsx40(Typography23, { className: "paty-todos-card__title", variant: "body2", fontWeight: 700, noWrap: true, children: column.title })
+        children: /* @__PURE__ */ jsxs35(Stack21, { direction: "row", alignItems: "center", spacing: 0.75, sx: { minWidth: 0 }, children: [
+          /* @__PURE__ */ jsx41(Icon21, { icon: column.icon, size: 16 }),
+          /* @__PURE__ */ jsx41(Typography24, { className: "paty-todos-card__title", variant: "body2", fontWeight: 700, noWrap: true, children: column.title })
         ] })
       }
     );
@@ -18062,16 +18292,16 @@ function DragGhost2({ card, column, x, y, width }) {
   }
   if (!card) return null;
   const labels = card.labels ?? userCardLabels(card.username, card.displayName);
-  const node = /* @__PURE__ */ jsx40(
+  const node = /* @__PURE__ */ jsx41(
     Paper3,
     {
       className: "paty-todos-card paty-permisos-user-card paty-permisos-drag-ghost paty-todos-card--ghost isa-glass-card",
       elevation: 8,
       style: { position: "fixed", left: x, top: y, width, zIndex: 1e4, pointerEvents: "none", margin: 0 },
       "aria-hidden": true,
-      children: /* @__PURE__ */ jsxs34(Typography23, { className: "paty-todos-card__title", variant: "body2", fontWeight: 700, noWrap: true, children: [
-        /* @__PURE__ */ jsx40("span", { className: "paty-permisos-user-card__name", children: labels.primary }),
-        labels.idsCaption ? /* @__PURE__ */ jsxs34("span", { className: "paty-todos-card__caption paty-permisos-user-card__ids", children: [
+      children: /* @__PURE__ */ jsxs35(Typography24, { className: "paty-todos-card__title", variant: "body2", fontWeight: 700, noWrap: true, children: [
+        /* @__PURE__ */ jsx41("span", { className: "paty-permisos-user-card__name", children: labels.primary }),
+        labels.idsCaption ? /* @__PURE__ */ jsxs35("span", { className: "paty-todos-card__caption paty-permisos-user-card__ids", children: [
           " ",
           labels.idsCaption
         ] }) : null
@@ -18105,12 +18335,12 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
   const assignEnabled = !!loggedIn && !!canAssignRoles;
   const filterDragEnabled = !!loggedIn && !canAssignRoles;
   const noUsersVisible = !!boardData?.noUsersVisible;
-  const columnIds = useMemo17(() => columns.map((c) => c.id), [columns]);
-  const ghostColumn = useMemo17(() => {
+  const columnIds = useMemo18(() => columns.map((c) => c.id), [columns]);
+  const ghostColumn = useMemo18(() => {
     if (!dragGhost?.columnId) return null;
     return columns.find((c) => c.id === dragGhost.columnId) ?? null;
   }, [dragGhost, columns]);
-  const ghostCard = useMemo17(() => {
+  const ghostCard = useMemo18(() => {
     if (!dragGhost?.cardId) return null;
     for (const col of columns) {
       const hit = col.users.find((u) => u.id === dragGhost.cardId);
@@ -18319,11 +18549,11 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
   const transferBusy = !!processingUserKey;
   const removeBusy = transferBusy && !!removePending;
   const addBusy = !!addingRoleId;
-  return /* @__PURE__ */ jsxs34(Box27, { ref: kanbanWrapRef, className: "paty-todos-kanban-wrap paty-permisos-kanban-wrap", sx: { flex: 1, minHeight: 0, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", p: 0 }, children: [
-    /* @__PURE__ */ jsxs34(Box27, { className: `paty-todos-kanban paty-permisos-kanban${!assignEnabled ? " paty-permisos-kanban--no-assign" : ""}${draggingId ? " paty-todos-kanban--dragging" : ""}${selectedUserKey ? " paty-permisos-kanban--user-selected" : ""}${processingUserKey ? " paty-permisos-kanban--user-busy" : ""}`, sx: { flex: 1, minHeight: 0, maxHeight: "100%", display: "flex", alignItems: "stretch", alignSelf: "stretch", position: "relative" }, children: [
-      dragGhost ? /* @__PURE__ */ jsx40(DragGhost2, { card: ghostCard, column: ghostColumn, x: dragGhost.x, y: dragGhost.y, width: dragGhost.width }) : null,
-      noUsersVisible ? /* @__PURE__ */ jsx40(Box27, { sx: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", p: 3, pointerEvents: "none", zIndex: 2 }, children: /* @__PURE__ */ jsx40(Typography23, { variant: "body2", color: "text.secondary", children: "Ning\xFAn usuario coincide con los filtros." }) }) : null,
-      columns.length === 0 ? /* @__PURE__ */ jsx40(Box27, { sx: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", p: 3 }, children: /* @__PURE__ */ jsx40(Typography23, { variant: "body2", color: "text.secondary", children: boardData?.hideEmptyColumns ? "No hay columnas visibles (activa roles o desactiva \xABOcultar vac\xEDos\xBB)." : "No hay roles configurados." }) }) : null,
+  return /* @__PURE__ */ jsxs35(Box28, { ref: kanbanWrapRef, className: "paty-todos-kanban-wrap paty-permisos-kanban-wrap", sx: { flex: 1, minHeight: 0, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", p: 0 }, children: [
+    /* @__PURE__ */ jsxs35(Box28, { className: `paty-todos-kanban paty-permisos-kanban${!assignEnabled ? " paty-permisos-kanban--no-assign" : ""}${draggingId ? " paty-todos-kanban--dragging" : ""}${selectedUserKey ? " paty-permisos-kanban--user-selected" : ""}${processingUserKey ? " paty-permisos-kanban--user-busy" : ""}`, sx: { flex: 1, minHeight: 0, maxHeight: "100%", display: "flex", alignItems: "stretch", alignSelf: "stretch", position: "relative" }, children: [
+      dragGhost ? /* @__PURE__ */ jsx41(DragGhost2, { card: ghostCard, column: ghostColumn, x: dragGhost.x, y: dragGhost.y, width: dragGhost.width }) : null,
+      noUsersVisible ? /* @__PURE__ */ jsx41(Box28, { sx: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", p: 3, pointerEvents: "none", zIndex: 2 }, children: /* @__PURE__ */ jsx41(Typography24, { variant: "body2", color: "text.secondary", children: "Ning\xFAn usuario coincide con los filtros." }) }) : null,
+      columns.length === 0 ? /* @__PURE__ */ jsx41(Box28, { sx: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", p: 3 }, children: /* @__PURE__ */ jsx41(Typography24, { variant: "body2", color: "text.secondary", children: boardData?.hideEmptyColumns ? "No hay columnas visibles (activa roles o desactiva \xABOcultar vac\xEDos\xBB)." : "No hay roles configurados." }) }) : null,
       columns.map((col) => {
         const canManageCol = assignEnabled;
         const canDropOnCol = canManageCol;
@@ -18341,8 +18571,8 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
           draggingId && !String(draggingId).startsWith("col:") && !isOver && assignEnabled && !canDropOnCol ? "paty-permisos-column--drop-forbidden" : "",
           draggingId && !String(draggingId).startsWith("col:") && !isOver ? "paty-permisos-column--drag-idle" : ""
         ].filter(Boolean).join(" ");
-        return /* @__PURE__ */ jsxs34(
-          Box27,
+        return /* @__PURE__ */ jsxs35(
+          Box28,
           {
             ref: (el) => {
               columnRefs.current[col.id] = el;
@@ -18351,8 +18581,8 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
             style: { "--col-accent": col.accent },
             sx: { display: "flex", flexDirection: "column", minHeight: 0, height: "100%", alignSelf: "stretch" },
             children: [
-              /* @__PURE__ */ jsxs34(
-                Stack20,
+              /* @__PURE__ */ jsxs35(
+                Stack21,
                 {
                   direction: "row",
                   alignItems: "center",
@@ -18362,15 +18592,15 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
                   sx: { flexShrink: 0, px: 1.75, py: 1.25, pb: 1, cursor: filterDragEnabled ? "grab" : "default" },
                   onPointerDown: (e) => handleColumnHeadDragStart(col, e),
                   children: [
-                    /* @__PURE__ */ jsxs34(Stack20, { direction: "row", alignItems: "center", spacing: 0.75, className: "paty-todos-column__title", sx: { minWidth: 0, flex: 1 }, children: [
-                      /* @__PURE__ */ jsx40(Icon20, { icon: col.icon, size: 16 }),
-                      /* @__PURE__ */ jsxs34(Box27, { sx: { minWidth: 0 }, children: [
-                        /* @__PURE__ */ jsx40(Stack20, { direction: "row", alignItems: "baseline", spacing: 0.75, sx: { minWidth: 0 }, children: /* @__PURE__ */ jsx40(Box27, { component: "span", sx: { display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }, title: col.roleName && col.title !== col.roleName ? `${col.title} (${col.roleName})` : col.title, children: col.title }) }),
-                        col.descripcion ? /* @__PURE__ */ jsx40(Typography23, { variant: "caption", color: "text.secondary", sx: { display: "block", lineHeight: 1.3, mt: 0.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: col.descripcion, children: col.descripcion }) : null
+                    /* @__PURE__ */ jsxs35(Stack21, { direction: "row", alignItems: "center", spacing: 0.75, className: "paty-todos-column__title", sx: { minWidth: 0, flex: 1 }, children: [
+                      /* @__PURE__ */ jsx41(Icon21, { icon: col.icon, size: 16 }),
+                      /* @__PURE__ */ jsxs35(Box28, { sx: { minWidth: 0 }, children: [
+                        /* @__PURE__ */ jsx41(Stack21, { direction: "row", alignItems: "baseline", spacing: 0.75, sx: { minWidth: 0 }, children: /* @__PURE__ */ jsx41(Box28, { component: "span", sx: { display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }, title: col.roleName && col.title !== col.roleName ? `${col.title} (${col.roleName})` : col.title, children: col.title }) }),
+                        col.descripcion ? /* @__PURE__ */ jsx41(Typography24, { variant: "caption", color: "text.secondary", sx: { display: "block", lineHeight: 1.3, mt: 0.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: col.descripcion, children: col.descripcion }) : null
                       ] })
                     ] }),
-                    /* @__PURE__ */ jsx40(Stack20, { direction: "row", alignItems: "center", spacing: 0.5, sx: { flexShrink: 0 }, children: canManageCol ? /* @__PURE__ */ jsx40(Tooltip12, { title: addBusy && addingRoleId === col.id ? "Agregando\u2026" : "Agregar usuario", children: /* @__PURE__ */ jsx40("span", { className: "paty-permisos-column__add-wrap", children: /* @__PURE__ */ jsx40(
-                      IconButton12,
+                    /* @__PURE__ */ jsx41(Stack21, { direction: "row", alignItems: "center", spacing: 0.5, sx: { flexShrink: 0 }, children: canManageCol ? /* @__PURE__ */ jsx41(Tooltip13, { title: addBusy && addingRoleId === col.id ? "Agregando\u2026" : "Agregar usuario", children: /* @__PURE__ */ jsx41("span", { className: "paty-permisos-column__add-wrap", children: /* @__PURE__ */ jsx41(
+                      IconButton13,
                       {
                         size: "small",
                         className: "paty-permisos-column__add",
@@ -18385,14 +18615,14 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
                             existingUsernames: new Set(col.users.map((u) => u.username))
                           });
                         },
-                        children: addBusy && addingRoleId === col.id ? /* @__PURE__ */ jsx40(CircularProgress16, { size: 14, thickness: 5 }) : /* @__PURE__ */ jsx40(Icon20, { icon: "mdi:plus", size: 16 })
+                        children: addBusy && addingRoleId === col.id ? /* @__PURE__ */ jsx41(CircularProgress16, { size: 14, thickness: 5 }) : /* @__PURE__ */ jsx41(Icon21, { icon: "mdi:plus", size: 16 })
                       }
                     ) }) }) : null })
                   ]
                 }
               ),
-              /* @__PURE__ */ jsxs34(
-                Box27,
+              /* @__PURE__ */ jsxs35(
+                Box28,
                 {
                   ref: (el) => {
                     listRefs.current[col.id] = el;
@@ -18407,7 +18637,7 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
                       const isSelected = selectedUserKey === cardUserKey;
                       const isDimmed = !!selectedUserKey && !isSelected;
                       const canDragUser = canAssignRoles && !readOnly;
-                      return /* @__PURE__ */ jsx40(
+                      return /* @__PURE__ */ jsx41(
                         UserCard,
                         {
                           card,
@@ -18427,7 +18657,7 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
                         card.id
                       );
                     }),
-                    !col.users.length ? /* @__PURE__ */ jsx40(Typography23, { variant: "caption", color: "text.secondary", sx: { px: 0.5, py: 1 }, children: "Sin usuarios" }) : null
+                    !col.users.length ? /* @__PURE__ */ jsx41(Typography24, { variant: "caption", color: "text.secondary", sx: { px: 0.5, py: 1 }, children: "Sin usuarios" }) : null
                   ]
                 }
               )
@@ -18437,8 +18667,8 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
         );
       })
     ] }),
-    typeof document !== "undefined" ? createPortal(/* @__PURE__ */ jsxs34(Fragment13, { children: [
-      /* @__PURE__ */ jsx40(
+    typeof document !== "undefined" ? createPortal(/* @__PURE__ */ jsxs35(Fragment13, { children: [
+      /* @__PURE__ */ jsx41(
         RoleDragDialog,
         {
           open: !!dragPending,
@@ -18451,7 +18681,7 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
           onConfirm: handleDragConfirm
         }
       ),
-      /* @__PURE__ */ jsx40(
+      /* @__PURE__ */ jsx41(
         RoleRemoveDialog,
         {
           open: !!removePending,
@@ -18464,7 +18694,7 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
           onConfirm: handleRemoveConfirm
         }
       ),
-      /* @__PURE__ */ jsx40(
+      /* @__PURE__ */ jsx41(
         RoleAddDialog,
         {
           open: !!addPending,
@@ -18482,11 +18712,11 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
 
 // src/js/tools/PermisosRoleFilterAutocomplete.jsx
 init_platform();
-import { jsx as jsx41 } from "react/jsx-runtime";
-var { Autocomplete: Autocomplete4, TextField: TextField15, Chip: Chip16 } = getMaterialUI();
+import { jsx as jsx42 } from "react/jsx-runtime";
+var { Autocomplete: Autocomplete4, TextField: TextField15, Chip: Chip17 } = getMaterialUI();
 function PermisosRoleFilterAutocomplete({ options, value, onChange, disabled = false }) {
   const selected = options.filter((o) => value.includes(o.id));
-  return /* @__PURE__ */ jsx41(
+  return /* @__PURE__ */ jsx42(
     Autocomplete4,
     {
       multiple: true,
@@ -18502,9 +18732,9 @@ function PermisosRoleFilterAutocomplete({ options, value, onChange, disabled = f
       limitTags: 2,
       renderTags: (tagValue, getTagProps) => tagValue.map((option, index) => {
         const { key, ...chipProps } = getTagProps({ index });
-        return /* @__PURE__ */ jsx41(Chip16, { ...chipProps, label: option.label, size: "small", className: "isa-neon-glass-chip" }, key);
+        return /* @__PURE__ */ jsx42(Chip17, { ...chipProps, label: option.label, size: "small", className: "isa-neon-glass-chip" }, key);
       }),
-      renderInput: (params) => /* @__PURE__ */ jsx41(
+      renderInput: (params) => /* @__PURE__ */ jsx42(
         TextField15,
         {
           ...params,
@@ -18526,9 +18756,9 @@ function PermisosRoleFilterAutocomplete({ options, value, onChange, disabled = f
 
 // src/js/tools/UserPermissionsSummaryDialog.jsx
 init_platform();
-import { Fragment as Fragment14, jsx as jsx42, jsxs as jsxs35 } from "react/jsx-runtime";
-var { Typography: Typography24, Stack: Stack21, Box: Box28, Chip: Chip17, Divider: Divider6, CircularProgress: CircularProgress17 } = getMaterialUI();
-var { useMemo: useMemo18 } = getReact();
+import { Fragment as Fragment14, jsx as jsx43, jsxs as jsxs36 } from "react/jsx-runtime";
+var { Typography: Typography25, Stack: Stack22, Box: Box29, Chip: Chip18, Divider: Divider6, CircularProgress: CircularProgress17 } = getMaterialUI();
+var { useMemo: useMemo19 } = getReact();
 var ROLE_KEYS_OMIT = /* @__PURE__ */ new Set(["descripcion", "namedisplay", "roles", "jerarquia", "accent", "color", "icon"]);
 function getRoleEntry(roles, roleName) {
   const key = String(roleName ?? "").trim().toUpperCase();
@@ -18570,9 +18800,9 @@ function summarizePerms(perms) {
 function RoleCard({ roleName, roles }) {
   const entry = getRoleEntry(roles, roleName);
   const title = roleTitleFromEntry(entry) || roleName;
-  return /* @__PURE__ */ jsx42(Box28, { className: "isa-glass-card paty-permisos-summary__role", sx: { p: 1.25, borderRadius: 1.5 }, children: /* @__PURE__ */ jsxs35(Stack21, { direction: "row", alignItems: "center", spacing: 0.75, children: [
-    /* @__PURE__ */ jsx42(
-      Chip17,
+  return /* @__PURE__ */ jsx43(Box29, { className: "isa-glass-card paty-permisos-summary__role", sx: { p: 1.25, borderRadius: 1.5 }, children: /* @__PURE__ */ jsxs36(Stack22, { direction: "row", alignItems: "center", spacing: 0.75, children: [
+    /* @__PURE__ */ jsx43(
+      Chip18,
       {
         size: "small",
         color: "primary",
@@ -18581,24 +18811,24 @@ function RoleCard({ roleName, roles }) {
         title: roleName
       }
     ),
-    title !== roleName ? /* @__PURE__ */ jsx42(Typography24, { variant: "caption", color: "text.secondary", sx: { fontFamily: "monospace" }, children: roleName }) : null
+    title !== roleName ? /* @__PURE__ */ jsx43(Typography25, { variant: "caption", color: "text.secondary", sx: { fontFamily: "monospace" }, children: roleName }) : null
   ] }) });
 }
 function PermList({ title, items, kind }) {
   if (!items.length) return null;
-  return /* @__PURE__ */ jsxs35(Box28, { sx: { mt: 1 }, children: [
-    /* @__PURE__ */ jsxs35(Typography24, { variant: "overline", color: "text.secondary", sx: { letterSpacing: 1 }, children: [
+  return /* @__PURE__ */ jsxs36(Box29, { sx: { mt: 1 }, children: [
+    /* @__PURE__ */ jsxs36(Typography25, { variant: "overline", color: "text.secondary", sx: { letterSpacing: 1 }, children: [
       title,
       " (",
       items.length,
       ")"
     ] }),
-    /* @__PURE__ */ jsxs35(Box28, { sx: { display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.5 }, children: [
+    /* @__PURE__ */ jsxs36(Box29, { sx: { display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.5 }, children: [
       items.slice(0, kind === "filter" ? 50 : 100).map((it, i) => {
         if (kind === "filter") {
           const fSummary = Object.entries(it.filter ?? {}).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", ");
-          return /* @__PURE__ */ jsx42(
-            Chip17,
+          return /* @__PURE__ */ jsx43(
+            Chip18,
             {
               size: "small",
               variant: "outlined",
@@ -18611,8 +18841,8 @@ function PermList({ title, items, kind }) {
           );
         }
         if (kind === "allow") {
-          return /* @__PURE__ */ jsx42(
-            Chip17,
+          return /* @__PURE__ */ jsx43(
+            Chip18,
             {
               size: "small",
               color: "success",
@@ -18624,8 +18854,8 @@ function PermList({ title, items, kind }) {
             it
           );
         }
-        return /* @__PURE__ */ jsx42(
-          Chip17,
+        return /* @__PURE__ */ jsx43(
+          Chip18,
           {
             size: "small",
             variant: "outlined",
@@ -18636,12 +18866,12 @@ function PermList({ title, items, kind }) {
           `${it.key}-${i}`
         );
       }),
-      items.length > (kind === "filter" ? 50 : 100) ? /* @__PURE__ */ jsx42(Chip17, { size: "small", label: `+${items.length - (kind === "filter" ? 50 : 100)} m\xE1s`, sx: { fontFamily: "monospace", fontSize: 11 } }) : null
+      items.length > (kind === "filter" ? 50 : 100) ? /* @__PURE__ */ jsx43(Chip18, { size: "small", label: `+${items.length - (kind === "filter" ? 50 : 100)} m\xE1s`, sx: { fontFamily: "monospace", fontSize: 11 } }) : null
     ] })
   ] });
 }
 function UserPermissionsSummaryDialog({ open, onClose, username, users, roles }) {
-  const data = useMemo18(() => {
+  const data = useMemo19(() => {
     if (!open || !username) return null;
     const targetUser = (users ?? []).find((u) => String(u?.iusuario ?? "").trim().toUpperCase() === username.toUpperCase());
     if (!targetUser) return null;
@@ -18650,7 +18880,7 @@ function UserPermissionsSummaryDialog({ open, onClose, username, users, roles })
     const { allows, filters, others } = summarizePerms(targetUser.permisos);
     return { targetUser, directRoles, activeRoles: active, allows, filters, others };
   }, [open, username, users, roles]);
-  return /* @__PURE__ */ jsxs35(
+  return /* @__PURE__ */ jsxs36(
     GlassDialog,
     {
       open,
@@ -18658,7 +18888,7 @@ function UserPermissionsSummaryDialog({ open, onClose, username, users, roles })
       maxWidth: "md",
       fullWidth: true,
       paperClassName: "permisos-user-summary-dialog",
-      header: /* @__PURE__ */ jsx42(
+      header: /* @__PURE__ */ jsx43(
         GlassDialogHeader,
         {
           icon: "mdi:shield-account-outline",
@@ -18669,33 +18899,33 @@ function UserPermissionsSummaryDialog({ open, onClose, username, users, roles })
         }
       ),
       children: [
-        /* @__PURE__ */ jsx42(Box28, { sx: { ...glassDialogContentSx(), minHeight: 360 }, children: !username ? /* @__PURE__ */ jsx42(Typography24, { color: "text.secondary", children: "Sin usuario seleccionado." }) : !data ? /* @__PURE__ */ jsxs35(Stack21, { direction: "row", spacing: 1.5, alignItems: "center", children: [
-          /* @__PURE__ */ jsx42(CircularProgress17, { size: 20 }),
-          /* @__PURE__ */ jsx42(Typography24, { color: "text.secondary", children: "Usuario no encontrado en los datos cargados." })
-        ] }) : /* @__PURE__ */ jsxs35(Fragment14, { children: [
-          /* @__PURE__ */ jsxs35(Box28, { children: [
-            /* @__PURE__ */ jsx42(Typography24, { variant: "overline", color: "text.secondary", children: "Usuario" }),
-            /* @__PURE__ */ jsx42(Typography24, { variant: "h6", fontWeight: 700, children: data.targetUser.iusuario }),
-            data.targetUser.permisos?.nombre || data.targetUser.permisos?.namedisplay ? /* @__PURE__ */ jsx42(Typography24, { variant: "body2", color: "text.secondary", children: data.targetUser.permisos.nombre || data.targetUser.permisos.namedisplay }) : null
+        /* @__PURE__ */ jsx43(Box29, { sx: { ...glassDialogContentSx(), minHeight: 360 }, children: !username ? /* @__PURE__ */ jsx43(Typography25, { color: "text.secondary", children: "Sin usuario seleccionado." }) : !data ? /* @__PURE__ */ jsxs36(Stack22, { direction: "row", spacing: 1.5, alignItems: "center", children: [
+          /* @__PURE__ */ jsx43(CircularProgress17, { size: 20 }),
+          /* @__PURE__ */ jsx43(Typography25, { color: "text.secondary", children: "Usuario no encontrado en los datos cargados." })
+        ] }) : /* @__PURE__ */ jsxs36(Fragment14, { children: [
+          /* @__PURE__ */ jsxs36(Box29, { children: [
+            /* @__PURE__ */ jsx43(Typography25, { variant: "overline", color: "text.secondary", children: "Usuario" }),
+            /* @__PURE__ */ jsx43(Typography25, { variant: "h6", fontWeight: 700, children: data.targetUser.iusuario }),
+            data.targetUser.permisos?.nombre || data.targetUser.permisos?.namedisplay ? /* @__PURE__ */ jsx43(Typography25, { variant: "body2", color: "text.secondary", children: data.targetUser.permisos.nombre || data.targetUser.permisos.namedisplay }) : null
           ] }),
-          /* @__PURE__ */ jsx42(Divider6, { sx: { my: 1.5 } }),
-          /* @__PURE__ */ jsxs35(Typography24, { variant: "overline", color: "text.secondary", children: [
+          /* @__PURE__ */ jsx43(Divider6, { sx: { my: 1.5 } }),
+          /* @__PURE__ */ jsxs36(Typography25, { variant: "overline", color: "text.secondary", children: [
             "Roles asignados ",
             data.directRoles.length ? `(${data.directRoles.length})` : ""
           ] }),
-          data.directRoles.length === 0 ? /* @__PURE__ */ jsx42(Typography24, { variant: "body2", color: "text.secondary", sx: { mt: 0.5 }, children: "El usuario no tiene roles asignados. Permisos efectivos = USR por defecto." }) : /* @__PURE__ */ jsx42(Stack21, { spacing: 1, sx: { mt: 1 }, children: data.directRoles.map((rn) => /* @__PURE__ */ jsx42(RoleCard, { roleName: rn, roles: data.activeRoles }, rn)) }),
-          /* @__PURE__ */ jsx42(Divider6, { sx: { my: 1.5 } }),
-          /* @__PURE__ */ jsx42(Typography24, { variant: "overline", color: "text.secondary", children: "Permisos efectivos del usuario" }),
-          /* @__PURE__ */ jsx42(Typography24, { variant: "caption", color: "text.secondary", sx: { display: "block", mt: 0.25 }, children: "Calculados a partir de sus roles directos (sin herencia jer\xE1rquica)." }),
-          data.allows.length === 0 && data.filters.length === 0 && data.others.length === 0 ? /* @__PURE__ */ jsx42(Typography24, { variant: "body2", color: "text.secondary", sx: { mt: 1 }, children: "Sin permisos materializados m\xE1s all\xE1 del USR por defecto." }) : /* @__PURE__ */ jsxs35(Fragment14, { children: [
-            /* @__PURE__ */ jsx42(PermList, { title: "Permitidos", items: data.allows, kind: "allow" }),
-            /* @__PURE__ */ jsx42(PermList, { title: "Con filtro fijo", items: data.filters, kind: "filter" }),
-            /* @__PURE__ */ jsx42(PermList, { title: "Otros", items: data.others, kind: "other" })
+          data.directRoles.length === 0 ? /* @__PURE__ */ jsx43(Typography25, { variant: "body2", color: "text.secondary", sx: { mt: 0.5 }, children: "El usuario no tiene roles asignados. Permisos efectivos = USR por defecto." }) : /* @__PURE__ */ jsx43(Stack22, { spacing: 1, sx: { mt: 1 }, children: data.directRoles.map((rn) => /* @__PURE__ */ jsx43(RoleCard, { roleName: rn, roles: data.activeRoles }, rn)) }),
+          /* @__PURE__ */ jsx43(Divider6, { sx: { my: 1.5 } }),
+          /* @__PURE__ */ jsx43(Typography25, { variant: "overline", color: "text.secondary", children: "Permisos efectivos del usuario" }),
+          /* @__PURE__ */ jsx43(Typography25, { variant: "caption", color: "text.secondary", sx: { display: "block", mt: 0.25 }, children: "Calculados a partir de sus roles directos (sin herencia jer\xE1rquica)." }),
+          data.allows.length === 0 && data.filters.length === 0 && data.others.length === 0 ? /* @__PURE__ */ jsx43(Typography25, { variant: "body2", color: "text.secondary", sx: { mt: 1 }, children: "Sin permisos materializados m\xE1s all\xE1 del USR por defecto." }) : /* @__PURE__ */ jsxs36(Fragment14, { children: [
+            /* @__PURE__ */ jsx43(PermList, { title: "Permitidos", items: data.allows, kind: "allow" }),
+            /* @__PURE__ */ jsx43(PermList, { title: "Con filtro fijo", items: data.filters, kind: "filter" }),
+            /* @__PURE__ */ jsx43(PermList, { title: "Otros", items: data.others, kind: "other" })
           ] }),
-          /* @__PURE__ */ jsx42(Divider6, { sx: { my: 1.5 } }),
-          /* @__PURE__ */ jsx42(Typography24, { variant: "caption", color: "text.secondary", children: "Los detalles completos por rol se obtienen al abrir cada columna. Este resumen es de solo lectura y se actualiza al recargar el panel." })
+          /* @__PURE__ */ jsx43(Divider6, { sx: { my: 1.5 } }),
+          /* @__PURE__ */ jsx43(Typography25, { variant: "caption", color: "text.secondary", children: "Los detalles completos por rol se obtienen al abrir cada columna. Este resumen es de solo lectura y se actualiza al recargar el panel." })
         ] }) }),
-        /* @__PURE__ */ jsx42(Box28, { sx: glassDialogActionsSx(), children: /* @__PURE__ */ jsx42(
+        /* @__PURE__ */ jsx43(Box29, { sx: glassDialogActionsSx(), children: /* @__PURE__ */ jsx43(
           "button",
           {
             type: "button",
@@ -18710,9 +18940,9 @@ function UserPermissionsSummaryDialog({ open, onClose, username, users, roles })
 }
 
 // src/js/tools/PermisosPanel.jsx
-import { jsx as jsx43, jsxs as jsxs36 } from "react/jsx-runtime";
-var { useState: useState29, useEffect: useEffect26, useCallback: useCallback12, useMemo: useMemo19, useRef: useRef13 } = getReact();
-var { Typography: Typography25, Stack: Stack22, Alert: Alert15, CircularProgress: CircularProgress18, Box: Box29, Chip: Chip18, DialogContent: DialogContent12, DialogActions: DialogActions10, Button: Button18, FormControlLabel: FormControlLabel4, Switch: Switch2 } = getMaterialUI();
+import { jsx as jsx44, jsxs as jsxs37 } from "react/jsx-runtime";
+var { useState: useState29, useEffect: useEffect26, useCallback: useCallback12, useMemo: useMemo20, useRef: useRef13 } = getReact();
+var { Typography: Typography26, Stack: Stack23, Alert: Alert15, CircularProgress: CircularProgress18, Box: Box30, Chip: Chip19, DialogContent: DialogContent12, DialogActions: DialogActions10, Button: Button18, FormControlLabel: FormControlLabel4, Switch: Switch2 } = getMaterialUI();
 function PermisosPanel({ onNeedLogin }) {
   const [loading, setLoading] = useState29(true);
   const [busy, setBusy] = useState29(false);
@@ -18720,8 +18950,8 @@ function PermisosPanel({ onNeedLogin }) {
   const [canAssignUserRoles, setCanAssignUserRoles] = useState29(false);
   const [canEditRoleDescriptions, setCanEditRoleDescriptions] = useState29(false);
   const [authTick, setAuthTick] = useState29(0);
-  const loggedIn = useMemo19(() => !!Session?.isLoggedIn?.(), [authTick]);
-  const sessionUsername = useMemo19(() => String(Session.username?.() ?? "").trim().toUpperCase(), [authTick]);
+  const loggedIn = useMemo20(() => !!Session?.isLoggedIn?.(), [authTick]);
+  const sessionUsername = useMemo20(() => String(Session.username?.() ?? "").trim().toUpperCase(), [authTick]);
   const [err, setErr] = useState29("");
   const [data, setData] = useState29({ roles: [], users: [], contactos: {} });
   const [userSearch, setUserSearch] = useState29("");
@@ -18821,7 +19051,7 @@ function PermisosPanel({ onNeedLogin }) {
     setHideEmptyStacks(hide);
     persistPermisosHideEmpty(hide);
   }, []);
-  const userDirectory = useMemo19(() => buildUserDirectoryFromPermisos(data.users), [data.users]);
+  const userDirectory = useMemo20(() => buildUserDirectoryFromPermisos(data.users), [data.users]);
   useEffect26(() => {
     Assets.ensureTodosCss();
     const onAuth = () => {
@@ -18946,11 +19176,11 @@ function PermisosPanel({ onNeedLogin }) {
     }, 320);
     return () => window.clearTimeout(t);
   }, [userSearch, usersPaginated, fetchPermisosWithSearch]);
-  const roleOptions = useMemo19(
+  const roleOptions = useMemo20(
     () => (data.roles || []).map((r) => ({ id: roleNameFromEntry(r), label: roleTitleFromEntry(r) })).filter((r) => r.id && r.id !== USR_ROLE),
     [data.roles]
   );
-  const boardData = useMemo19(
+  const boardData = useMemo20(
     () => buildPermisosBoard(data, { userSearch, roleFilters, userDirectory, hideEmptyColumns: hideEmptyStacks, contactos: data.contactos }),
     [data, userSearch, roleFilters, userDirectory, hideEmptyStacks]
   );
@@ -18979,11 +19209,11 @@ function PermisosPanel({ onNeedLogin }) {
     }
   }, [editRoleMeta, onNeedLogin, managePermisos, applyFlags]);
   if (loading) {
-    return /* @__PURE__ */ jsx43(Box29, { className: "config-permisos-loading", children: /* @__PURE__ */ jsx43(CircularProgress18, { size: 26 }) });
+    return /* @__PURE__ */ jsx44(Box30, { className: "config-permisos-loading", children: /* @__PURE__ */ jsx44(CircularProgress18, { size: 26 }) });
   }
-  return /* @__PURE__ */ jsxs36(Box29, { className: "paty-permisos-shell", sx: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }, children: [
-    /* @__PURE__ */ jsx43(Box29, { ref: filterToolbarRef, className: "config-permisos-toolbar-wrap", sx: { flexShrink: 0 }, children: /* @__PURE__ */ jsxs36(GlassToolbar, { className: `config-permisos-toolbar${dragOverFilter ? " config-permisos-toolbar--filter-drop" : ""}`, sx: { borderRadius: 0, mb: 0, flexShrink: 0, gap: 0.75, px: { xs: 1.25, sm: 1.75 }, py: 0.5, alignItems: "center", minHeight: 40 }, children: [
-      /* @__PURE__ */ jsx43(
+  return /* @__PURE__ */ jsxs37(Box30, { className: "paty-permisos-shell", sx: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }, children: [
+    /* @__PURE__ */ jsx44(Box30, { ref: filterToolbarRef, className: "config-permisos-toolbar-wrap", sx: { flexShrink: 0 }, children: /* @__PURE__ */ jsxs37(GlassToolbar, { className: `config-permisos-toolbar${dragOverFilter ? " config-permisos-toolbar--filter-drop" : ""}`, sx: { borderRadius: 0, mb: 0, flexShrink: 0, gap: 0.75, px: { xs: 1.25, sm: 1.75 }, py: 0.5, alignItems: "center", minHeight: 40 }, children: [
+      /* @__PURE__ */ jsx44(
         PermisosUserAutocomplete,
         {
           variant: "toolbar",
@@ -18998,9 +19228,9 @@ function PermisosPanel({ onNeedLogin }) {
           className: "config-permisos-toolbar__field config-permisos-toolbar__field--search"
         }
       ),
-      /* @__PURE__ */ jsx43(PermisosRoleFilterAutocomplete, { options: roleOptions, value: roleFilters, onChange: setRoleFilters, disabled: filterBusy }),
-      filtersActive ? /* @__PURE__ */ jsx43(
-        Chip18,
+      /* @__PURE__ */ jsx44(PermisosRoleFilterAutocomplete, { options: roleOptions, value: roleFilters, onChange: setRoleFilters, disabled: filterBusy }),
+      filtersActive ? /* @__PURE__ */ jsx44(
+        Chip19,
         {
           size: "small",
           variant: "outlined",
@@ -19010,23 +19240,23 @@ function PermisosPanel({ onNeedLogin }) {
           disabled: filterBusy
         }
       ) : null,
-      /* @__PURE__ */ jsx43(
+      /* @__PURE__ */ jsx44(
         FormControlLabel4,
         {
           className: "config-permisos-toolbar__hide-empty",
-          control: /* @__PURE__ */ jsx43(Switch2, { size: "small", checked: hideEmptyStacks, onChange: (e) => setHideEmptyStacksPersist(e.target.checked), disabled: filterBusy }),
+          control: /* @__PURE__ */ jsx44(Switch2, { size: "small", checked: hideEmptyStacks, onChange: (e) => setHideEmptyStacksPersist(e.target.checked), disabled: filterBusy }),
           label: "Ocultar vac\xEDos",
           sx: { mr: 0, ml: 0.25, flexShrink: 0, "& .MuiFormControlLabel-label": { fontSize: "0.75rem", whiteSpace: "nowrap" } }
         }
       ),
-      /* @__PURE__ */ jsx43(Box29, { sx: { flex: 1, minWidth: 8 } }),
-      /* @__PURE__ */ jsxs36(Stack22, { direction: "row", spacing: 0.5, alignItems: "center", className: "config-form-section__actions config-permisos-toolbar__actions", children: [
-        /* @__PURE__ */ jsx43(ButtonIconify, { icon: "mdi:shield-account", title: "Roles planos PatyIA", onClick: () => void loadPatyia(), disabled: busy || filterBusy || patyiaBusy }),
-        /* @__PURE__ */ jsx43(ButtonIconify, { icon: "mdi:refresh", title: "Recargar", onClick: load, disabled: busy || filterBusy })
+      /* @__PURE__ */ jsx44(Box30, { sx: { flex: 1, minWidth: 8 } }),
+      /* @__PURE__ */ jsxs37(Stack23, { direction: "row", spacing: 0.5, alignItems: "center", className: "config-form-section__actions config-permisos-toolbar__actions", children: [
+        /* @__PURE__ */ jsx44(ButtonIconify, { icon: "mdi:shield-account", title: "Roles planos PatyIA", onClick: () => void loadPatyia(), disabled: busy || filterBusy || patyiaBusy }),
+        /* @__PURE__ */ jsx44(ButtonIconify, { icon: "mdi:refresh", title: "Recargar", onClick: load, disabled: busy || filterBusy })
       ] })
     ] }) }),
-    err ? /* @__PURE__ */ jsx43(Alert15, { severity: "warning", className: "config-form-alert config-permisos-alert", children: err }) : null,
-    /* @__PURE__ */ jsx43(
+    err ? /* @__PURE__ */ jsx44(Alert15, { severity: "warning", className: "config-form-alert config-permisos-alert", children: err }) : null,
+    /* @__PURE__ */ jsx44(
       PermisosKanban,
       {
         boardData,
@@ -19050,7 +19280,7 @@ function PermisosPanel({ onNeedLogin }) {
         onRoleAdd: handleRoleAdd
       }
     ),
-    /* @__PURE__ */ jsx43(
+    /* @__PURE__ */ jsx44(
       UserPermissionsSummaryDialog,
       {
         open: !!summaryUsername,
@@ -19372,14 +19602,14 @@ function useConfigFieldPersist() {
 }
 
 // src/js/tools/ConfigPromptsOperativosPanel.jsx
-import { Fragment as Fragment15, jsx as jsx44, jsxs as jsxs37 } from "react/jsx-runtime";
+import { Fragment as Fragment15, jsx as jsx45, jsxs as jsxs38 } from "react/jsx-runtime";
 var { useState: useState31, useEffect: useEffect27, useCallback: useCallback13, useRef: useRef15 } = getReact();
 var {
-  Typography: Typography26,
+  Typography: Typography27,
   TextField: TextField16,
-  Stack: Stack23,
+  Stack: Stack24,
   Alert: Alert16,
-  Box: Box30,
+  Box: Box31,
   Skeleton: Skeleton2,
   Paper: Paper4,
   FormControl: FormControl7,
@@ -19389,9 +19619,9 @@ var {
   DialogContent: DialogContent13,
   DialogActions: DialogActions11,
   Button: Button19,
-  Tooltip: Tooltip13
+  Tooltip: Tooltip14
 } = getMaterialUI();
-var { Icon: Icon21 } = UI;
+var { Icon: Icon22 } = UI;
 var PROMPT_LABELS = {
   generarTitulo: "Generar t\xEDtulo",
   generarResumenTicket: "Resumen ticket"
@@ -19430,7 +19660,7 @@ function GlassPromptAccordion({ title, icon, expanded, onToggle, accent, childre
       onToggle?.();
     }
   }
-  return /* @__PURE__ */ jsxs37(
+  return /* @__PURE__ */ jsxs38(
     Paper4,
     {
       variant: "outlined",
@@ -19449,8 +19679,8 @@ function GlassPromptAccordion({ title, icon, expanded, onToggle, accent, childre
         radius: "14px"
       }),
       children: [
-        /* @__PURE__ */ jsx44(
-          Box30,
+        /* @__PURE__ */ jsx45(
+          Box31,
           {
             className: "isa-glass-section__head config-prompt-accordion__summary",
             role: "button",
@@ -19466,9 +19696,9 @@ function GlassPromptAccordion({ title, icon, expanded, onToggle, accent, childre
               ...glassHeaderSx(c, accentColor),
               ...glassInnerSx(c, "blue")
             },
-            children: /* @__PURE__ */ jsxs37(Stack23, { direction: "row", spacing: 1.25, alignItems: "center", sx: { width: "100%" }, children: [
-              /* @__PURE__ */ jsx44(
-                Box30,
+            children: /* @__PURE__ */ jsxs38(Stack24, { direction: "row", spacing: 1.25, alignItems: "center", sx: { width: "100%" }, children: [
+              /* @__PURE__ */ jsx45(
+                Box31,
                 {
                   className: "isa-glass-section__icon config-prompt-accordion__icon",
                   sx: {
@@ -19483,11 +19713,11 @@ function GlassPromptAccordion({ title, icon, expanded, onToggle, accent, childre
                     color: "#fff",
                     boxShadow: c.dark ? `0 4px 12px ${accentColor}44` : "none"
                   },
-                  children: /* @__PURE__ */ jsx44(Icon21, { icon: icon || "mdi:robot-outline", size: 16 })
+                  children: /* @__PURE__ */ jsx45(Icon22, { icon: icon || "mdi:robot-outline", size: 16 })
                 }
               ),
-              skeleton ? /* @__PURE__ */ jsx44(Skeleton2, { variant: "text", width: "46%", height: 22, sx: { flex: 1 } }) : /* @__PURE__ */ jsx44(
-                Typography26,
+              skeleton ? /* @__PURE__ */ jsx45(Skeleton2, { variant: "text", width: "46%", height: 22, sx: { flex: 1 } }) : /* @__PURE__ */ jsx45(
+                Typography27,
                 {
                   variant: "subtitle2",
                   className: "config-prompt-accordion__title",
@@ -19495,8 +19725,8 @@ function GlassPromptAccordion({ title, icon, expanded, onToggle, accent, childre
                   children: title
                 }
               ),
-              /* @__PURE__ */ jsx44(
-                Box30,
+              /* @__PURE__ */ jsx45(
+                Box31,
                 {
                   className: "config-prompt-accordion__chevron",
                   sx: {
@@ -19506,14 +19736,14 @@ function GlassPromptAccordion({ title, icon, expanded, onToggle, accent, childre
                     transform: expanded ? "rotate(180deg)" : "none"
                   },
                   "aria-hidden": true,
-                  children: /* @__PURE__ */ jsx44(Icon21, { icon: "mdi:chevron-down", size: 20 })
+                  children: /* @__PURE__ */ jsx45(Icon22, { icon: "mdi:chevron-down", size: 20 })
                 }
               )
             ] })
           }
         ),
-        expanded ? /* @__PURE__ */ jsx44(
-          Box30,
+        expanded ? /* @__PURE__ */ jsx45(
+          Box31,
           {
             className: "isa-glass-section__body config-prompt-accordion__details",
             sx: { px: { xs: 1.5, sm: 2 }, pt: 1.5, pb: 2, color: c.text },
@@ -19527,9 +19757,9 @@ function GlassPromptAccordion({ title, icon, expanded, onToggle, accent, childre
 function ConfigPromptsSkeleton({ count, expandState }) {
   const { NEON_COLORS } = getGlass();
   const expandedKey = Object.keys(expandState ?? {}).find((k) => expandState[k]);
-  return /* @__PURE__ */ jsx44(Stack23, { spacing: 1.25, className: "config-prompt-accordions config-prompt-accordions--skeleton", "aria-busy": "true", "aria-label": "Cargando prompts operativos", children: Array.from({ length: count }, (_, i) => {
+  return /* @__PURE__ */ jsx45(Stack24, { spacing: 1.25, className: "config-prompt-accordions config-prompt-accordions--skeleton", "aria-busy": "true", "aria-label": "Cargando prompts operativos", children: Array.from({ length: count }, (_, i) => {
     const expanded = expandedKey ? i === 0 : false;
-    return /* @__PURE__ */ jsx44(
+    return /* @__PURE__ */ jsx45(
       GlassPromptAccordion,
       {
         title: "",
@@ -19539,14 +19769,14 @@ function ConfigPromptsSkeleton({ count, expandState }) {
         accent: i % 2 ? NEON_COLORS.purple : NEON_COLORS.cyan,
         onToggle: () => {
         },
-        children: expanded ? /* @__PURE__ */ jsxs37(Stack23, { spacing: 2, className: "config-prompt-def", children: [
-          /* @__PURE__ */ jsxs37(Stack23, { direction: "row", spacing: 2, className: "config-prompt-def-fields", children: [
-            /* @__PURE__ */ jsx44(Skeleton2, { variant: "rounded", height: 40, sx: { width: 200, flex: "0 0 auto" } }),
-            /* @__PURE__ */ jsx44(Skeleton2, { variant: "rounded", height: 40, sx: { width: 200, flex: "0 0 auto" } }),
-            /* @__PURE__ */ jsx44(Skeleton2, { variant: "rounded", height: 40, sx: { width: 200, flex: "0 0 auto" } })
+        children: expanded ? /* @__PURE__ */ jsxs38(Stack24, { spacing: 2, className: "config-prompt-def", children: [
+          /* @__PURE__ */ jsxs38(Stack24, { direction: "row", spacing: 2, className: "config-prompt-def-fields", children: [
+            /* @__PURE__ */ jsx45(Skeleton2, { variant: "rounded", height: 40, sx: { width: 200, flex: "0 0 auto" } }),
+            /* @__PURE__ */ jsx45(Skeleton2, { variant: "rounded", height: 40, sx: { width: 200, flex: "0 0 auto" } }),
+            /* @__PURE__ */ jsx45(Skeleton2, { variant: "rounded", height: 40, sx: { width: 200, flex: "0 0 auto" } })
           ] }),
-          /* @__PURE__ */ jsx44(Skeleton2, { variant: "rounded", height: 140 }),
-          /* @__PURE__ */ jsx44(Skeleton2, { variant: "rounded", height: 140 })
+          /* @__PURE__ */ jsx45(Skeleton2, { variant: "rounded", height: 140 }),
+          /* @__PURE__ */ jsx45(Skeleton2, { variant: "rounded", height: 140 })
         ] }) : null
       },
       i
@@ -19574,7 +19804,7 @@ function OperativosJsonModal({ open, initial: initial2, readOnly, operativeModel
     onClose();
   }
   const canApply = parseAndValidateJsonText2(json, { operativeModel }).ok;
-  return /* @__PURE__ */ jsxs37(
+  return /* @__PURE__ */ jsxs38(
     GlassDialog,
     {
       open,
@@ -19582,18 +19812,18 @@ function OperativosJsonModal({ open, initial: initial2, readOnly, operativeModel
       maxWidth: "md",
       fullWidth: true,
       paperMaxWidth: 960,
-      header: /* @__PURE__ */ jsx44(GlassDialogHeader, { icon: "mdi:code-json", title: "JSON", accent: "#6366f1", onClose }),
+      header: /* @__PURE__ */ jsx45(GlassDialogHeader, { icon: "mdi:code-json", title: "JSON", accent: "#6366f1", onClose }),
       children: [
-        /* @__PURE__ */ jsxs37(DialogContent13, { dividers: true, sx: glassDialogContentSx({ p: 0, minHeight: 380 }), children: [
-          errors.length ? /* @__PURE__ */ jsx44(Alert16, { severity: "warning", sx: { m: 1.5, mb: 0 }, children: /* @__PURE__ */ jsx44(Stack23, { component: "ul", spacing: 0.25, sx: { m: 0, pl: 2 }, children: errors.map((e) => /* @__PURE__ */ jsx44("li", { children: /* @__PURE__ */ jsx44(Typography26, { variant: "body2", children: e }) }, e)) }) }) : null,
-          /* @__PURE__ */ jsx44(Box30, { className: "permisos-json-modal-editor config-prompts-json-modal", sx: { minHeight: 340, p: 1 }, children: /* @__PURE__ */ jsx44(JsonCodeEditor, { value: json, onChange: readOnly ? void 0 : (v) => {
+        /* @__PURE__ */ jsxs38(DialogContent13, { dividers: true, sx: glassDialogContentSx({ p: 0, minHeight: 380 }), children: [
+          errors.length ? /* @__PURE__ */ jsx45(Alert16, { severity: "warning", sx: { m: 1.5, mb: 0 }, children: /* @__PURE__ */ jsx45(Stack24, { component: "ul", spacing: 0.25, sx: { m: 0, pl: 2 }, children: errors.map((e) => /* @__PURE__ */ jsx45("li", { children: /* @__PURE__ */ jsx45(Typography27, { variant: "body2", children: e }) }, e)) }) }) : null,
+          /* @__PURE__ */ jsx45(Box31, { className: "permisos-json-modal-editor config-prompts-json-modal", sx: { minHeight: 340, p: 1 }, children: /* @__PURE__ */ jsx45(JsonCodeEditor, { value: json, onChange: readOnly ? void 0 : (v) => {
             setJson(v);
             validateNow(v);
           }, readOnly, placeholder: "{}", fullPageTitle: "prompts_operativos" }) })
         ] }),
-        /* @__PURE__ */ jsxs37(DialogActions11, { sx: glassDialogActionsSx(), children: [
-          /* @__PURE__ */ jsx44(Button19, { onClick: onClose, sx: { textTransform: "none", fontWeight: 600 }, children: readOnly ? "Cerrar" : "Cancelar" }),
-          !readOnly && onApply ? /* @__PURE__ */ jsx44(Button19, { variant: "contained", onClick: apply, disabled: !canApply, sx: { textTransform: "none", fontWeight: 600 }, children: "Aplicar JSON" }) : null
+        /* @__PURE__ */ jsxs38(DialogActions11, { sx: glassDialogActionsSx(), children: [
+          /* @__PURE__ */ jsx45(Button19, { onClick: onClose, sx: { textTransform: "none", fontWeight: 600 }, children: readOnly ? "Cerrar" : "Cancelar" }),
+          !readOnly && onApply ? /* @__PURE__ */ jsx45(Button19, { variant: "contained", onClick: apply, disabled: !canApply, sx: { textTransform: "none", fontWeight: 600 }, children: "Aplicar JSON" }) : null
         ] })
       ]
     }
@@ -19605,8 +19835,8 @@ function MessageCard({ role, body, bodyLines, canEdit, promptKey, onChange }) {
   const title = role === "system" ? "Sistema" : role === "user" ? "Usuario" : "Asistente";
   const accent = role === "system" ? NEON_COLORS.purple : NEON_COLORS.cyan;
   const isUser = role === "user";
-  const avatar = /* @__PURE__ */ jsx44(
-    Box30,
+  const avatar = /* @__PURE__ */ jsx45(
+    Box31,
     {
       className: "config-prompt-msg__avatar",
       sx: {
@@ -19622,16 +19852,16 @@ function MessageCard({ role, body, bodyLines, canEdit, promptKey, onChange }) {
         boxShadow: `0 0 12px ${accent}44`
       },
       "aria-hidden": true,
-      children: /* @__PURE__ */ jsx44(Icon21, { icon, size: 15 })
+      children: /* @__PURE__ */ jsx45(Icon22, { icon, size: 15 })
     }
   );
-  return /* @__PURE__ */ jsx44(
-    Box30,
+  return /* @__PURE__ */ jsx45(
+    Box31,
     {
       className: `config-prompt-msg config-prompt-msg--chat config-prompt-msg--${role}`,
       style: { ["--stripe-accent"]: accent },
-      children: /* @__PURE__ */ jsxs37(
-        Stack23,
+      children: /* @__PURE__ */ jsxs38(
+        Stack24,
         {
           direction: "row",
           spacing: 1,
@@ -19640,9 +19870,9 @@ function MessageCard({ role, body, bodyLines, canEdit, promptKey, onChange }) {
           className: "config-prompt-msg__row",
           children: [
             !isUser ? avatar : null,
-            /* @__PURE__ */ jsxs37(Box30, { className: "config-prompt-msg__bubble", children: [
-              /* @__PURE__ */ jsx44(Typography26, { component: "div", className: "config-prompt-msg__role", variant: "caption", children: title }),
-              /* @__PURE__ */ jsx44(Box30, { className: "config-prompt-msg__editor", children: /* @__PURE__ */ jsx44(
+            /* @__PURE__ */ jsxs38(Box31, { className: "config-prompt-msg__bubble", children: [
+              /* @__PURE__ */ jsx45(Typography27, { component: "div", className: "config-prompt-msg__role", variant: "caption", children: title }),
+              /* @__PURE__ */ jsx45(Box31, { className: "config-prompt-msg__editor", children: /* @__PURE__ */ jsx45(
                 PromptBodyEditor,
                 {
                   body,
@@ -19677,13 +19907,13 @@ function PromptDefEditor({ promptKey, def, canEdit, operativeModel, onChange }) 
     if (idx < 0) next.push({ role, content: textToContentLines(text) });
     onChange({ ...def, messages: next });
   }
-  return /* @__PURE__ */ jsxs37(Stack23, { spacing: 1.5, className: "config-prompt-def", children: [
-    /* @__PURE__ */ jsxs37(Stack23, { direction: "row", spacing: 1, useFlexGap: true, flexWrap: "nowrap", alignItems: "center", className: "config-prompt-def-fields", children: [
-      /* @__PURE__ */ jsxs37(FormControl7, { size: "small", sx: PROMPT_DEF_FIELD_SX, disabled: !canEdit, children: [
-        /* @__PURE__ */ jsx44(InputLabel4, { id: `prompt-reasoning-${promptKey}-label`, shrink: true, children: "Razonamiento" }),
-        /* @__PURE__ */ jsx44(Select7, { labelId: `prompt-reasoning-${promptKey}-label`, label: "Razonamiento", value: def?.reasoning_effort || "low", onChange: (e) => patchDef({ reasoning_effort: e.target.value }), children: REASONING_EFFORT_OPTIONS.map((o) => /* @__PURE__ */ jsx44(MenuItem7, { value: o, dense: true, children: o }, o)) })
+  return /* @__PURE__ */ jsxs38(Stack24, { spacing: 1.5, className: "config-prompt-def", children: [
+    /* @__PURE__ */ jsxs38(Stack24, { direction: "row", spacing: 1, useFlexGap: true, flexWrap: "nowrap", alignItems: "center", className: "config-prompt-def-fields", children: [
+      /* @__PURE__ */ jsxs38(FormControl7, { size: "small", sx: PROMPT_DEF_FIELD_SX, disabled: !canEdit, children: [
+        /* @__PURE__ */ jsx45(InputLabel4, { id: `prompt-reasoning-${promptKey}-label`, shrink: true, children: "Razonamiento" }),
+        /* @__PURE__ */ jsx45(Select7, { labelId: `prompt-reasoning-${promptKey}-label`, label: "Razonamiento", value: def?.reasoning_effort || "low", onChange: (e) => patchDef({ reasoning_effort: e.target.value }), children: REASONING_EFFORT_OPTIONS.map((o) => /* @__PURE__ */ jsx45(MenuItem7, { value: o, dense: true, children: o }, o)) })
       ] }),
-      /* @__PURE__ */ jsx44(
+      /* @__PURE__ */ jsx45(
         TextField16,
         {
           size: "small",
@@ -19696,7 +19926,7 @@ function PromptDefEditor({ promptKey, def, canEdit, operativeModel, onChange }) 
           slotProps: { htmlInput: { min: 1, max: 128e3, step: 1 } }
         }
       ),
-      /* @__PURE__ */ jsx44(Tooltip13, { title: tempAllowed ? void 0 : "No aplica a este modelo", placement: "top", children: /* @__PURE__ */ jsx44(Box30, { component: "span", sx: PROMPT_DEF_FIELD_SX, children: /* @__PURE__ */ jsx44(
+      /* @__PURE__ */ jsx45(Tooltip14, { title: tempAllowed ? void 0 : "No aplica a este modelo", placement: "top", children: /* @__PURE__ */ jsx45(Box31, { component: "span", sx: PROMPT_DEF_FIELD_SX, children: /* @__PURE__ */ jsx45(
         TextField16,
         {
           size: "small",
@@ -19707,8 +19937,8 @@ function PromptDefEditor({ promptKey, def, canEdit, operativeModel, onChange }) 
         }
       ) }) })
     ] }),
-    /* @__PURE__ */ jsxs37(Box30, { className: "config-prompt-thread", children: [
-      /* @__PURE__ */ jsx44(
+    /* @__PURE__ */ jsxs38(Box31, { className: "config-prompt-thread", children: [
+      /* @__PURE__ */ jsx45(
         MessageCard,
         {
           role: "system",
@@ -19719,7 +19949,7 @@ function PromptDefEditor({ promptKey, def, canEdit, operativeModel, onChange }) 
           onChange: (text) => patchMessage("system", systemIdx, text)
         }
       ),
-      /* @__PURE__ */ jsx44(
+      /* @__PURE__ */ jsx45(
         MessageCard,
         {
           role: "user",
@@ -19757,8 +19987,8 @@ function ConfigPromptsOperativosPanel({ onNeedLogin, ConfigFormSection: ConfigFo
   function handleToggleExpand(key, on) {
     setExpandState((prev) => ({ ...prev, [key]: on }));
   }
-  const load = useCallback13(async () => {
-    setLoading(true);
+  const load = useCallback13(async ({ soft = false } = {}) => {
+    if (!soft) setLoading(true);
     try {
       const { config: cfg, canEdit: ce } = await fetchPromptsOperativosConfig();
       const data = stripLegacyMetaKeys(cfg ?? {});
@@ -19775,22 +20005,17 @@ function ConfigPromptsOperativosPanel({ onNeedLogin, ConfigFormSection: ConfigFo
     }
   }, []);
   useEffect27(() => {
-    load();
+    void load();
   }, [load]);
   useEffect27(() => {
     const onAuth = () => {
-      load();
-    };
-    const onOpenAi = () => {
-      load();
+      void load({ soft: true });
     };
     window.addEventListener(Session.EVENT, onAuth);
     window.addEventListener("patyia-apptools:caps-changed", onAuth);
-    window.addEventListener("isa-patyia:openai-config", onOpenAi);
     return () => {
       window.removeEventListener(Session.EVENT, onAuth);
       window.removeEventListener("patyia-apptools:caps-changed", onAuth);
-      window.removeEventListener("isa-patyia:openai-config", onOpenAi);
     };
   }, [load]);
   async function persist(snapshot, gen, fields) {
@@ -19833,21 +20058,21 @@ function ConfigPromptsOperativosPanel({ onNeedLogin, ConfigFormSection: ConfigFo
     setConfig(next);
     void persist(next, beginSave([key]), [key]);
   }
-  return /* @__PURE__ */ jsxs37(
+  return /* @__PURE__ */ jsxs38(
     ConfigFormSection2,
     {
       className: "config-form-section--prompts",
-      icon: /* @__PURE__ */ jsx44(Icon21, { icon: "mdi:robot-outline", size: 20 }),
+      icon: /* @__PURE__ */ jsx45(Icon22, { icon: "mdi:robot-outline", size: 20 }),
       title: "Prompts operativos",
       description: "Tareas autom\xE1ticas: t\xEDtulo, resumen de ticket y similares.",
-      actions: /* @__PURE__ */ jsxs37(Fragment15, { children: [
-        /* @__PURE__ */ jsx44(ButtonIconify, { icon: "mdi:code-json", title: "JSON", onClick: () => setJsonOpen(true) }),
-        /* @__PURE__ */ jsx44(ButtonIconify, { icon: "mdi:refresh", title: "Recargar", onClick: load, busy: loading })
+      actions: /* @__PURE__ */ jsxs38(Fragment15, { children: [
+        /* @__PURE__ */ jsx45(ButtonIconify, { icon: "mdi:code-json", title: "JSON", onClick: () => setJsonOpen(true) }),
+        /* @__PURE__ */ jsx45(ButtonIconify, { icon: "mdi:refresh", title: "Recargar", onClick: () => void load({ soft: true }), busy: loading })
       ] }),
       children: [
-        loading ? /* @__PURE__ */ jsx44(ConfigPromptsSkeleton, { count: skeletonCount, expandState }) : /* @__PURE__ */ jsx44(Stack23, { spacing: 1.25, className: "config-prompt-accordions", children: promptKeys.map((key, idx) => {
+        loading ? /* @__PURE__ */ jsx45(ConfigPromptsSkeleton, { count: skeletonCount, expandState }) : /* @__PURE__ */ jsx45(Stack24, { spacing: 1.25, className: "config-prompt-accordions", children: promptKeys.map((key, idx) => {
           const accent = idx % 2 ? NEON_COLORS.purple : NEON_COLORS.cyan;
-          return /* @__PURE__ */ jsx44(
+          return /* @__PURE__ */ jsx45(
             GlassPromptAccordion,
             {
               title: promptLabel(key),
@@ -19855,7 +20080,7 @@ function ConfigPromptsOperativosPanel({ onNeedLogin, ConfigFormSection: ConfigFo
               accent,
               expanded: isExpanded(key),
               onToggle: () => handleToggleExpand(key, !isExpanded(key)),
-              children: /* @__PURE__ */ jsx44(
+              children: /* @__PURE__ */ jsx45(
                 PromptDefEditor,
                 {
                   promptKey: key,
@@ -19869,7 +20094,7 @@ function ConfigPromptsOperativosPanel({ onNeedLogin, ConfigFormSection: ConfigFo
             key
           );
         }) }),
-        /* @__PURE__ */ jsx44(
+        /* @__PURE__ */ jsx45(
           OperativosJsonModal,
           {
             open: jsonOpen,
@@ -19891,15 +20116,15 @@ function ConfigPromptsOperativosPanel({ onNeedLogin, ConfigFormSection: ConfigFo
 }
 
 // src/js/tools/ConfigTool.jsx
-import { Fragment as Fragment16, jsx as jsx45, jsxs as jsxs38 } from "react/jsx-runtime";
-var { useState: useState32, useEffect: useEffect28, useCallback: useCallback14, useMemo: useMemo20, useRef: useRef16 } = getReact();
-var { Paper: Paper5, Typography: Typography27, TextField: TextField17, Stack: Stack24, Alert: Alert17, Box: Box31, FormControl: FormControl8, InputLabel: InputLabel5, Select: Select8, MenuItem: MenuItem8, Tooltip: Tooltip14, DialogContent: DialogContent14, DialogActions: DialogActions12, Button: Button20, Divider: Divider7 } = getMaterialUI();
-var { Icon: Icon22 } = UI;
+import { Fragment as Fragment16, jsx as jsx46, jsxs as jsxs39 } from "react/jsx-runtime";
+var { useState: useState32, useEffect: useEffect28, useCallback: useCallback14, useMemo: useMemo21, useRef: useRef16 } = getReact();
+var { Paper: Paper5, Typography: Typography28, TextField: TextField17, Stack: Stack25, Alert: Alert17, Box: Box32, FormControl: FormControl8, InputLabel: InputLabel5, Select: Select8, MenuItem: MenuItem8, Tooltip: Tooltip15, DialogContent: DialogContent14, DialogActions: DialogActions12, Button: Button20, Divider: Divider7 } = getMaterialUI();
+var { Icon: Icon23 } = UI;
 function ConfigFormSection({ icon, title, description, chips, actions, footer, children, className, accent }) {
   const { useGlassColors, glassCardSx, glassHeaderSx, glassInnerSx, NEON_COLORS } = getGlass();
   const c = useGlassColors();
   const sectionAccent = accent ?? (className?.includes("openai") ? NEON_COLORS.purple : className?.includes("prompts") ? NEON_COLORS.cyan : NEON_COLORS.blue);
-  return /* @__PURE__ */ jsxs38(
+  return /* @__PURE__ */ jsxs39(
     Paper5,
     {
       variant: "outlined",
@@ -19907,8 +20132,8 @@ function ConfigFormSection({ icon, title, description, chips, actions, footer, c
       className: ["isa-glass-section", "config-form-section", className].filter(Boolean).join(" "),
       sx: glassCardSx(c, { tone: "default", accent: sectionAccent, hover: true, mb: 0, width: "100%" }),
       children: [
-        title ? /* @__PURE__ */ jsx45(
-          Box31,
+        title ? /* @__PURE__ */ jsx46(
+          Box32,
           {
             className: "isa-glass-section__head config-form-section__head",
             sx: {
@@ -19917,10 +20142,10 @@ function ConfigFormSection({ icon, title, description, chips, actions, footer, c
               ...glassHeaderSx(c, sectionAccent),
               ...glassInnerSx(c, "blue")
             },
-            children: /* @__PURE__ */ jsxs38(Stack24, { direction: "row", alignItems: "center", justifyContent: "space-between", spacing: 1.25, sx: { width: "100%" }, children: [
-              /* @__PURE__ */ jsxs38(Stack24, { direction: "row", spacing: 1.25, alignItems: "center", sx: { minWidth: 0, flex: "1 1 auto" }, children: [
-                icon ? /* @__PURE__ */ jsx45(
-                  Box31,
+            children: /* @__PURE__ */ jsxs39(Stack25, { direction: "row", alignItems: "center", justifyContent: "space-between", spacing: 1.25, sx: { width: "100%" }, children: [
+              /* @__PURE__ */ jsxs39(Stack25, { direction: "row", spacing: 1.25, alignItems: "center", sx: { minWidth: 0, flex: "1 1 auto" }, children: [
+                icon ? /* @__PURE__ */ jsx46(
+                  Box32,
                   {
                     className: "isa-glass-section__icon",
                     sx: {
@@ -19938,16 +20163,16 @@ function ConfigFormSection({ icon, title, description, chips, actions, footer, c
                     children: icon
                   }
                 ) : null,
-                /* @__PURE__ */ jsx45(Typography27, { variant: "subtitle1", component: "h3", className: "config-form-section__title", sx: { fontWeight: 700, letterSpacing: -0.2, color: c.text }, children: title })
+                /* @__PURE__ */ jsx46(Typography28, { variant: "subtitle1", component: "h3", className: "config-form-section__title", sx: { fontWeight: 700, letterSpacing: -0.2, color: c.text }, children: title })
               ] }),
-              actions ? /* @__PURE__ */ jsx45(Stack24, { direction: "row", spacing: 0.5, alignItems: "center", flexShrink: 0, className: "config-form-section__actions", sx: { ml: "auto" }, children: actions }) : null
+              actions ? /* @__PURE__ */ jsx46(Stack25, { direction: "row", spacing: 0.5, alignItems: "center", flexShrink: 0, className: "config-form-section__actions", sx: { ml: "auto" }, children: actions }) : null
             ] })
           }
         ) : null,
-        /* @__PURE__ */ jsxs38(Box31, { className: "isa-glass-section__body config-form-section__content", sx: { pt: 1.75, pb: 2.25, px: { xs: 2, sm: 2.5 }, color: c.text }, children: [
-          description ? /* @__PURE__ */ jsx45(Typography27, { variant: "body2", color: "text.secondary", className: "config-form-section__desc", children: description }) : null,
-          chips?.length ? /* @__PURE__ */ jsx45(Stack24, { direction: "row", spacing: 1, flexWrap: "wrap", useFlexGap: true, className: "config-form-section__chips", sx: { mb: 1.15 }, children: chips }) : null,
-          /* @__PURE__ */ jsx45(Box31, { className: "config-form-section__body", children }),
+        /* @__PURE__ */ jsxs39(Box32, { className: "isa-glass-section__body config-form-section__content", sx: { pt: 1.75, pb: 2.25, px: { xs: 2, sm: 2.5 }, color: c.text }, children: [
+          description ? /* @__PURE__ */ jsx46(Typography28, { variant: "body2", color: "text.secondary", className: "config-form-section__desc", children: description }) : null,
+          chips?.length ? /* @__PURE__ */ jsx46(Stack25, { direction: "row", spacing: 1, flexWrap: "wrap", useFlexGap: true, className: "config-form-section__chips", sx: { mb: 1.15 }, children: chips }) : null,
+          /* @__PURE__ */ jsx46(Box32, { className: "config-form-section__body", children }),
           footer
         ] })
       ]
@@ -19975,7 +20200,7 @@ function OpenAiJsonModal({ open, initial: initial2, readOnly, modelOptions, onCl
     onClose();
   }
   const canApply = parseAndValidateJsonText(json, { modelOptions }).ok;
-  return /* @__PURE__ */ jsxs38(
+  return /* @__PURE__ */ jsxs39(
     GlassDialog,
     {
       open,
@@ -19983,32 +20208,32 @@ function OpenAiJsonModal({ open, initial: initial2, readOnly, modelOptions, onCl
       maxWidth: "md",
       fullWidth: true,
       paperMaxWidth: 720,
-      header: /* @__PURE__ */ jsx45(GlassDialogHeader, { icon: "mdi:code-json", title: "OpenAI \u2014 JSON", accent: "#6366f1", onClose }),
+      header: /* @__PURE__ */ jsx46(GlassDialogHeader, { icon: "mdi:code-json", title: "OpenAI \u2014 JSON", accent: "#6366f1", onClose }),
       children: [
-        /* @__PURE__ */ jsxs38(DialogContent14, { dividers: true, sx: glassDialogContentSx({ p: 0, minHeight: 320 }), children: [
-          errors.length ? /* @__PURE__ */ jsx45(Alert17, { severity: "warning", sx: { m: 1.5, mb: 0 }, children: /* @__PURE__ */ jsx45(Stack24, { component: "ul", spacing: 0.25, sx: { m: 0, pl: 2 }, children: errors.map((e) => /* @__PURE__ */ jsx45("li", { children: /* @__PURE__ */ jsx45(Typography27, { variant: "body2", children: e }) }, e)) }) }) : null,
-          /* @__PURE__ */ jsx45(Box31, { className: "permisos-json-modal-editor config-openai-json-modal", sx: { minHeight: 280, p: 1 }, children: /* @__PURE__ */ jsx45(JsonCodeEditor, { value: json, onChange: readOnly ? void 0 : (v) => {
+        /* @__PURE__ */ jsxs39(DialogContent14, { dividers: true, sx: glassDialogContentSx({ p: 0, minHeight: 320 }), children: [
+          errors.length ? /* @__PURE__ */ jsx46(Alert17, { severity: "warning", sx: { m: 1.5, mb: 0 }, children: /* @__PURE__ */ jsx46(Stack25, { component: "ul", spacing: 0.25, sx: { m: 0, pl: 2 }, children: errors.map((e) => /* @__PURE__ */ jsx46("li", { children: /* @__PURE__ */ jsx46(Typography28, { variant: "body2", children: e }) }, e)) }) }) : null,
+          /* @__PURE__ */ jsx46(Box32, { className: "permisos-json-modal-editor config-openai-json-modal", sx: { minHeight: 280, p: 1 }, children: /* @__PURE__ */ jsx46(JsonCodeEditor, { value: json, onChange: readOnly ? void 0 : (v) => {
             setJson(v);
             validateNow(v);
           }, readOnly, placeholder: "{}", fullPageTitle: "openai" }) })
         ] }),
-        /* @__PURE__ */ jsxs38(DialogActions12, { sx: glassDialogActionsSx(), children: [
-          /* @__PURE__ */ jsx45(Button20, { onClick: onClose, sx: { textTransform: "none", fontWeight: 600 }, children: readOnly ? "Cerrar" : "Cancelar" }),
-          !readOnly && onApply ? /* @__PURE__ */ jsx45(Button20, { variant: "contained", onClick: apply, disabled: !canApply, sx: { textTransform: "none", fontWeight: 600 }, children: "Aplicar JSON" }) : null
+        /* @__PURE__ */ jsxs39(DialogActions12, { sx: glassDialogActionsSx(), children: [
+          /* @__PURE__ */ jsx46(Button20, { onClick: onClose, sx: { textTransform: "none", fontWeight: 600 }, children: readOnly ? "Cerrar" : "Cancelar" }),
+          !readOnly && onApply ? /* @__PURE__ */ jsx46(Button20, { variant: "contained", onClick: apply, disabled: !canApply, sx: { textTransform: "none", fontWeight: 600 }, children: "Aplicar JSON" }) : null
         ] })
       ]
     }
   );
 }
 function ConfigTool({ onNeedLogin, pane = "sistema" }) {
-  return /* @__PURE__ */ jsx45("div", { className: "tool-grid tool-grid-config isa-tool-surface", children: /* @__PURE__ */ jsx45(Paper5, { className: "tool-panel scroll-panel config-tool-panel", elevation: 0, children: pane === "permisos" ? /* @__PURE__ */ jsx45("div", { className: "panel-body config-panel-body config-panel-body--permisos custom-scrollbar", children: /* @__PURE__ */ jsx45(PermisosPanel, { onNeedLogin }) }) : /* @__PURE__ */ jsx45(SistemaConfigBody, { onNeedLogin }) }) });
+  return /* @__PURE__ */ jsx46("div", { className: "tool-grid tool-grid-config isa-tool-surface", children: /* @__PURE__ */ jsx46(Paper5, { className: "tool-panel scroll-panel config-tool-panel", elevation: 0, children: pane === "permisos" ? /* @__PURE__ */ jsx46("div", { className: "panel-body config-panel-body config-panel-body--permisos custom-scrollbar", children: /* @__PURE__ */ jsx46(PermisosPanel, { onNeedLogin }) }) : /* @__PURE__ */ jsx46(SistemaConfigBody, { onNeedLogin }) }) });
 }
 function SistemaConfigBody({ onNeedLogin }) {
   const [openAiModels, setOpenAiModels] = useState32(() => ({ modeloOperativo: buildDefaults().modeloOperativo, modeloConversacion: buildDefaults().modeloConversacion }));
-  return /* @__PURE__ */ jsx45("div", { className: "panel-body config-panel-body custom-scrollbar", children: /* @__PURE__ */ jsxs38(Box31, { className: "config-panel-inner config-panel-inner--form config-sections-stack", children: [
-    /* @__PURE__ */ jsx45(OpenAiSection, { onNeedLogin, onModelsChange: setOpenAiModels }),
-    /* @__PURE__ */ jsx45(Divider7, { className: "config-form-divider", role: "separator", "aria-hidden": "true" }),
-    /* @__PURE__ */ jsx45(
+  return /* @__PURE__ */ jsx46("div", { className: "panel-body config-panel-body custom-scrollbar", children: /* @__PURE__ */ jsxs39(Box32, { className: "config-panel-inner config-panel-inner--form config-sections-stack", children: [
+    /* @__PURE__ */ jsx46(OpenAiSection, { onNeedLogin, onModelsChange: setOpenAiModels }),
+    /* @__PURE__ */ jsx46(Divider7, { className: "config-form-divider", role: "separator", "aria-hidden": "true" }),
+    /* @__PURE__ */ jsx46(
       ConfigPromptsOperativosPanel,
       {
         onNeedLogin,
@@ -20028,9 +20253,9 @@ function OpenAiSection({ onNeedLogin, onModelsChange }) {
   const savedRef = useRef16(saved);
   savedRef.current = saved;
   const { saveGenRef, beginSave, endSave, fieldDisabled } = useConfigFieldPersist();
-  const modelOptions = useMemo20(() => modelSelectOptions(config.modeloOperativo, config.modeloConversacion), [config]);
-  const load = useCallback14(async () => {
-    setLoading(true);
+  const modelOptions = useMemo21(() => modelSelectOptions(config.modeloOperativo, config.modeloConversacion), [config]);
+  const load = useCallback14(async ({ soft = false } = {}) => {
+    if (!soft) setLoading(true);
     try {
       const cfg = await fetchOpenAiSystemConfig();
       const next = { ...buildDefaults(), ...cfg };
@@ -20045,11 +20270,11 @@ function OpenAiSection({ onNeedLogin, onModelsChange }) {
     }
   }, [onModelsChange]);
   useEffect28(() => {
-    load();
+    void load();
   }, [load]);
   useEffect28(() => {
     const onAuth = () => {
-      load();
+      void load({ soft: true });
     };
     window.addEventListener(Session.EVENT, onAuth);
     window.addEventListener("patyia-apptools:caps-changed", onAuth);
@@ -20101,29 +20326,29 @@ function OpenAiSection({ onNeedLogin, onModelsChange }) {
     onModelsChange?.({ modeloOperativo: next.modeloOperativo, modeloConversacion: next.modeloConversacion });
     void persist(next, beginSave(fields), fields);
   }
-  return /* @__PURE__ */ jsxs38(
+  return /* @__PURE__ */ jsxs39(
     ConfigFormSection,
     {
       className: "config-form-section--openai",
-      icon: /* @__PURE__ */ jsx45(Icon22, { icon: "mdi:brain", size: 20 }),
+      icon: /* @__PURE__ */ jsx46(Icon23, { icon: "mdi:brain", size: 20 }),
       title: "OpenAI",
-      actions: /* @__PURE__ */ jsxs38(Fragment16, { children: [
-        /* @__PURE__ */ jsx45(ButtonIconify, { icon: "mdi:code-json", title: "JSON", onClick: () => setJsonOpen(true) }),
-        /* @__PURE__ */ jsx45(ButtonIconify, { icon: "mdi:refresh", title: "Recargar", onClick: load, busy: loading })
+      actions: /* @__PURE__ */ jsxs39(Fragment16, { children: [
+        /* @__PURE__ */ jsx46(ButtonIconify, { icon: "mdi:code-json", title: "JSON", onClick: () => setJsonOpen(true) }),
+        /* @__PURE__ */ jsx46(ButtonIconify, { icon: "mdi:refresh", title: "Recargar", onClick: () => void load({ soft: true }), busy: loading })
       ] }),
       children: [
-        /* @__PURE__ */ jsxs38(Box31, { className: "config-openai-fields-row", sx: { display: "grid", gridTemplateColumns: "minmax(170px, 1.2fr) minmax(190px, 1.3fr) minmax(120px, 0.85fr)", gap: "0.65rem 0.85rem", alignItems: "start", width: "100%", maxWidth: 720, mt: 0.25 }, children: [
-          /* @__PURE__ */ jsxs38(FormControl8, { size: "small", className: "config-openai-fields-row__cell", disabled: fieldDisabled(canEdit, "modeloOperativo"), children: [
-            /* @__PURE__ */ jsx45(InputLabel5, { id: "config-openai-operativo-label", shrink: true, children: "Operativo" }),
-            /* @__PURE__ */ jsx45(Select8, { labelId: "config-openai-operativo-label", label: "Operativo", value: config.modeloOperativo, onChange: (e) => patch({ modeloOperativo: e.target.value }), children: modelOptions.map((id) => /* @__PURE__ */ jsx45(MenuItem8, { value: id, children: id }, id)) }),
-            /* @__PURE__ */ jsx45(Typography27, { component: "span", variant: "caption", className: "config-openai-fields-row__prop", children: "modeloOperativo" })
+        /* @__PURE__ */ jsxs39(Box32, { className: "config-openai-fields-row", sx: { display: "grid", gridTemplateColumns: "minmax(170px, 1.2fr) minmax(190px, 1.3fr) minmax(120px, 0.85fr)", gap: "0.65rem 0.85rem", alignItems: "start", width: "100%", maxWidth: 720, mt: 0.25 }, children: [
+          /* @__PURE__ */ jsxs39(FormControl8, { size: "small", className: "config-openai-fields-row__cell", disabled: fieldDisabled(canEdit, "modeloOperativo"), children: [
+            /* @__PURE__ */ jsx46(InputLabel5, { id: "config-openai-operativo-label", shrink: true, children: "Operativo" }),
+            /* @__PURE__ */ jsx46(Select8, { labelId: "config-openai-operativo-label", label: "Operativo", value: config.modeloOperativo, onChange: (e) => patch({ modeloOperativo: e.target.value }), children: modelOptions.map((id) => /* @__PURE__ */ jsx46(MenuItem8, { value: id, children: id }, id)) }),
+            /* @__PURE__ */ jsx46(Typography28, { component: "span", variant: "caption", className: "config-openai-fields-row__prop", children: "modeloOperativo" })
           ] }),
-          /* @__PURE__ */ jsxs38(FormControl8, { size: "small", className: "config-openai-fields-row__cell", disabled: fieldDisabled(canEdit, "modeloConversacion"), children: [
-            /* @__PURE__ */ jsx45(InputLabel5, { id: "config-openai-conversacion-label", shrink: true, children: "Conversaci\xF3n" }),
-            /* @__PURE__ */ jsx45(Select8, { labelId: "config-openai-conversacion-label", label: "Conversaci\xF3n", value: config.modeloConversacion, onChange: (e) => patch({ modeloConversacion: e.target.value }), children: modelOptions.map((id) => /* @__PURE__ */ jsx45(MenuItem8, { value: id, children: id }, id)) }),
-            /* @__PURE__ */ jsx45(Typography27, { component: "span", variant: "caption", className: "config-openai-fields-row__prop", children: "modeloConversacion" })
+          /* @__PURE__ */ jsxs39(FormControl8, { size: "small", className: "config-openai-fields-row__cell", disabled: fieldDisabled(canEdit, "modeloConversacion"), children: [
+            /* @__PURE__ */ jsx46(InputLabel5, { id: "config-openai-conversacion-label", shrink: true, children: "Conversaci\xF3n" }),
+            /* @__PURE__ */ jsx46(Select8, { labelId: "config-openai-conversacion-label", label: "Conversaci\xF3n", value: config.modeloConversacion, onChange: (e) => patch({ modeloConversacion: e.target.value }), children: modelOptions.map((id) => /* @__PURE__ */ jsx46(MenuItem8, { value: id, children: id }, id)) }),
+            /* @__PURE__ */ jsx46(Typography28, { component: "span", variant: "caption", className: "config-openai-fields-row__prop", children: "modeloConversacion" })
           ] }),
-          /* @__PURE__ */ jsx45(Box31, { className: "config-openai-fields-row__cell config-openai-fields-row__fragments", children: /* @__PURE__ */ jsx45(Tooltip14, { title: "M\xE1ximo de fragmentos de documentaci\xF3n por consulta file_search (3\u201350)", placement: "top", children: /* @__PURE__ */ jsx45(
+          /* @__PURE__ */ jsx46(Box32, { className: "config-openai-fields-row__cell config-openai-fields-row__fragments", children: /* @__PURE__ */ jsx46(Tooltip15, { title: "M\xE1ximo de fragmentos de documentaci\xF3n por consulta file_search (3\u201350)", placement: "top", children: /* @__PURE__ */ jsx46(
             TextField17,
             {
               label: "M\xE1x. resultados",
@@ -20140,7 +20365,7 @@ function OpenAiSection({ onNeedLogin, onModelsChange }) {
             }
           ) }) })
         ] }),
-        /* @__PURE__ */ jsx45(
+        /* @__PURE__ */ jsx46(
           OpenAiJsonModal,
           {
             open: jsonOpen,
@@ -20337,7 +20562,7 @@ function stopOpenAiStatusPolling() {
 
 // src/js/status/OpenAiStatusRing.jsx
 init_platform();
-import { jsx as jsx46, jsxs as jsxs39 } from "react/jsx-runtime";
+import { jsx as jsx47, jsxs as jsxs40 } from "react/jsx-runtime";
 var TONE_COLOR = {
   ok: "var(--pw-green, #34d399)",
   warn: "var(--pw-amber, #fbbf24)",
@@ -20367,7 +20592,7 @@ function OpenAiStatusRing({
   link = false,
   compact = false
 }) {
-  const { Tooltip: Tooltip15 } = getMaterialUI();
+  const { Tooltip: Tooltip16 } = getMaterialUI();
   const { status, progress, pollMs } = useOpenAiStatus();
   const tone = openAiStatusTone(status);
   const accent = TONE_COLOR[tone] || TONE_COLOR.loading;
@@ -20381,7 +20606,7 @@ function OpenAiStatusRing({
   const tooltip = titleProp || headline;
   const aria = link ? `${headline}. Abrir status.openai.com` : `${headline}${status && !status.error ? ` \xB7 pr\xF3xima actualizaci\xF3n en ${secsLeft}s` : ""}`;
   const showDot = compact || !children;
-  const ring = /* @__PURE__ */ jsxs39(
+  const ring = /* @__PURE__ */ jsxs40(
     "span",
     {
       className: `paty-openai-status-ring paty-openai-status-ring--${tone}${link ? " paty-openai-status-ring--link" : ""}${compact ? " paty-openai-status-ring--compact" : ""}${className ? ` ${className}` : ""}`,
@@ -20390,7 +20615,7 @@ function OpenAiStatusRing({
       "aria-label": link ? void 0 : aria,
       "aria-hidden": link ? true : void 0,
       children: [
-        /* @__PURE__ */ jsxs39(
+        /* @__PURE__ */ jsxs40(
           "svg",
           {
             className: "paty-openai-status-ring__svg",
@@ -20400,8 +20625,8 @@ function OpenAiStatusRing({
             "aria-hidden": "true",
             focusable: "false",
             children: [
-              /* @__PURE__ */ jsx46("circle", { className: "paty-openai-status-ring__track", cx: "18", cy: "18", r }),
-              /* @__PURE__ */ jsx46(
+              /* @__PURE__ */ jsx47("circle", { className: "paty-openai-status-ring__track", cx: "18", cy: "18", r }),
+              /* @__PURE__ */ jsx47(
                 "circle",
                 {
                   className: "paty-openai-status-ring__prog",
@@ -20414,11 +20639,11 @@ function OpenAiStatusRing({
                   }
                 }
               ),
-              showDot ? /* @__PURE__ */ jsx46("circle", { className: "paty-openai-status-ring__dot", cx: "18", cy: "18", r: compact ? 5.5 : 4.5 }) : null
+              showDot ? /* @__PURE__ */ jsx47("circle", { className: "paty-openai-status-ring__dot", cx: "18", cy: "18", r: compact ? 5.5 : 4.5 }) : null
             ]
           }
         ),
-        children ? /* @__PURE__ */ jsx46("span", { className: "paty-openai-status-ring__inner", children }) : null
+        children ? /* @__PURE__ */ jsx47("span", { className: "paty-openai-status-ring__inner", children }) : null
       ]
     }
   );
@@ -20438,7 +20663,7 @@ function OpenAiStatusRing({
     else brand.removeAttribute("title");
     delete brand.dataset.patyTitleBackup;
   };
-  return /* @__PURE__ */ jsx46(Tooltip15, { title: tooltip, enterDelay: 200, disableInteractive: true, placement: "bottom-start", children: /* @__PURE__ */ jsx46(
+  return /* @__PURE__ */ jsx47(Tooltip16, { title: tooltip, enterDelay: 200, disableInteractive: true, placement: "bottom-start", children: /* @__PURE__ */ jsx47(
     "a",
     {
       className: "paty-openai-status-ring__anchor",
@@ -20491,13 +20716,13 @@ function BrandOpenAiStatus({ size = 12 }) {
   }, []);
   if (!host || !createPortal2) return null;
   return createPortal2(
-    /* @__PURE__ */ jsx46(OpenAiStatusRing, { size, className: "paty-brand-title__status", link: true, compact: true }),
+    /* @__PURE__ */ jsx47(OpenAiStatusRing, { size, className: "paty-brand-title__status", link: true, compact: true }),
     host
   );
 }
 
 // src/js/tools/WelcomeHome.jsx
-import { jsx as jsx47, jsxs as jsxs40 } from "react/jsx-runtime";
+import { jsx as jsx48, jsxs as jsxs41 } from "react/jsx-runtime";
 var TOOLS = [
   {
     id: "chat",
@@ -20571,8 +20796,8 @@ function statusIcon(tone) {
   return "solar:danger-circle-bold-duotone";
 }
 function WelcomeHome({ onOpenTool }) {
-  const { Box: Box33, Typography: Typography28, Button: Button21, Stack: Stack26, Link, Chip: Chip19 } = getMaterialUI();
-  const { Icon: Icon26 } = UI;
+  const { Box: Box34, Typography: Typography29, Button: Button21, Stack: Stack27, Link, Chip: Chip20 } = getMaterialUI();
+  const { Icon: Icon27 } = UI;
   const { GlassPageSurface, GlassHero, GlassCard, GlassSection, NEON_COLORS } = getGlass();
   const { status, progress, pollMs } = useOpenAiStatus();
   const degraded = openAiStatusIsDegraded(status);
@@ -20582,7 +20807,7 @@ function WelcomeHome({ onOpenTool }) {
   const statusDetail = !status ? `Actualizaci\xF3n autom\xE1tica cada ${Math.round(pollMs / 1e3)} s.` : status.error ? status.error : operational || !degraded ? "Sin incidentes activos." : status.incidents[0]?.name || "Revisa status.openai.com para m\xE1s detalle.";
   const accent = statusAccent(NEON_COLORS, statusTone);
   const secsLeft = Math.max(0, Math.ceil((1 - progress) * (pollMs / 1e3)));
-  return /* @__PURE__ */ jsxs40(
+  return /* @__PURE__ */ jsxs41(
     GlassPageSurface,
     {
       className: "paty-welcome",
@@ -20590,57 +20815,57 @@ function WelcomeHome({ onOpenTool }) {
       orbs: true,
       sx: { px: 0, pt: 0, pb: { xs: 1.5, sm: 2, md: 3 }, height: "100%", minHeight: 0 },
       children: [
-        /* @__PURE__ */ jsx47(GlassHero, { className: "paty-welcome__hero", sx: { mb: 2.5, borderRadius: 0, width: "100%", maxWidth: "100%", overflow: "hidden" }, children: /* @__PURE__ */ jsxs40(Box33, { className: "paty-welcome__hero-grid", children: [
-          /* @__PURE__ */ jsxs40(Box33, { className: "paty-welcome__hero-copy", children: [
-            /* @__PURE__ */ jsxs40(Typography28, { className: "paty-welcome__eyebrow", component: "p", children: [
-              /* @__PURE__ */ jsx47(Icon26, { icon: "solar:buildings-2-bold-duotone", size: 16 }),
+        /* @__PURE__ */ jsx48(GlassHero, { className: "paty-welcome__hero", sx: { mb: 2.5, borderRadius: 0, width: "100%", maxWidth: "100%", overflow: "hidden" }, children: /* @__PURE__ */ jsxs41(Box34, { className: "paty-welcome__hero-grid", children: [
+          /* @__PURE__ */ jsxs41(Box34, { className: "paty-welcome__hero-copy", children: [
+            /* @__PURE__ */ jsxs41(Typography29, { className: "paty-welcome__eyebrow", component: "p", children: [
+              /* @__PURE__ */ jsx48(Icon27, { icon: "solar:buildings-2-bold-duotone", size: 16 }),
               "InSoft \xB7 ContaPyme"
             ] }),
-            /* @__PURE__ */ jsx47(Typography28, { component: "h1", className: "paty-welcome__brand", children: "PatyIA" }),
-            /* @__PURE__ */ jsx47(Typography28, { className: "paty-welcome__tagline", children: "Consola de QA con IA para ContaPyme: conversaciones, configuraci\xF3n, permisos y trazas en un solo lugar." }),
-            /* @__PURE__ */ jsx47(Stack26, { direction: "row", spacing: 1, className: "paty-welcome__pills", flexWrap: "wrap", useFlexGap: true, children: HERO_PILLS.map((p) => /* @__PURE__ */ jsx47(
-              Chip19,
+            /* @__PURE__ */ jsx48(Typography29, { component: "h1", className: "paty-welcome__brand", children: "PatyIA" }),
+            /* @__PURE__ */ jsx48(Typography29, { className: "paty-welcome__tagline", children: "Consola de QA con IA para ContaPyme: conversaciones, configuraci\xF3n, permisos y trazas en un solo lugar." }),
+            /* @__PURE__ */ jsx48(Stack27, { direction: "row", spacing: 1, className: "paty-welcome__pills", flexWrap: "wrap", useFlexGap: true, children: HERO_PILLS.map((p) => /* @__PURE__ */ jsx48(
+              Chip20,
               {
                 size: "small",
                 className: "paty-welcome__pill",
-                icon: /* @__PURE__ */ jsx47(Icon26, { icon: p.icon, size: 15 }),
+                icon: /* @__PURE__ */ jsx48(Icon27, { icon: p.icon, size: 15 }),
                 label: p.label
               },
               p.label
             )) }),
-            /* @__PURE__ */ jsxs40(Stack26, { direction: "row", spacing: 1.5, className: "paty-welcome__cta", flexWrap: "wrap", useFlexGap: true, children: [
-              /* @__PURE__ */ jsx47(
+            /* @__PURE__ */ jsxs41(Stack27, { direction: "row", spacing: 1.5, className: "paty-welcome__cta", flexWrap: "wrap", useFlexGap: true, children: [
+              /* @__PURE__ */ jsx48(
                 Button21,
                 {
                   variant: "contained",
                   size: "large",
                   className: "paty-welcome__cta-primary",
-                  startIcon: /* @__PURE__ */ jsx47(Icon26, { icon: "solar:chat-round-line-bold-duotone", size: 20 }),
+                  startIcon: /* @__PURE__ */ jsx48(Icon27, { icon: "solar:chat-round-line-bold-duotone", size: 20 }),
                   onClick: () => onOpenTool("chat"),
                   children: "Abrir Chat"
                 }
               ),
-              /* @__PURE__ */ jsx47(
+              /* @__PURE__ */ jsx48(
                 Button21,
                 {
                   variant: "outlined",
                   size: "large",
                   className: "paty-welcome__cta-ghost",
-                  startIcon: /* @__PURE__ */ jsx47(Icon26, { icon: "solar:settings-bold-duotone", size: 20 }),
+                  startIcon: /* @__PURE__ */ jsx48(Icon27, { icon: "solar:settings-bold-duotone", size: 20 }),
                   onClick: () => onOpenTool("config", "prompts"),
                   children: "Ir a Config"
                 }
               )
             ] })
           ] }),
-          /* @__PURE__ */ jsxs40(Box33, { className: "paty-welcome__hero-art", "aria-hidden": "true", children: [
-            /* @__PURE__ */ jsx47(Box33, { className: "paty-welcome__art-ring paty-welcome__art-ring--outer" }),
-            /* @__PURE__ */ jsx47(Box33, { className: "paty-welcome__art-ring paty-welcome__art-ring--mid" }),
-            /* @__PURE__ */ jsx47(Box33, { className: "paty-welcome__art-core", children: /* @__PURE__ */ jsx47(Icon26, { icon: "ph:robot-duotone", size: 88 }) }),
-            ILLUSTRATION_ORBITS.map((o) => /* @__PURE__ */ jsx47(Box33, { className: `paty-welcome__orbit ${o.cls}`, children: /* @__PURE__ */ jsx47(Icon26, { icon: o.icon, size: o.size }) }, o.cls))
+          /* @__PURE__ */ jsxs41(Box34, { className: "paty-welcome__hero-art", "aria-hidden": "true", children: [
+            /* @__PURE__ */ jsx48(Box34, { className: "paty-welcome__art-ring paty-welcome__art-ring--outer" }),
+            /* @__PURE__ */ jsx48(Box34, { className: "paty-welcome__art-ring paty-welcome__art-ring--mid" }),
+            /* @__PURE__ */ jsx48(Box34, { className: "paty-welcome__art-core", children: /* @__PURE__ */ jsx48(Icon27, { icon: "ph:robot-duotone", size: 88 }) }),
+            ILLUSTRATION_ORBITS.map((o) => /* @__PURE__ */ jsx48(Box34, { className: `paty-welcome__orbit ${o.cls}`, children: /* @__PURE__ */ jsx48(Icon27, { icon: o.icon, size: o.size }) }, o.cls))
           ] })
         ] }) }),
-        /* @__PURE__ */ jsx47(
+        /* @__PURE__ */ jsx48(
           GlassCard,
           {
             className: "paty-welcome__status-card",
@@ -20649,23 +20874,23 @@ function WelcomeHome({ onOpenTool }) {
             hover: false,
             sx: { mb: 2.5, p: 0, overflow: "hidden" },
             "aria-live": "polite",
-            children: /* @__PURE__ */ jsxs40(Box33, { className: "paty-welcome__status-row", children: [
-              /* @__PURE__ */ jsx47(
-                Box33,
+            children: /* @__PURE__ */ jsxs41(Box34, { className: "paty-welcome__status-row", children: [
+              /* @__PURE__ */ jsx48(
+                Box34,
                 {
                   className: "paty-welcome__status-icon",
                   sx: { "--pw-status-accent": accent },
                   title: `Pr\xF3xima actualizaci\xF3n en ${secsLeft}s`,
                   "aria-label": `Pr\xF3xima actualizaci\xF3n de OpenAI Status en ${secsLeft} segundos`,
-                  children: /* @__PURE__ */ jsx47(OpenAiStatusRing, { size: 48, className: "paty-welcome__status-ring-wrap", children: /* @__PURE__ */ jsx47(Icon26, { icon: statusIcon(statusTone), size: 22 }) })
+                  children: /* @__PURE__ */ jsx48(OpenAiStatusRing, { size: 48, className: "paty-welcome__status-ring-wrap", children: /* @__PURE__ */ jsx48(Icon27, { icon: statusIcon(statusTone), size: 22 }) })
                 }
               ),
-              /* @__PURE__ */ jsxs40(Box33, { className: "paty-welcome__status-body", sx: { flex: 1, minWidth: 0 }, children: [
-                /* @__PURE__ */ jsx47(Typography28, { className: "paty-welcome__status-kicker", component: "p", children: "OpenAI Status" }),
-                /* @__PURE__ */ jsx47(Typography28, { className: "paty-welcome__status-title", component: "h2", children: statusTitle }),
-                /* @__PURE__ */ jsx47(Typography28, { className: "paty-welcome__status-detail", component: "p", children: statusDetail })
+              /* @__PURE__ */ jsxs41(Box34, { className: "paty-welcome__status-body", sx: { flex: 1, minWidth: 0 }, children: [
+                /* @__PURE__ */ jsx48(Typography29, { className: "paty-welcome__status-kicker", component: "p", children: "OpenAI Status" }),
+                /* @__PURE__ */ jsx48(Typography29, { className: "paty-welcome__status-title", component: "h2", children: statusTitle }),
+                /* @__PURE__ */ jsx48(Typography29, { className: "paty-welcome__status-detail", component: "p", children: statusDetail })
               ] }),
-              /* @__PURE__ */ jsxs40(
+              /* @__PURE__ */ jsxs41(
                 Link,
                 {
                   className: "paty-welcome__status-link",
@@ -20674,7 +20899,7 @@ function WelcomeHome({ onOpenTool }) {
                   rel: "noreferrer",
                   underline: "hover",
                   children: [
-                    /* @__PURE__ */ jsx47(Icon26, { icon: "solar:link-round-bold-duotone", size: 16 }),
+                    /* @__PURE__ */ jsx48(Icon27, { icon: "solar:link-round-bold-duotone", size: 16 }),
                     "status.openai.com"
                   ]
                 }
@@ -20682,18 +20907,18 @@ function WelcomeHome({ onOpenTool }) {
             ] })
           }
         ),
-        /* @__PURE__ */ jsx47(
+        /* @__PURE__ */ jsx48(
           GlassSection,
           {
             className: "paty-welcome__tools",
             title: "Herramientas",
             accent: NEON_COLORS.cyan,
-            icon: /* @__PURE__ */ jsx47(Icon26, { icon: "solar:widget-4-bold-duotone", size: 18 }),
+            icon: /* @__PURE__ */ jsx48(Icon27, { icon: "solar:widget-4-bold-duotone", size: 18 }),
             bodySx: { pt: 2 },
             sx: { mt: 0, pt: 0, borderColor: "color-mix(in srgb, currentColor 60%, transparent)", boxShadow: "none" },
-            children: /* @__PURE__ */ jsx47(Box33, { className: "paty-welcome__tool-grid", children: TOOLS.map((t) => {
+            children: /* @__PURE__ */ jsx48(Box34, { className: "paty-welcome__tool-grid", children: TOOLS.map((t) => {
               const toolAccent = NEON_COLORS[t.accentKey] || NEON_COLORS.blue;
-              return /* @__PURE__ */ jsxs40(
+              return /* @__PURE__ */ jsxs41(
                 GlassCard,
                 {
                   className: "paty-welcome__tool isa-neon-accent-stripe",
@@ -20714,10 +20939,10 @@ function WelcomeHome({ onOpenTool }) {
                     color: "inherit"
                   },
                   children: [
-                    /* @__PURE__ */ jsx47(Box33, { className: "paty-welcome__tool-icon", sx: { "--pw-tool-accent": toolAccent }, "aria-hidden": true, children: /* @__PURE__ */ jsx47(Icon26, { icon: t.icon, size: 32 }) }),
-                    /* @__PURE__ */ jsx47(Typography28, { className: "paty-welcome__tool-title", component: "span", children: t.title }),
-                    /* @__PURE__ */ jsx47(Typography28, { className: "paty-welcome__tool-blurb", component: "span", children: t.blurb }),
-                    /* @__PURE__ */ jsx47(Box33, { className: "paty-welcome__tool-go", "aria-hidden": true, children: /* @__PURE__ */ jsx47(Icon26, { icon: "solar:arrow-right-bold-duotone", size: 18 }) })
+                    /* @__PURE__ */ jsx48(Box34, { className: "paty-welcome__tool-icon", sx: { "--pw-tool-accent": toolAccent }, "aria-hidden": true, children: /* @__PURE__ */ jsx48(Icon27, { icon: t.icon, size: 32 }) }),
+                    /* @__PURE__ */ jsx48(Typography29, { className: "paty-welcome__tool-title", component: "span", children: t.title }),
+                    /* @__PURE__ */ jsx48(Typography29, { className: "paty-welcome__tool-blurb", component: "span", children: t.blurb }),
+                    /* @__PURE__ */ jsx48(Box34, { className: "paty-welcome__tool-go", "aria-hidden": true, children: /* @__PURE__ */ jsx48(Icon27, { icon: "solar:arrow-right-bold-duotone", size: 18 }) })
                   ]
                 },
                 `${t.id}-${t.title}`
@@ -20736,10 +20961,10 @@ init_IssTargetSwitch();
 // src/js/components/ViewAsRoleControl.jsx
 init_platform();
 init_sessionApi();
-import { jsx as jsx48, jsxs as jsxs41 } from "react/jsx-runtime";
+import { jsx as jsx49, jsxs as jsxs42 } from "react/jsx-runtime";
 var { useState: useState33, useEffect: useEffect29 } = getReact();
-var { Box: Box32, Select: Select9, MenuItem: MenuItem9, IconButton: IconButton13 } = getMaterialUI();
-var { Icon: Icon25 } = UI;
+var { Box: Box33, Select: Select9, MenuItem: MenuItem9, IconButton: IconButton14 } = getMaterialUI();
+var { Icon: Icon26 } = UI;
 function useViewAsTick() {
   const [tick, setTick] = useState33(0);
   useEffect29(() => {
@@ -20795,26 +21020,26 @@ function ViewAsRoleMenu({ onPicked } = {}) {
     stopViewAsRole();
     onPicked?.();
   }
-  return /* @__PURE__ */ jsx48(
+  return /* @__PURE__ */ jsx49(
     MenuItem9,
     {
       disableRipple: true,
       sx: MENU_ITEM_SX,
       onClick: (e) => e.stopPropagation(),
       title: "Solo roles dev. Simula otro rol en la UI (solo puede quitar accesos; nunca a\xF1ade los que tu login no tiene).",
-      children: /* @__PURE__ */ jsxs41(Box32, { sx: { display: "flex", alignItems: "center", gap: 0.75, width: "100%", minHeight: 36 }, children: [
-        isSimulating ? /* @__PURE__ */ jsx48(
-          IconButton13,
+      children: /* @__PURE__ */ jsxs42(Box33, { sx: { display: "flex", alignItems: "center", gap: 0.75, width: "100%", minHeight: 36 }, children: [
+        isSimulating ? /* @__PURE__ */ jsx49(
+          IconButton14,
           {
             size: "small",
             onClick: onReset,
             "aria-label": "Restaurar rol original",
             title: "Restaurar rol original",
             sx: { p: 0.25, color: accent },
-            children: /* @__PURE__ */ jsx48(Icon25, { icon: "mdi:restart", size: 18 })
+            children: /* @__PURE__ */ jsx49(Icon26, { icon: "mdi:restart", size: 18 })
           }
-        ) : /* @__PURE__ */ jsx48(Icon25, { icon: "mdi:account-eye-outline", size: 18, style: { color: "inherit", opacity: 0.85 } }),
-        /* @__PURE__ */ jsxs41(
+        ) : /* @__PURE__ */ jsx49(Icon26, { icon: "mdi:account-eye-outline", size: 18, style: { color: "inherit", opacity: 0.85 } }),
+        /* @__PURE__ */ jsxs42(
           Select9,
           {
             value,
@@ -20837,8 +21062,8 @@ function ViewAsRoleMenu({ onPicked } = {}) {
             },
             renderValue: (v) => v ? roleOptionLabel(formatViewAsRoleLabel(v), v) : roleOptionLabel(realLabel, primaryId),
             children: [
-              /* @__PURE__ */ jsx48(MenuItem9, { value: "", children: roleOptionLabel(realLabel, primaryId) }),
-              VIEW_AS_ROLE_OPTIONS.map((opt) => /* @__PURE__ */ jsx48(MenuItem9, { value: opt.id, children: roleOptionLabel(opt.label, opt.id) }, opt.id))
+              /* @__PURE__ */ jsx49(MenuItem9, { value: "", children: roleOptionLabel(realLabel, primaryId) }),
+              VIEW_AS_ROLE_OPTIONS.map((opt) => /* @__PURE__ */ jsx49(MenuItem9, { value: opt.id, children: roleOptionLabel(opt.label, opt.id) }, opt.id))
             ]
           }
         )
@@ -20849,7 +21074,7 @@ function ViewAsRoleMenu({ onPicked } = {}) {
 
 // src/js/app/App.jsx
 init_sessionApi();
-import { Fragment as Fragment17, jsx as jsx49, jsxs as jsxs42 } from "react/jsx-runtime";
+import { Fragment as Fragment17, jsx as jsx50, jsxs as jsxs43 } from "react/jsx-runtime";
 (function registerViewAsRoleMenu() {
   const ui = window.ISA?.UI;
   if (!ui) return;
@@ -20859,7 +21084,7 @@ import { Fragment as Fragment17, jsx as jsx49, jsxs as jsxs42 } from "react/jsx-
   } catch {
   }
 })();
-var { Stack: Stack25 } = getMaterialUI();
+var { Stack: Stack26 } = getMaterialUI();
 var BRAND_HOME_EVENT = "isa:brand-home";
 var DEVFLOW_NAV_ENABLED = false;
 var ALL_TOOLS = [
@@ -20896,10 +21121,10 @@ function readConfigPane(boot) {
   return "prompts";
 }
 function LocalIssBadge() {
-  return /* @__PURE__ */ jsx49(IssTargetChip, {});
+  return /* @__PURE__ */ jsx50(IssTargetChip, {});
 }
 function App() {
-  const { useState: useState34, useEffect: useEffect30, useMemo: useMemo21 } = getReact();
+  const { useState: useState34, useEffect: useEffect30, useMemo: useMemo22 } = getReact();
   const { LoginButton } = UI;
   const boot = bootState;
   useEffect30(() => {
@@ -20971,13 +21196,13 @@ function App() {
       setTool("todos");
     }
   }, [publicScrumView, tool]);
-  const toolTabs = useMemo21(() => navTabs(ALL_TOOLS.filter((t) => {
+  const toolTabs = useMemo22(() => navTabs(ALL_TOOLS.filter((t) => {
     if (t.devflow) return DEVFLOW_NAV_ENABLED;
     if (publicScrumView) return false;
     return true;
   })), [publicScrumView]);
-  const chatPanes = useMemo21(() => navTabs(CHAT_PANES), []);
-  const configPanes = useMemo21(() => navTabs(CONFIG_PANES), []);
+  const chatPanes = useMemo22(() => navTabs(CHAT_PANES), []);
+  const configPanes = useMemo22(() => navTabs(CONFIG_PANES), []);
   useEffect30(() => {
     if (publicScrumView) return;
     if (!DEVFLOW_NAV_ENABLED && tool === "todos") {
@@ -21064,9 +21289,9 @@ function App() {
   }
   const Shell = window.ISAFront?.Layout?.AppShell;
   if (!Shell) throw new Error("AppShell no cargado \u2014 revisar loader.mjs");
-  const toolbarTools = publicScrumView ? null : /* @__PURE__ */ jsxs42(Stack25, { direction: "row", spacing: 0.75, alignItems: "center", className: "header-session-wrap", children: [
-    /* @__PURE__ */ jsx49(LocalIssBadge, {}),
-    /* @__PURE__ */ jsx49(
+  const toolbarTools = publicScrumView ? null : /* @__PURE__ */ jsxs43(Stack26, { direction: "row", spacing: 0.75, alignItems: "center", className: "header-session-wrap", children: [
+    /* @__PURE__ */ jsx50(LocalIssBadge, {}),
+    /* @__PURE__ */ jsx50(
       LoginButton,
       {
         loginOpen: authOpen,
@@ -21101,9 +21326,9 @@ function App() {
       tabHref: (id) => hrefFor({ tool: "config", config: { pane: id } })
     }] : []
   ];
-  return /* @__PURE__ */ jsxs42(Fragment17, { children: [
-    /* @__PURE__ */ jsx49(BrandOpenAiStatus, {}),
-    /* @__PURE__ */ jsx49(
+  return /* @__PURE__ */ jsxs43(Fragment17, { children: [
+    /* @__PURE__ */ jsx50(BrandOpenAiStatus, {}),
+    /* @__PURE__ */ jsx50(
       Shell,
       {
         ns: "ISA",
@@ -21113,16 +21338,16 @@ function App() {
         chromeless: publicScrumView,
         toolbarExtra: toolbarTools,
         navRows,
-        children: authDownReason && !publicScrumView ? /* @__PURE__ */ jsx49("div", { className: "isa-auth-down-overlay", role: "alert", "aria-live": "assertive", children: /* @__PURE__ */ jsxs42("div", { className: "isa-auth-down-card", children: [
-          /* @__PURE__ */ jsx49("div", { className: "isa-auth-down-icon", "aria-hidden": "true", children: "\u26A0" }),
-          /* @__PURE__ */ jsx49("h2", { className: "isa-auth-down-title", children: "Servidor de autenticaci\xF3n no disponible" }),
-          /* @__PURE__ */ jsx49("p", { className: "isa-auth-down-reason", children: authDownReason }),
-          /* @__PURE__ */ jsxs42("p", { className: "isa-auth-down-target", children: [
-            /* @__PURE__ */ jsx49("span", { className: "isa-auth-down-target-label", children: "Servidor intentado:" }),
-            /* @__PURE__ */ jsx49("code", { className: "isa-auth-down-target-url", children: authDownTarget })
+        children: authDownReason && !publicScrumView ? /* @__PURE__ */ jsx50("div", { className: "isa-auth-down-overlay", role: "alert", "aria-live": "assertive", children: /* @__PURE__ */ jsxs43("div", { className: "isa-auth-down-card", children: [
+          /* @__PURE__ */ jsx50("div", { className: "isa-auth-down-icon", "aria-hidden": "true", children: "\u26A0" }),
+          /* @__PURE__ */ jsx50("h2", { className: "isa-auth-down-title", children: "Servidor de autenticaci\xF3n no disponible" }),
+          /* @__PURE__ */ jsx50("p", { className: "isa-auth-down-reason", children: authDownReason }),
+          /* @__PURE__ */ jsxs43("p", { className: "isa-auth-down-target", children: [
+            /* @__PURE__ */ jsx50("span", { className: "isa-auth-down-target-label", children: "Servidor intentado:" }),
+            /* @__PURE__ */ jsx50("code", { className: "isa-auth-down-target-url", children: authDownTarget })
           ] }),
-          /* @__PURE__ */ jsx49("p", { className: "isa-auth-down-hint", children: "PatyIA requiere conexi\xF3n con el servidor de autenticaci\xF3n para operar. Reintente autom\xE1ticamente o haga una recarga manual cuando el servicio se haya recuperado." }),
-          /* @__PURE__ */ jsx49("div", { className: "isa-auth-down-actions", children: /* @__PURE__ */ jsx49(
+          /* @__PURE__ */ jsx50("p", { className: "isa-auth-down-hint", children: "PatyIA requiere conexi\xF3n con el servidor de autenticaci\xF3n para operar. Reintente autom\xE1ticamente o haga una recarga manual cuando el servicio se haya recuperado." }),
+          /* @__PURE__ */ jsx50("div", { className: "isa-auth-down-actions", children: /* @__PURE__ */ jsx50(
             "button",
             {
               type: "button",
@@ -21131,13 +21356,13 @@ function App() {
               children: "Reintentar ahora"
             }
           ) })
-        ] }) }) : publicScrumView ? /* @__PURE__ */ jsx49(TodosTool, { bootTodos: appBoot.todos || {}, onNeedLogin: () => setAuthOpen(true) }, homeTick) : /* @__PURE__ */ jsxs42(Fragment17, { children: [
-          tool === "home" && /* @__PURE__ */ jsx49(WelcomeHome, { onOpenTool: openFromWelcome }, `home-${homeTick}`),
-          tool === "chat" && chatPane === "logs" && /* @__PURE__ */ jsx49(LogViewer, { bootLog: appBoot.log || getSnapshot().log || {} }, `logs-${homeTick}`),
-          tool === "chat" && chatPane !== "logs" && /* @__PURE__ */ jsx49(ChatTool, { bootChat: getSnapshot().chat || {}, onNeedLogin: () => setAuthOpen(true) }, homeTick),
-          tool === "todos" && DEVFLOW_NAV_ENABLED && /* @__PURE__ */ jsx49(TodosTool, { bootTodos: appBoot.todos || {}, onNeedLogin: () => setAuthOpen(true) }, `${homeTick}-${authTick}`),
-          tool === "config" && configPane === "prompts" && /* @__PURE__ */ jsx49(PromptsSqlTool, { bootPrompts: appBoot.prompts || {}, onNeedLogin: () => setAuthOpen(true) }, homeTick),
-          tool === "config" && (configPane === "permisos" || configPane === "sistema") && /* @__PURE__ */ jsx49(ConfigTool, { pane: configPane, onNeedLogin: () => setAuthOpen(true) }, homeTick)
+        ] }) }) : publicScrumView ? /* @__PURE__ */ jsx50(TodosTool, { bootTodos: appBoot.todos || {}, onNeedLogin: () => setAuthOpen(true) }, homeTick) : /* @__PURE__ */ jsxs43(Fragment17, { children: [
+          tool === "home" && /* @__PURE__ */ jsx50(WelcomeHome, { onOpenTool: openFromWelcome }, `home-${homeTick}`),
+          tool === "chat" && chatPane === "logs" && /* @__PURE__ */ jsx50(LogViewer, { bootLog: appBoot.log || getSnapshot().log || {} }, `logs-${homeTick}`),
+          tool === "chat" && chatPane !== "logs" && /* @__PURE__ */ jsx50(ChatTool, { bootChat: getSnapshot().chat || {}, onNeedLogin: () => setAuthOpen(true) }, homeTick),
+          tool === "todos" && DEVFLOW_NAV_ENABLED && /* @__PURE__ */ jsx50(TodosTool, { bootTodos: appBoot.todos || {}, onNeedLogin: () => setAuthOpen(true) }, `${homeTick}-${authTick}`),
+          tool === "config" && configPane === "prompts" && /* @__PURE__ */ jsx50(PromptsSqlTool, { bootPrompts: appBoot.prompts || {}, onNeedLogin: () => setAuthOpen(true) }, homeTick),
+          tool === "config" && (configPane === "permisos" || configPane === "sistema") && /* @__PURE__ */ jsx50(ConfigTool, { pane: configPane, onNeedLogin: () => setAuthOpen(true) }, homeTick)
         ] })
       }
     )
