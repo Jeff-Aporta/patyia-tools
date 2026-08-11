@@ -72,7 +72,8 @@ function pushImage(images: string[], ref: unknown) {
   function isDisplayableAudioRef(ref) {
     const n = String(ref ?? "").trim();
     if (!n) return false;
-    return n.startsWith("data:audio/") || /^https?:\/\/.+\.(webm|mp3|m4a|wav|ogg)/i.test(n);
+    // data URL o cualquier https (R2 signed sin depender solo de extensión en querystring)
+    return n.startsWith("data:audio/") || /^https?:\/\//i.test(n);
   }
 
   function stripOmittedVisionFromText(texto) {
