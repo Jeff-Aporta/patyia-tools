@@ -810,12 +810,17 @@ html[data-mui-color-scheme="light"] .conv-log-shell::before {
       flex-wrap: wrap;
       gap: 0.45rem;
       align-items: flex-start !important;
-      align-self: stretch !important;
+      align-self: flex-start !important;
+      min-height: 0 !important;
+      height: fit-content !important;
+      justify-content: flex-start;
       padding-top: 0;
     }
     & .conv-msg-usage-stats {
-      flex: 1 1 100%;
+      flex: 0 1 100%;
       width: 100%;
+      height: fit-content;
+      min-height: 0;
       min-width: 0;
       max-width: 100% !important;
       padding: 0.4rem 0.55rem;
@@ -871,10 +876,15 @@ html[data-mui-color-scheme="light"] .conv-log-shell::before {
     & .conv-msg-side-column {
       width: 100% !important;
       max-width: 100% !important;
+      min-height: 0;
+      height: fit-content;
+      justify-content: flex-start;
     }
     & .conv-msg-usage-stats {
-      flex: 1 1 100%;
+      flex: 0 1 100%;
       width: 100%;
+      height: fit-content;
+      min-height: 0;
       min-width: 0;
       max-width: 100% !important;
     }
@@ -1343,12 +1353,6 @@ html[data-mui-color-scheme="light"] .conv-log-shell::before {
   }
   & .conv-msg-card {
     transition: border-color 0.2s ease;
-  }
-  & > .paty-mobile-sidebar-fab--chat {
-    bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
-  }
-  &:has(.paty-chat-image-previews, .paty-chat-audio-previews) > .paty-mobile-sidebar-fab--chat {
-    bottom: calc(9.5rem + env(safe-area-inset-bottom, 0px));
   }
   &--logged-out {
     & .paty-chat-gate__inner {
@@ -1935,6 +1939,22 @@ html[data-mui-color-scheme="light"] .paty-chat-conv-search__option-id {
 }
 
 @media (max-width: 899px) {
+  /* Shell debe llenar el body: si no, queda un hueco oscuro bajo el composer. */
+  .isa-layout-body > .paty-chat-shell,
+  .isa-layout-body > .conv-log-shell {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+  }
+
+  .paty-chat-compose {
+    padding-top: 0.45rem;
+    padding-right: 0.65rem;
+    padding-bottom: calc(0.45rem + env(safe-area-inset-bottom, 0px));
+    padding-left: 0.65rem;
+  }
+
   .paty-chat-thread--compact {
     & .conv-msg-row--logs.conv-msg-row--compact {
       flex-direction: column !important;
@@ -1952,10 +1972,20 @@ html[data-mui-color-scheme="light"] .paty-chat-conv-search__option-id {
       flex-wrap: wrap;
       gap: 0.5rem;
       align-items: flex-start !important;
+      align-self: flex-start !important;
+      min-height: 0 !important;
+      height: fit-content !important;
+      justify-content: flex-start !important;
     }
     & .conv-msg-usage-stats {
-      flex: 1 1 100%;
+      flex: 0 1 100%;
       min-width: min(100%, 14rem);
+      height: fit-content;
+      min-height: 0;
+    }
+    & .conv-msg-rating-slot {
+      margin-top: 0.25rem;
+      width: auto;
     }
   }
 }
