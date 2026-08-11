@@ -1,0 +1,34 @@
+{
+  "hasBadEnv": false,
+  "hasSession": true,
+  "loginResponses": [
+    {
+      "url": "https://main-orchestrator.jeffaporta.workers.dev/api/auth/portal-login",
+      "status": 502,
+      "body": "error code: 502\n"
+    },
+    {
+      "url": "http://127.0.0.1:8802/api/auth/portal-login",
+      "status": 409,
+      "body": "{\"ok\":false,\"code\":\"MULTI_EMPRESA\",\"error\":\"El correo está asociado a varias empresas. Elija la empresa para continuar.\",\"terceros\":[{\"itercero\":\"810000630\",\"ntercero\":\"InSoft SAS\"},{\"itercero\":\"810000415\",\"ntercero\":\"Instituto Calenda Sas\"},{\"itercero\":\"900100200\",\"ntercero\":\"CMB Muebles y Hogar SAS\"},{\"itercero\":\"1053823470\",\"ntercero\":\"Andrea Prieto Orozco\"},{\"itercero\":\"24341217\",\"ntercero\":\"OLGA LUCIA SANCHEZ ARANGO\"},{\"itercero\":\"123456789\",\"ntercero\":\"Frutas de los Andes\"},{\"itercero\":\"90"
+    },
+    {
+      "url": "https://main-orchestrator.jeffaporta.workers.dev/api/auth/portal-login",
+      "status": 502,
+      "body": "error code: 502\n"
+    },
+    {
+      "url": "http://127.0.0.1:8802/api/auth/portal-login",
+      "status": 200,
+      "body": "{\"ok\":true,\"token\":\"eyJhbGciOiJIUzM4NCIsInR5cCI6IkpXVCJ9.eyJpdXN1YXJpbyI6IiIsIml0ZXJjZXJvIjoiIiwiaWNvbnRhY3RvIjoiIiwibm9tYnJlcyI6IiIsImFwZWxsaWRvcyI6IiIsImNvbnRyb2xrZXkiOiI3MTE1NDQzMTQ0IiwiaWFwcCI6MjAxMDQsImlkbWFxdWluYSI6IldlYlBvcnRhbCIsIml0ZXJjZXJvcHJvcGlldGFyaW8iOiIiLCJtb2R1bG9zX2FjdGl2b3MiOiIiLCJpYXQiOjE3ODU4NzIzMjUsImV4cCI6MTc4NTk1ODcyNX0.71TsKsdC2wPEUii2ChqEQt_gm_aNSgWwdcsxdQxeU0VElQa6RtAQuLmevMdYhiE1\",\"username\":\"vrestrepo@contapyme.com\",\"displayName\":\"Viviana Restrepo Quintero\",\"expiresAt"
+    }
+  ],
+  "logs": [
+    "[pageerror] CSS no cargó: https://cdn.jsdelivr.net/gh/Jeff-Aporta/front-shared@f8ce806/cdn/dist/isa/css/kits/neon-glass.min.css",
+    "[error] Failed to load resource: the server responded with a status of 502 ()",
+    "[error] Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "[error] Failed to load resource: the server responded with a status of 502 ()",
+    "[error] Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+    "[error] Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+  ]
+}
