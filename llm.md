@@ -111,8 +111,12 @@ Domain wrappers en `js/api/`:
 ## Build local
 
 ```bash
-# Bundles JS/JSX listados en scripts/paty_build.mjs (App, sessionApi, IssTargetSwitch, …)
-cd "C:\ContaPyme\Personal\apps\isa-patyia\frontend"
+cd "C:\ContaPyme\PatyIA\app"
+
+# Gate salud: dist (JS+CSS en paralelo) + tests/ en paralelo
+node scripts/run-health.mjs
+
+# Solo rebuild dist (JS jobs + CSS minify, todo en paralelo)
 node scripts/paty_build.mjs
 
 # CSS / boot / módulos NO listados en paty_build: gen-front-dist (apps/src/scripts/front/)
@@ -123,13 +127,13 @@ node scripts/paty_build.mjs
 npx serve .      # o: http-server -p 8766 .
 
 # Backend canónico (otro repo)
-cd "C:\ContaPyme\PatyIA\ISS-AyudasCPIA"
+cd "C:\ContaPyme\PatyIA\api"
 npm run start    # :8802
 ```
 
-`scripts/paty_build.mjs` lista hardcoded `jobs[]`. Si añadís `.jsx`/`.ts`/`.tsx` en `src/js/` (los fuentes se movieron ahí), agregalo a `jobs[]` o no se compila para deploy.
+`scripts/paty_build.mjs` lista hardcoded `JS_JOBS` + `CSS_JOBS`. Si añadís `.jsx`/`.ts`/`.tsx` en `src/js/`, agregalo a `JS_JOBS` o no se compila para deploy. CSS fuente en `src/css/` → `dist/css/` minificado en el mismo script.
 
-**Invariantes (versionados en `tests/` desde el 4-ago-2026):**
+**Invariantes (versionados en `tests/` desde el 4-ago-2026):** preferir `node scripts/run-health.mjs` (incluye dist). Suite suelta:
 
 ```bash
 node --test tests/invariants-2026-07-23-force-perms-and-dist.test.mjs
@@ -1401,3 +1405,58 @@ Complementa la sección «Alineación / deploy» del mismo día. Commits ref: `9
 2. ¿Kanban vacío / 404 permisos? → admin/roles, no GET list legacy.
 3. ¿CSS ISAFront 404? → pin existe + `_dist` remoto + same-origin local.
 4. ¿Tests? → `tests/` **versionado** en este repo (no gitignore). ISS usa `src/utils/health/` porque su `/tests/` sí está ignorado.
+
+---
+
+## Sesión 11-ago-2026 — Chat móvil: FAB duplicado, composer, dist/ChatTool
+
+Complementa polish móvil del chat (altura shell / usage-stats). Blindaje en `tests/` (**sí versionado** en este front; el ISS usa `src/utils/health/` porque su `tests/` sí está ignorado).
+
+### A. FAB «Abrir conversaciones» duplicaba el toolbar
+
+| | |
+|--|--|
+| **Síntoma** | En móvil coexistían el FAB inferior (`paty-mobile-sidebar-fab--chat`) y el `mdi:menu-open` del `paty-chat-main-toolbar`. Misma acción. |
+| **Causa** | Se añadió FAB «por UX móvil» sin retirar el control ya existente en toolbar. |
+| **SÍ** | Un solo affordance: IconButton toolbar (`onOpenSidebar` → Drawer). FAB chat **eliminado**. |
+| **NO** | Reintroducir `Fab` / `paty-mobile-sidebar-fab--chat` en `ChatTool.jsx`. El FAB `--log` del LogViewer es otro tool: no confundir. |
+| **NO** | Reservar `padding-left: 3.6rem` en `.paty-chat-compose` «para el FAB» — sin FAB el hueco es basura visual. |
+
+### B. Hueco vacío bajo el composer / shell estirado
+
+| | |
+|--|--|
+| **Síntoma** | Banda oscura bajo el input; usage-stats / side-column a miles de px. |
+| **Causa** | FAB `bottom: 4.75rem` + flex stretch (`flex: 1 1 100%`, `min-height: 100%` en side-column) + `#root { min-height: 100vh }`. |
+| **SÍ** | Shell móvil `height: 100%` en body; compose con safe-area; side-column `height: fit-content` / `min-height: 0`; `#root` `min-height: 100%` (no 100vh forzado). |
+| **NO** | «Arreglar» el hueco subiendo el FAB otra vez. |
+
+### C. `ChatTool.jsx` fuera de `paty_build` → dist stale
+
+| | |
+|--|--|
+| **Síntoma** | `App.js` (bundle) actualizado pero `dist/js/tools/ChatTool.js` seguía con el FAB. |
+| **Causa** | `JS_JOBS` de `paty_build.mjs` no listaba `ChatTool.jsx` (sí lo bundlea `App.jsx`, pero el artefacto suelto/build-meta queda viejo). |
+| **SÍ** | Incluir `["src/js/tools/ChatTool.jsx", "js/tools/ChatTool.js"]` en `JS_JOBS`. Tras editar chat: `node scripts/paty_build.mjs` (o `node scripts/run-health.mjs`). |
+| **NO** | Editar solo `src/` y asumir que todo `dist/js/tools/*.js` se actualizó. |
+
+### Gate / comandos
+
+```bash
+node scripts/run-health.mjs   # dist paralelo + tests/
+node scripts/paty_build.mjs   # solo dist
+node --test tests/ui-invariants-2026-08-11-chat-mobile.test.mjs
+```
+
+### Blindaje
+
+| Test | Qué falla si… |
+|------|----------------|
+| `ui-invariants-2026-08-11-chat-mobile` | Vuelve el FAB chat, desaparece `menu-open`, padding FAB, o `ChatTool` sale de `paty_build` |
+| `DIST-01` / `run-health` | `src` más nuevo que `dist` |
+
+### Checklist móvil chat
+
+1. ¿Hay FAB y menú toolbar? → quitar FAB.
+2. ¿Hueco bajo input? → no FAB padding; revisar flex shell / `#root`.
+3. ¿Cambio no se ve? → `paty_build` + hard refresh; verificar `ChatTool` en `JS_JOBS`.

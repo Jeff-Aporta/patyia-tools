@@ -13,7 +13,7 @@
  */
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, dirname, extname } from "node:path";
+import { join, dirname } from "node:path";
 import { test, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -141,23 +141,33 @@ test("ISS-02 — claves de permiso sin ruta en el ISS (solo las conocidas)", () 
 
 // ── Artefacto de deploy (el CI no compila: publica dist/ tal cual) ─────────────
 
+/** Salidas que paty_build regenera (JS_JOBS + CSS_JOBS). El resto de src/js se bundlea dentro de App.js. */
+function patyBuildOutputs() {
+  const src = readFileSync(join(ROOT, "scripts", "paty_build.mjs"), "utf8");
+  const js = [...src.matchAll(/\[\s*"(src\/js\/[^"]+)"\s*,\s*"([^"]+)"\s*\]/g)]
+    .map((m) => ({ src: join(ROOT, m[1]), out: join(DIST, m[2]), rel: m[1] }));
+  const css = [...src.matchAll(/"(?:app|boot-loading|chat-staging|neon-glass-bridge|theme|todos-staging|welcome-home)\.css"/g)]
+    .map((m) => m[0].slice(1, -1))
+    .filter((n, i, a) => a.indexOf(n) === i)
+    .map((n) => ({ src: join(SRC, "css", n), out: join(DIST, "css", n), rel: `src/css/${n}` }));
+  return [...js, ...css];
+}
+
 describe("DEPLOY — dist/ es lo que se publica", () => {
-  it("DIST-01 — ningún fuente es más nuevo que su salida en dist/", () => {
+  it("DIST-01 — salidas de paty_build (JS+CSS) no están más viejas que su fuente", () => {
     const viejos = [];
-    for (const s of walk(SRC)) {
-      if (!/\.(ts|tsx|js|jsx|css)$/.test(s) || s.endsWith(".d.ts")) continue;
-      const rel = s.slice(SRC.length + 1).replace(/\\/g, "/");
-      const out = join(DIST, extname(rel) === ".css" ? rel : rel.replace(/\.(tsx|ts|jsx|js)$/, ".js"));
+    for (const { src, out, rel } of patyBuildOutputs()) {
+      if (!existsSync(src)) { viejos.push(`${rel} → fuente ausente`); continue; }
       if (!existsSync(out)) { viejos.push(`${rel} → sin salida en dist/`); continue; }
       // 1 s de tolerancia: el build reescribe en el mismo segundo.
-      if (statSync(out).mtimeMs < statSync(s).mtimeMs - 1000) viejos.push(`${rel} → dist/ más viejo`);
+      if (statSync(out).mtimeMs < statSync(src).mtimeMs - 1000) viejos.push(`${rel} → dist/ más viejo`);
     }
     assert.deepEqual(
       viejos, [],
       `dist/ desactualizado. El workflow NO compila: publica lo commiteado.\n` +
-      `Regenerar (los DOS pasos, en orden):\n` +
-      `  node ../../src/scripts/front/gen-front-dist.mjs --slug isa-patyia\n` +
-      `  node scripts/paty_build.mjs\n  ${viejos.join("\n  ")}`,
+      `Regenerar:\n` +
+      `  node scripts/run-health.mjs\n` +
+      `  # o solo dist: node scripts/paty_build.mjs\n  ${viejos.join("\n  ")}`,
     );
   });
 
