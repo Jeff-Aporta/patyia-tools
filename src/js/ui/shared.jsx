@@ -8,6 +8,7 @@ import {
 } from "../core/convLog.ts";
 import { CodeMirrorPanel } from "../core/platform.ts";
 import { ImageLightboxDialog } from "./ImageLightboxDialog.jsx";
+import { LogJsonPanel, MetaFilesStrip } from "./LogJsonPanel.jsx";
 import { GlassDialog, GlassDialogHeader, glassDialogContentSx, glassDialogTabsSx, resolveMetaDialogHeader, GlassDialogCloseActions } from "./GlassDialog.jsx";
 import { archivosCitadosFromMeta, fileSearchFromMeta, chunksFromMeta, metaHasFileSearch, vectorStoresFromMeta, vectorStoreIndexLabel } from "../core/fileSearchTrace.js";
 
@@ -79,11 +80,12 @@ function buildUsageRowMetrics(tokens, cost) {
 function UsageMetricCell({ tok, usd, showUsd = true }) {
   const tokLabel = formatUsageTokens(tok);
   const usdLabel = showUsd ? formatUsageUsd(usd) : null;
-  const empty = tokLabel === "—" && (!showUsd || usdLabel === "—");
+  const showMoney = Boolean(showUsd && usdLabel && usdLabel !== "—");
+  const empty = tokLabel === "—" && !showMoney;
   return (
     <span className={`meta-prompt-stat__usage-grid-cell${empty ? " meta-prompt-stat__usage-grid-cell--empty" : ""}`}>
       <span className="meta-prompt-stat__usage-tok">{tokLabel}</span>
-      {showUsd ? <span className="meta-prompt-stat__usage-usd">{usdLabel}</span> : null}
+      {showMoney ? <span className="meta-prompt-stat__usage-usd">{usdLabel}</span> : null}
     </span>
   );
 }
@@ -301,6 +303,7 @@ export function metaWorthDialog(meta, isUser) {
   if (Array.isArray(meta.archivos_citados) && meta.archivos_citados.length) return true;
   if (Array.isArray(meta.file_search) && meta.file_search.length) return true;
   if (meta.file_search && typeof meta.file_search === "object" && !Array.isArray(meta.file_search)) return true;
+  if (Array.isArray(meta.files_adjuntos) && meta.files_adjuntos.length) return true;
   if (Array.isArray(meta.vector_store_ids) && meta.vector_store_ids.length) return true;
   const pv = meta.prompt_variables;
   if (pv && typeof pv === "object") {
@@ -328,12 +331,12 @@ function FileSearchMetaSection({ meta }) {
   return (
     <Box className="meta-file-search" sx={{ mt: 1.5 }}>
       {vectorStores.length ? (
-        <Box className="meta-file-search__vector-stores" sx={{ mb: 1.5 }}>
-          <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 0.75 }}>
-            Vector stores consultados
+        <Box className="meta-file-search__vector-stores meta-vs-card" sx={{ mb: 1.5 }}>
+          <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 0.5 }}>
+            Vector stores
           </Typography>
-          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
-            Índice = posición en <code>vector_store_ids</code> enviado al modelo (0 = primero). Usa el ID completo para verificar en OpenAI/BD.
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.85, lineHeight: 1.45 }}>
+            Índice = posición en <code>vector_store_ids</code> (0 = primero). Copia el ID para verificar en OpenAI o BD.
           </Typography>
           <Stack spacing={0.5}>
             {vectorStores.map((vs) => (
@@ -510,6 +513,8 @@ export function MetaDialog({
   usageStats = null,
   userContent = "",
   imagenes = null,
+  logFragment = null,
+  showLog = false,
 }) {
   const [tab, setTab] = useState(0);
   const [lightboxSrc, setLightboxSrc] = useState(null);
@@ -536,6 +541,11 @@ export function MetaDialog({
     || Boolean(resolvedMeta?.http_request?.session_id || resolvedMeta?.http_request?.login_url || resolvedMeta?.http_response?.tools);
   const hasPrompt = Boolean(promptMarkdown) || Boolean(iinstruccion) || userImagenes.length > 0;
   const promptTabLabel = isUserMessage ? "Consulta" : (isMcpOperativa ? "Payload MCP" : "Prompt");
+  const filesAdjuntos = Array.isArray(resolvedMeta?.files_adjuntos) && resolvedMeta.files_adjuntos.length
+    ? resolvedMeta.files_adjuntos
+    : (logFragment?.others?.files_adjuntos || null);
+  const canShowLog = Boolean(showLog && logFragment);
+  const tabCount = (hasPrompt ? 2 : 1) + (canShowLog ? 1 : 0);
 
   useEffect(() => {
     if (open) setTab(0);
@@ -545,47 +555,54 @@ export function MetaDialog({
     if (!open) setLightboxSrc(null);
   }, [open]);
 
-  if (!resolvedMeta) return null;
-  const tk = resolvedMeta.tokens?.total ? resolvedMeta.tokens : tokensFromUsage(resolvedMeta.usage);
-  const httpReq = resolvedMeta.http_request && typeof resolvedMeta.http_request === "object"
+  if (!resolvedMeta && !(showLog && logFragment)) return null;
+  const tk = resolvedMeta?.tokens?.total ? resolvedMeta.tokens : tokensFromUsage(resolvedMeta?.usage);
+  const httpReq = resolvedMeta?.http_request && typeof resolvedMeta.http_request === "object"
     ? resolvedMeta.http_request
     : null;
-  const httpRes = resolvedMeta.http_response && typeof resolvedMeta.http_response === "object"
+  const httpRes = resolvedMeta?.http_response && typeof resolvedMeta.http_response === "object"
     ? resolvedMeta.http_response
     : null;
 
   function renderMetaGrid() {
+    if (!resolvedMeta) {
+      return (
+        <div className="meta-grid meta-dialog-panel">
+          <Typography variant="body2" color="text.secondary">Sin trazabilidad en este mensaje. Abre la pestaña Log.</Typography>
+        </div>
+      );
+    }
     return (
       <div className="meta-grid meta-dialog-panel">
         {resolvedMeta.nombre_usuario && (
-          <div className="meta-row"><span className="meta-k">nombre</span><span className="meta-v"><strong>{resolvedMeta.nombre_usuario}</strong></span></div>
+          <div className="meta-row"><span className="meta-k">Nombre</span><span className="meta-v"><strong>{resolvedMeta.nombre_usuario}</strong></span></div>
         )}
         {resolvedMeta.itdconsulta && (
-          <div className="meta-row"><span className="meta-k">itdconsulta</span><span className="meta-v"><span className="badge badge-itd">{resolvedMeta.itdconsulta}</span></span></div>
+          <div className="meta-row"><span className="meta-k">Consulta</span><span className="meta-v"><span className="badge badge-itd">{resolvedMeta.itdconsulta}</span></span></div>
         )}
         {!isUserMessage && iinstruccion && (
-          <div className="meta-row"><span className="meta-k">{isMcpOperativa ? "operativa" : "iinstruccion"}</span><span className="meta-v"><code>{iinstruccion}</code></span></div>
+          <div className="meta-row"><span className="meta-k">{isMcpOperativa ? "Operativa" : "Instrucción"}</span><span className="meta-v"><code>{iinstruccion}</code></span></div>
         )}
         {isMcpOperativa && resolvedMeta.extra?.operativa_engine && (
-          <div className="meta-row"><span className="meta-k">engine</span><span className="meta-v"><code>{String(resolvedMeta.extra.operativa_engine)}</code></span></div>
+          <div className="meta-row"><span className="meta-k">Engine</span><span className="meta-v"><code>{String(resolvedMeta.extra.operativa_engine)}</code></span></div>
         )}
         {isMcpOperativa && httpReq?.session_id && (
-          <div className="meta-row"><span className="meta-k">session_id</span><span className="meta-v"><code>{String(httpReq.session_id)}</code></span></div>
+          <div className="meta-row"><span className="meta-k">Session</span><span className="meta-v"><code>{String(httpReq.session_id)}</code></span></div>
         )}
         {isMcpOperativa && httpReq?.transport && (
-          <div className="meta-row"><span className="meta-k">transport</span><span className="meta-v"><code>{String(httpReq.transport)}</code></span></div>
+          <div className="meta-row"><span className="meta-k">Transport</span><span className="meta-v"><code>{String(httpReq.transport)}</code></span></div>
         )}
         {isMcpOperativa && httpRes?.kind && (
-          <div className="meta-row"><span className="meta-k">kind</span><span className="meta-v"><span className="badge badge-itd">{String(httpRes.kind)}</span></span></div>
+          <div className="meta-row"><span className="meta-k">Kind</span><span className="meta-v"><span className="badge badge-itd">{String(httpRes.kind)}</span></span></div>
         )}
         {isMcpOperativa && Array.isArray(httpRes?.tools) && httpRes.tools.length > 0 && (
-          <div className="meta-row"><span className="meta-k">tools</span><span className="meta-v">{httpRes.tools.map((t) => String(t?.name ?? "tool")).filter(Boolean).join(", ")}</span></div>
+          <div className="meta-row"><span className="meta-k">Tools</span><span className="meta-v">{httpRes.tools.map((t) => String(t?.name ?? "tool")).filter(Boolean).join(", ")}</span></div>
         )}
         {isMcpOperativa && resolvedMeta.login_url && (
-          <div className="meta-row"><span className="meta-k">login_url</span><span className="meta-v" style={{ wordBreak: "break-all" }}>{String(resolvedMeta.login_url)}</span></div>
+          <div className="meta-row"><span className="meta-k">Login</span><span className="meta-v" style={{ wordBreak: "break-all" }}>{String(resolvedMeta.login_url)}</span></div>
         )}
         {resolvedMeta.premisas?.length ? (
-          <div className="meta-row"><span className="meta-k">premisas</span><span className="meta-v">{resolvedMeta.premisas.join(", ")}</span></div>
+          <div className="meta-row"><span className="meta-k">Premisas</span><span className="meta-v">{resolvedMeta.premisas.join(", ")}</span></div>
         ) : null}
         {resolvedMeta.usage && (
           <div className="meta-row meta-row--block">
@@ -632,6 +649,7 @@ export function MetaDialog({
             </span>
           </div>
         )}
+        {filesAdjuntos?.length ? <MetaFilesStrip files={filesAdjuntos} /> : null}
         <FileSearchMetaSection meta={resolvedMeta} />
       </div>
     );
@@ -656,14 +674,15 @@ export function MetaDialog({
           />
         )}
       >
-        {hasPrompt && (
+        {(hasPrompt || canShowLog) && (
           <Tabs value={tab} onChange={(_, next) => setTab(next)} sx={glassDialogTabsSx()}>
             <Tab label="Trazabilidad" />
-            <Tab label={promptTabLabel} />
+            {hasPrompt ? <Tab label={promptTabLabel} /> : null}
+            {canShowLog ? <Tab label="Log" /> : null}
           </Tabs>
         )}
         <DialogContent dividers sx={glassDialogContentSx()}>
-          <Box sx={{ display: tab === 0 || !hasPrompt ? "block" : "none", minHeight: 0 }}>
+          <Box sx={{ display: tab === 0 || tabCount <= 1 ? "block" : "none", minHeight: 0 }}>
             {renderMetaGrid()}
           </Box>
           {hasPrompt && (
@@ -680,6 +699,13 @@ export function MetaDialog({
                 dialogTitle={headerMeta.subtitle || headerMeta.title}
                 isMcpOperativa={isMcpOperativa}
               />
+            </Box>
+          )}
+          {canShowLog && (
+            <Box sx={{ display: tab === (hasPrompt ? 2 : 1) ? "block" : "none", minHeight: 0 }}>
+              <div className="meta-prompt-panel custom-scrollbar">
+                <LogJsonPanel value={logFragment} files={filesAdjuntos} />
+              </div>
             </Box>
           )}
         </DialogContent>
