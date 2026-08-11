@@ -925,6 +925,17 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
   );
 }
 
+/** Solo UI: VALIDAR_TRANSCRIPCION_AUDIO guarda 0|1; en el log se lee 0 = false / 1 = true. */
+function formatOperativaContenidoForLog(msg, text) {
+  if (!msg?.esOperativa) return text;
+  const key = String(msg.meta?.extra?.operativa_key ?? msg.rol ?? "");
+  if (!/validarTranscripcionAudio|VALIDAR_TRANSCRIPCION_AUDIO/i.test(key)) return text;
+  const t = String(text ?? "").trim();
+  if (t === "0") return "0 = false";
+  if (t === "1") return "1 = true";
+  return text;
+}
+
 function MsgBody({ text, imagenes, audios, audiosTranscripcion, align = "left", onImageClick, streaming = false, loginUrl: loginUrlProp, disableLoginEmbed = false, onContapymeLoginDone }) {
   const { Typography, Box } = getMaterialUI();
   const raw = String(text || "");
@@ -1750,6 +1761,8 @@ function UsageStatsColumn({ stats, align = "right", msgLabel, fecha, meta, isUse
         sx={{
           flexShrink: 0,
           width: "fit-content",
+          height: "fit-content",
+          minHeight: 0,
           maxWidth: { xs: "min(100%, 18rem)", sm: groups.length > 1 ? "22rem" : "18rem" },
           pt: 0.25,
           alignSelf: "flex-start",
@@ -1962,7 +1975,7 @@ const MensajeSection = memo(function MensajeSection({ msg, onMeta, compactMeta =
   const isUser = msg.esUsuario;
   const isOperativa = msg.esOperativa;
   const isStreaming = Boolean(msg.isStreaming || (streamingMsgId && msg.idMsg === streamingMsgId));
-  const showMetaBtn = Boolean(onMeta && msg.meta && metaWorthDialog(msg.meta, isUser));
+  const showMetaBtn = Boolean(onMeta && (msg.logFragment || (msg.meta && metaWorthDialog(msg.meta, isUser))));
   const showFileSearchChips = Boolean(!compactMeta && !isUser && msg.meta && metaHasFileSearch(msg.meta));
   const showMetaChips = Boolean(!compactMeta && (onMeta || showFileSearchChips));
   const statsSide = isUser ? "left" : "right";
@@ -2071,7 +2084,7 @@ const MensajeSection = memo(function MensajeSection({ msg, onMeta, compactMeta =
             )}
             {(msg.contenido?.trim() || msg.imagenes?.length || msg.audios?.length || isStreaming) ? (
             <MsgBody
-              text={msg.contenido}
+              text={formatOperativaContenidoForLog(msg, msg.contenido)}
               imagenes={msg.imagenes}
               audios={msg.audios}
               audiosTranscripcion={msg.audiosTranscripcion}
@@ -2091,10 +2104,13 @@ const MensajeSection = memo(function MensajeSection({ msg, onMeta, compactMeta =
             className={`conv-msg-side-column conv-msg-side-column--${statsSide}`}
             sx={{
               flexShrink: 0,
-              maxWidth: { xs: "min(100%, 16rem)", sm: "18rem" },
+              maxWidth: { xs: "100%", sm: "18rem" },
+              width: { xs: "100%", sm: "auto" },
               pt: 0.25,
               pb: 0.25,
-              alignSelf: "stretch",
+              alignSelf: { xs: "flex-start", sm: "stretch" },
+              height: { xs: "fit-content", sm: "auto" },
+              minHeight: { xs: 0, sm: "auto" },
             }}
           >
             {showMetricsColumn ? (
@@ -2186,7 +2202,7 @@ export function convLogNavItems(mensajes) {
   return (mensajes || []).map((m, i) => {
     const rk = roleKey(m);
     const meta = ROLE_META[rk] || ROLE_META.assistant;
-    const preview = String(m.contenido || "").replace(/\s+/g, " ").trim().slice(0, 48);
+    const preview = String(formatOperativaContenidoForLog(m, m.contenido) || "").replace(/\s+/g, " ").trim().slice(0, 48);
     return {
       id: m.idMsg,
       label: `#${i + 1} · ${roleTitle(m)}`,

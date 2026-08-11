@@ -9,7 +9,7 @@ import { TercerosAuditDialog } from "./chat/TercerosAuditDialog.jsx";
 import { CHAT_SIDEBAR_W } from "./chat/constants.ts";
 import { mobileDrawerPaperProps } from "../ui/mobileDrawer.ts";
 
-const { Box, Drawer, Fab, IconButton, Tooltip, useTheme, useMediaQuery } = getMaterialUI();
+const { Box, Drawer, IconButton, Tooltip, useTheme, useMediaQuery } = getMaterialUI();
 const { useState } = getReact();
 const { Icon } = UI;
 
@@ -195,24 +195,6 @@ export function ChatTool({ bootChat, onNeedLogin }) {
         </IsaSplitView>
       )}
 
-      {isMobile ? (
-        <Fab
-          color="primary"
-          size="medium"
-          className="paty-mobile-sidebar-fab paty-mobile-sidebar-fab--chat"
-          aria-label="Abrir conversaciones"
-          onClick={() => setSidebarOpen(true)}
-          sx={{
-            position: "absolute",
-            left: 12,
-            zIndex: 6,
-            display: sidebarOpen ? "none" : "flex",
-          }}
-        >
-          <Icon icon="mdi:forum-outline" size={22} />
-        </Fab>
-      ) : null}
-
       <JwtModal
         open={chat.jwtOpen}
         onClose={() => chat.setJwtOpen(false)}
@@ -228,6 +210,8 @@ export function ChatTool({ bootChat, onNeedLogin }) {
         isUserMessage={Boolean(chat.metaMsg?.esUsuario)}
         userContent={chat.metaMsg?.contenido ?? ""}
         imagenes={chat.metaMsg?.imagenes ?? null}
+        logFragment={chat.metaMsg?.logFragment ?? null}
+        showLog={chat.messageSource !== "prod"}
       />
       <TercerosAuditDialog
         open={chat.auditDialogOpen}

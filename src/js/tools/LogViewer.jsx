@@ -634,6 +634,8 @@ export function LogViewer({ bootLog = {} }) {
         isUserMessage={Boolean(metaMsg?.esUsuario)}
         userContent={metaMsg?.contenido ?? ""}
         imagenes={metaMsg?.imagenes ?? null}
+        logFragment={metaMsg?.logFragment ?? null}
+        showLog
       />
       <ResumenDialog
         open={resumenOpen}
