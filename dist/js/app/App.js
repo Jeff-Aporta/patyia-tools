@@ -2863,6 +2863,44 @@ function isDisplayableAudioRef(ref) {
   if (!n) return false;
   return n.startsWith("data:audio/") || /^https?:\/\//i.test(n);
 }
+function extractOthersAudiosPairs(others) {
+  const o = others && typeof others === "object" ? others : {};
+  const urls = [];
+  const transcriptions = [];
+  if (Array.isArray(o.audios) && o.audios.length) {
+    for (const raw of o.audios) {
+      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+        const item = raw;
+        const url = String(item.url ?? "").trim();
+        const tr = String(item.transcrip ?? item.transcripcion ?? "").trim();
+        if (url && isDisplayableAudioRef(url)) {
+          urls.push(url);
+          transcriptions.push(tr);
+        } else if (tr) {
+        }
+      } else if (typeof raw === "string" && isDisplayableAudioRef(raw)) {
+        urls.push(raw);
+        transcriptions.push("");
+      }
+    }
+    return { urls, transcriptions };
+  }
+  const legacyUrls = Array.isArray(o.audios_adjuntas) ? o.audios_adjuntas : [];
+  const legacyTrs = Array.isArray(o.audios_transcripcion) ? o.audios_transcripcion : [];
+  for (let i = 0; i < legacyUrls.length; i++) {
+    const url = String(legacyUrls[i] ?? "").trim();
+    if (!isDisplayableAudioRef(url)) continue;
+    urls.push(url);
+    transcriptions.push(String(legacyTrs[i] ?? "").trim());
+  }
+  if (!urls.length && legacyTrs.length) {
+    for (const t of legacyTrs) {
+      const tr = String(t ?? "").trim();
+      if (tr) transcriptions.push(tr);
+    }
+  }
+  return { urls, transcriptions };
+}
 function stripOmittedVisionFromText(texto) {
   return String(texto ?? "").split("\n").filter((line) => {
     const t = line.trim();
@@ -3172,10 +3210,9 @@ function flattenConvLogMensaje(m) {
     }
     const imagenes = Array.isArray(o.imagenes_adjuntas) ? o.imagenes_adjuntas.filter(isDisplayableImageRef) : [];
     if (imagenes.length) flat.imagenes = imagenes;
-    const audios = Array.isArray(o.audios_adjuntas) ? o.audios_adjuntas.filter(isDisplayableAudioRef) : [];
-    if (audios.length) flat.audios = audios;
-    const audiosTranscripcion = Array.isArray(o.audios_transcripcion) ? o.audios_transcripcion.map((t) => String(t ?? "").trim()).filter(Boolean) : [];
-    if (audiosTranscripcion.length) flat.audios_transcripcion = audiosTranscripcion;
+    const audioPairs = extractOthersAudiosPairs(o);
+    if (audioPairs.urls.length) flat.audios = audioPairs.urls;
+    if (audioPairs.transcriptions.length) flat.audios_transcripcion = audioPairs.transcriptions;
     const prompt = s?.prompt;
     if (prompt?.id) flat.prompt_id = prompt.id;
     if (prompt?.variables) flat.prompt_variables = prompt.variables;
@@ -3480,8 +3517,9 @@ function convLogToMsgVista(m, i, userSendForTurn, userVectorStoreIds) {
     const merged = mergeUserImagenes(send, others, String(send?.text ?? m.text ?? others.prompt_text ?? ""));
     contenido = merged.text;
     imagenes = merged.imagenes;
-    audios = Array.isArray(others.audios_adjuntas) ? others.audios_adjuntas.filter(isDisplayableAudioRef) : [];
-    audiosTranscripcion = Array.isArray(others.audios_transcripcion) ? others.audios_transcripcion.map((t) => String(t ?? "").trim()).filter(Boolean) : [];
+    const audioPairs = extractOthersAudiosPairs(others);
+    audios = audioPairs.urls;
+    audiosTranscripcion = audioPairs.transcriptions;
   } else {
     contenido = resolveAssistantLogContenido(others, receive, m.text);
     if (esOperativa && !contenido.trim() && receive && typeof receive === "object") {
@@ -3635,33 +3673,54 @@ function ImageLightboxDialog(props) {
 
 // src/js/ui/LogJsonPanel.jsx
 init_platform();
+
+// src/js/core/isCodeCdn.ts
+var IS_WC_SHA = "1ce1d12227f2988877b81b8f35cba2507dc16bf1";
+var IS_CODE_JS = `https://cdn.jsdelivr.net/gh/Jeff-Aporta/is-webcomponents@${IS_WC_SHA}/dist/cdn/code/code.min.js`;
+var loadPromise2 = null;
+function isCodeElementReady() {
+  return typeof customElements !== "undefined" && Boolean(customElements.get("is-code"));
+}
+function ensureIsCodeReady() {
+  if (isCodeElementReady()) return Promise.resolve(true);
+  if (loadPromise2) return loadPromise2;
+  loadPromise2 = (async () => {
+    if (typeof document === "undefined") return false;
+    const existing = [...document.scripts].find((s) => (s.src || "").includes("/dist/cdn/code/code.min.js"));
+    if (!existing) {
+      await new Promise((resolve, reject) => {
+        const el = document.createElement("script");
+        el.type = "module";
+        el.src = IS_CODE_JS;
+        el.onload = () => resolve();
+        el.onerror = () => reject(new Error(`No se pudo cargar is-code CDN: ${IS_CODE_JS}`));
+        document.head.appendChild(el);
+      });
+    }
+    try {
+      await customElements.whenDefined("is-code");
+    } catch {
+    }
+    return isCodeElementReady();
+  })().catch((err) => {
+    loadPromise2 = null;
+    console.warn("[is-code]", err);
+    return false;
+  });
+  return loadPromise2;
+}
+function sanitizeLogJsonForDisplay(raw) {
+  return String(raw ?? "").replace(
+    /data:audio\/[a-z0-9.+-]+(?:;[^,]*)?;base64,[A-Za-z0-9+/=\s]+/gi,
+    (m) => `[audio:data-url omitido \xB7 ${m.length} chars \u2014 persiste en R2 como .mp3]`
+  );
+}
+
+// src/js/ui/LogJsonPanel.jsx
 import { jsx as jsx2, jsxs } from "react/jsx-runtime";
-var { useMemo } = getReact();
+var { useMemo, useEffect: useEffect2, useRef, useState: useState2 } = getReact();
 var { Box, Typography, Stack, Chip, Tooltip, IconButton } = getMaterialUI();
 var { Icon } = UI;
-var URL_RE = /https?:\/\/[^\s"'<>\\]+/gi;
-function escapeHtml(s) {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-function linkifyJson(raw) {
-  const src = String(raw ?? "");
-  const parts = [];
-  let last = 0;
-  URL_RE.lastIndex = 0;
-  let m = URL_RE.exec(src);
-  while (m) {
-    if (m.index > last) parts.push(escapeHtml(src.slice(last, m.index)));
-    const href = m[0].replace(/[),.;]+$/, "");
-    const trail = m[0].slice(href.length);
-    parts.push(
-      `<a class="log-json-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(href)}</a>${escapeHtml(trail)}`
-    );
-    last = m.index + m[0].length;
-    m = URL_RE.exec(src);
-  }
-  if (last < src.length) parts.push(escapeHtml(src.slice(last)));
-  return parts.join("");
-}
 function asFileRefs(list) {
   if (!Array.isArray(list)) return [];
   return list.map((item) => {
@@ -3697,17 +3756,64 @@ function MetaFilesStrip({ files, title = "Adjuntos FILES_STORAGE" }) {
     ] }) }, `${f.ifile || f.url}-${i}`)) })
   ] });
 }
+function IsCodeJsonView({ value }) {
+  const hostRef = useRef(null);
+  const [ready, setReady] = useState2(() => typeof customElements !== "undefined" && Boolean(customElements.get("is-code")));
+  const [failed, setFailed] = useState2(false);
+  useEffect2(() => {
+    let cancelled = false;
+    ensureIsCodeReady().then((ok) => {
+      if (cancelled) return;
+      setReady(ok);
+      if (!ok) setFailed(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect2(() => {
+    if (!ready || !hostRef.current) return;
+    const host = hostRef.current;
+    let el = host.querySelector("is-code");
+    if (!el) {
+      el = document.createElement("is-code");
+      el.setAttribute("lang", "json");
+      el.setAttribute("readonly", "");
+      el.setAttribute("wrap", "");
+      el.setAttribute("line-numbers", "false");
+      el.setAttribute("min-height", "14rem");
+      el.className = "log-json-panel__is-code";
+      host.replaceChildren(el);
+    }
+    const text = String(value ?? "");
+    if (el.value !== text) el.value = text;
+  }, [ready, value]);
+  if (failed) {
+    return /* @__PURE__ */ jsx2("pre", { className: "log-json-panel__pre custom-scrollbar", children: String(value ?? "") });
+  }
+  return /* @__PURE__ */ jsx2(
+    "div",
+    {
+      ref: hostRef,
+      className: "log-json-panel__code-host custom-scrollbar",
+      "aria-label": "Fragmento JSON del conv-log"
+    }
+  );
+}
 function LogJsonPanel({ value, files = null, onCopy }) {
   const json = useMemo(() => {
     if (value == null) return "";
-    if (typeof value === "string") return value;
-    try {
-      return JSON.stringify(value, null, 2);
-    } catch {
-      return String(value);
+    let raw = "";
+    if (typeof value === "string") raw = value;
+    else {
+      try {
+        raw = JSON.stringify(value, null, 2);
+      } catch {
+        raw = String(value);
+      }
     }
+    return sanitizeLogJsonForDisplay(raw);
   }, [value]);
-  const html = useMemo(() => linkifyJson(json), [json]);
   return /* @__PURE__ */ jsxs(Box, { className: "log-json-panel", children: [
     /* @__PURE__ */ jsxs(Stack, { direction: "row", alignItems: "center", spacing: 0.75, sx: { mb: 0.85 }, children: [
       /* @__PURE__ */ jsx2("iconify-icon", { icon: "mdi:code-json", width: "18", height: "18" }),
@@ -3729,7 +3835,7 @@ function LogJsonPanel({ value, files = null, onCopy }) {
       ) })
     ] }),
     /* @__PURE__ */ jsx2(MetaFilesStrip, { files }),
-    /* @__PURE__ */ jsx2("pre", { className: "log-json-panel__pre custom-scrollbar", dangerouslySetInnerHTML: { __html: html } })
+    /* @__PURE__ */ jsx2(IsCodeJsonView, { value: json })
   ] });
 }
 
@@ -4124,7 +4230,7 @@ function ButtonIconify({ icon, title = "", label = "", onClick, disabled = false
     }
   );
 }
-var { useState: useState2, useEffect: useEffect2, useMemo: useMemo2 } = getReact();
+var { useState: useState3, useEffect: useEffect3, useMemo: useMemo2 } = getReact();
 var { createTheme, Tabs, Tab, Box: Box2, Typography: Typography2, DialogContent, Stack: Stack2, Chip: Chip2 } = getMaterialUI();
 function isOpenAiPmptId(id) {
   return /^pmpt_/i.test(String(id ?? "").trim());
@@ -4345,13 +4451,13 @@ function metaWorthDialog(meta, isUser) {
 }
 function FileSearchMetaSection({ meta }) {
   const { Typography: Typography29, Box: Box34, Stack: Stack27, Chip: Chip20, IconButton: IconButton15, Tooltip: Tooltip16 } = getMaterialUI();
-  const { useState: useState34, useMemo: useMemo22 } = getReact();
+  const { useState: useState35, useMemo: useMemo22 } = getReact();
   const trace = fileSearchFromMeta(meta);
   const archivos = archivosCitadosFromMeta(meta);
   const chunks = useMemo22(() => chunksFromMeta(meta), [meta]);
   const vectorStores = useMemo22(() => vectorStoresFromMeta(meta), [meta]);
-  const [expandedKey, setExpandedKey] = useState34(null);
-  const [openChunk, setOpenChunk] = useState34(null);
+  const [expandedKey, setExpandedKey] = useState35(null);
+  const [openChunk, setOpenChunk] = useState35(null);
   if (!trace?.length && !archivos.length && !chunks.length && !vectorStores.length) return null;
   function toggleChunk(key) {
     setExpandedKey((prev) => prev === key ? null : key);
@@ -4528,8 +4634,8 @@ function MetaDialog({
   logFragment = null,
   showLog = false
 }) {
-  const [tab, setTab] = useState2(0);
-  const [lightboxSrc, setLightboxSrc] = useState2(null);
+  const [tab, setTab] = useState3(0);
+  const [lightboxSrc, setLightboxSrc] = useState3(null);
   const resolvedMeta = useMemo2(() => {
     if (!meta) return null;
     if (!isUserMessage) return meta;
@@ -4552,10 +4658,10 @@ function MetaDialog({
   const filesAdjuntos = Array.isArray(resolvedMeta?.files_adjuntos) && resolvedMeta.files_adjuntos.length ? resolvedMeta.files_adjuntos : logFragment?.others?.files_adjuntos || null;
   const canShowLog = Boolean(showLog && logFragment);
   const tabCount = (hasPrompt ? 2 : 1) + (canShowLog ? 1 : 0);
-  useEffect2(() => {
+  useEffect3(() => {
     if (open) setTab(0);
   }, [open, resolvedMeta?.ts, resolvedMeta?.prompt_id, promptMarkdown, userImagenes.length]);
-  useEffect2(() => {
+  useEffect3(() => {
     if (!open) setLightboxSrc(null);
   }, [open]);
   if (!resolvedMeta && !(showLog && logFragment)) return null;
@@ -4716,7 +4822,7 @@ function PromptPanelBody({
   dialogTitle,
   isMcpOperativa = false
 }) {
-  const [fullPage, setFullPage] = useState2(false);
+  const [fullPage, setFullPage] = useState3(false);
   const exactTitle = isUserMessage ? "Consulta \xB7 texto exacto" : isMcpOperativa ? "Payload MCP \xB7 request / respuesta" : "Prompt \xB7 texto exacto";
   const emptyCopy = isUserMessage ? "Sin texto ni im\xE1genes en el log de este mensaje." : isMcpOperativa ? "Sin payload MCP (input / session_id / tools) en el log de este turno." : "Sin texto de instrucciones en el log de este turno.";
   return /* @__PURE__ */ jsxs3("div", { className: "meta-prompt-panel custom-scrollbar", children: [
@@ -4902,18 +5008,18 @@ init_platform();
 init_platform();
 init_platform();
 import { Fragment as Fragment2, jsx as jsx6, jsxs as jsxs4 } from "react/jsx-runtime";
-var { useMemo: useMemo3, useState: useState3, useRef, useEffect: useEffect3, memo } = getReact();
+var { useMemo: useMemo3, useState: useState4, useRef: useRef2, useEffect: useEffect4, memo } = getReact();
 function useOperativaEnterIds(mensajes, threadKey, { enabled = true } = {}) {
-  const seenIdsRef = useRef(/* @__PURE__ */ new Set());
-  const primedKeyRef = useRef(null);
-  const [enterIds, setEnterIds] = useState3(() => /* @__PURE__ */ new Set());
-  useEffect3(() => {
+  const seenIdsRef = useRef2(/* @__PURE__ */ new Set());
+  const primedKeyRef = useRef2(null);
+  const [enterIds, setEnterIds] = useState4(() => /* @__PURE__ */ new Set());
+  useEffect4(() => {
     if (primedKeyRef.current === threadKey) return;
     primedKeyRef.current = threadKey;
     seenIdsRef.current = /* @__PURE__ */ new Set();
     setEnterIds(/* @__PURE__ */ new Set());
   }, [threadKey]);
-  useEffect3(() => {
+  useEffect4(() => {
     if (!enabled) return;
     const msgs = mensajes || [];
     if (primedKeyRef.current !== threadKey) return;
@@ -5547,14 +5653,14 @@ function scheduleIframeRepaint(iframe, delaysMs = [0, 80, 200, 500, 1e3, 2e3, 4e
 function ContapymeLoginEmbed({ url, onLoginDone }) {
   const { Stack: Stack27, Button: Button21, Dialog: Dialog9, DialogContent: DialogContent15 } = getMaterialUI();
   const { Icon: Icon27 } = UI;
-  const [open, setOpen] = useState3(false);
-  const [hostReady, setHostReady] = useState3(false);
-  const [geomNudge, setGeomNudge] = useState3(0);
-  const iframeRef = useRef(null);
-  const contentRef = useRef(null);
-  const tabOpenedRef = useRef(false);
-  const doneOnceRef = useRef(false);
-  const cancelRepaintRef = useRef(null);
+  const [open, setOpen] = useState4(false);
+  const [hostReady, setHostReady] = useState4(false);
+  const [geomNudge, setGeomNudge] = useState4(0);
+  const iframeRef = useRef2(null);
+  const contentRef = useRef2(null);
+  const tabOpenedRef = useRef2(false);
+  const doneOnceRef = useRef2(false);
+  const cancelRepaintRef = useRef2(null);
   const signalDone = () => {
     if (doneOnceRef.current) return;
     doneOnceRef.current = true;
@@ -5568,7 +5674,7 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
     setGeomNudge(0);
     signalDone();
   };
-  useEffect3(() => {
+  useEffect4(() => {
     if (!open) {
       setHostReady(false);
       return void 0;
@@ -5605,7 +5711,7 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
       window.clearTimeout(fallback);
     };
   }, [open, url]);
-  useEffect3(() => {
+  useEffect4(() => {
     if (!open || !hostReady) return void 0;
     const host = contentRef.current;
     const iframe = iframeRef.current;
@@ -5636,7 +5742,7 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
       ro?.disconnect();
     };
   }, [open, hostReady, url]);
-  useEffect3(() => {
+  useEffect4(() => {
     if (!tabOpenedRef.current) return void 0;
     const onVis = () => {
       if (document.visibilityState === "visible") signalDone();
@@ -6047,7 +6153,7 @@ function McpToolsSection({ tools, GlassSection, GlassInner }) {
 }
 function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
   const { DialogContent: DialogContent15, Typography: Typography29, Box: Box34, Chip: Chip20, Stack: Stack27, Tooltip: Tooltip16, IconButton: IconButton15 } = getMaterialUI();
-  const { useMemo: useMemo22, useState: useState34 } = getReact();
+  const { useMemo: useMemo22, useState: useState35 } = getReact();
   let glass = null;
   try {
     glass = getGlass();
@@ -6099,7 +6205,7 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
     const tools = meta?.http_response?.tools;
     return Array.isArray(tools) ? tools : [];
   }, [meta]);
-  const [openChunk, setOpenChunk] = useState34(null);
+  const [openChunk, setOpenChunk] = useState35(null);
   const opKey = meta?.extra?.operativa_key;
   const header = resolveUsageDialogHeader(msgLabel, fecha, opKey);
   const showMetaPanel = Boolean(
@@ -6430,7 +6536,7 @@ function UsageDialogSection({ section, GlassSection, GlassInner }) {
 }
 function UsageStatsColumn({ stats, align = "right", msgLabel, fecha, meta, isUser = false }) {
   const { Box: Box34 } = getMaterialUI();
-  const [open, setOpen] = useState3(false);
+  const [open, setOpen] = useState4(false);
   const modelRaw = String(meta?.model ?? "").trim();
   const modelLabel = modelRaw ? modelBadgeLabel(modelRaw) : "";
   const latencyLabel = formatLatencySeconds(meta?.latency_ms);
@@ -6680,7 +6786,7 @@ function resolveMsgImensaje(msg) {
 }
 var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = false, chatUserDisplayName, chatUserNick, showUsageStats = false, onImageClick, streamingMsgId = null, onRateMessage = null, canRate = false, ratingMsgId = null, operativaEnter = false, onContapymeLoginDone = null }) {
   const { Alert: Alert18, Box: Box34 } = getMaterialUI();
-  const [fileSearchOpen, setFileSearchOpen] = useState3(false);
+  const [fileSearchOpen, setFileSearchOpen] = useState4(false);
   const meta = roleMetaFor(msg, compactMeta);
   const title = roleTitle(msg, chatUserDisplayName, chatUserNick);
   const titleCaption = roleUserCaption(msg, chatUserNick);
@@ -6852,7 +6958,7 @@ var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = 
 }, (prev, next) => prev.msg === next.msg && prev.streamingMsgId === next.streamingMsgId && prev.compactMeta === next.compactMeta && prev.chatUserDisplayName === next.chatUserDisplayName && prev.chatUserNick === next.chatUserNick && prev.showUsageStats === next.showUsageStats && prev.ratingMsgId === next.ratingMsgId && prev.canRate === next.canRate && prev.operativaEnter === next.operativaEnter);
 function ConvLogWebView({ mensajes, onMeta, compactMeta = false, emptyHint, chatUserDisplayName, chatUserNick, showUsageStats = true, streamingMsgId = null, onRateMessage = null, canRate = false, ratingMsgId = null, threadKey = null, threadClassName = "", onContapymeLoginDone = null }) {
   const { Box: Box34, Typography: Typography29 } = getMaterialUI();
-  const [lightboxSrc, setLightboxSrc] = useState3(null);
+  const [lightboxSrc, setLightboxSrc] = useState4(null);
   const operativaEnterIds = useOperativaEnterIds(mensajes, threadKey, { enabled: !compactMeta });
   const mensajesConStats = useMemo3(
     () => attachUsageStats(mensajes || []),
@@ -7003,7 +7109,7 @@ function readLogSidebarWidthFromUrl() {
   const w = Number(getSnapshot().log?.sidebarW);
   return Number.isFinite(w) && w > 0 ? w : null;
 }
-var { useState: useState4, useCallback, useMemo: useMemo4, useEffect: useEffect4 } = getReact();
+var { useState: useState5, useCallback, useMemo: useMemo4, useEffect: useEffect5 } = getReact();
 var {
   Box: Box4,
   Typography: Typography3,
@@ -7154,7 +7260,7 @@ function LogEntradaPanel({
 }) {
   const { Icon: Icon27 } = UI;
   const { GlassPanel, NEON_COLORS } = getGlass();
-  useEffect4(() => {
+  useEffect5(() => {
     if (!focusTarget) return void 0;
     const timer = window.setTimeout(() => {
       if (focusTarget === "convId") {
@@ -7289,18 +7395,18 @@ function LogViewer({ bootLog = {} }) {
   const { Icon: Icon27 } = UI;
   const theme2 = useTheme();
   const isMobile = useMediaQuery(theme2.breakpoints.down("md"));
-  const [entradaOpen, setEntradaOpen] = useState4(false);
-  const [jsonInput, setJsonInput] = useState4(bootLog.jsonInput || "");
-  const [convId, setConvId] = useState4(bootLog.convId || "");
-  const [error, setError] = useState4("");
-  const [loading, setLoading] = useState4(false);
-  const [logInfo, setLogInfo] = useState4(null);
-  const [mensajes, setMensajes] = useState4([]);
-  const [metaOpen, setMetaOpen] = useState4(false);
-  const [metaMsg, setMetaMsg] = useState4(null);
-  const [resumenOpen, setResumenOpen] = useState4(false);
-  const [selectedMsgId, setSelectedMsgId] = useState4(null);
-  const [entradaFocus, setEntradaFocus] = useState4(null);
+  const [entradaOpen, setEntradaOpen] = useState5(false);
+  const [jsonInput, setJsonInput] = useState5(bootLog.jsonInput || "");
+  const [convId, setConvId] = useState5(bootLog.convId || "");
+  const [error, setError] = useState5("");
+  const [loading, setLoading] = useState5(false);
+  const [logInfo, setLogInfo] = useState5(null);
+  const [mensajes, setMensajes] = useState5([]);
+  const [metaOpen, setMetaOpen] = useState5(false);
+  const [metaMsg, setMetaMsg] = useState5(null);
+  const [resumenOpen, setResumenOpen] = useState5(false);
+  const [selectedMsgId, setSelectedMsgId] = useState5(null);
+  const [entradaFocus, setEntradaFocus] = useState5(null);
   const navItems = useMemo4(() => convLogNavItems(mensajes), [mensajes]);
   const aplicarLog = useCallback((log, { silent = false } = {}) => {
     const vista = logToMensajesVista(log);
@@ -7319,14 +7425,14 @@ function LogViewer({ bootLog = {} }) {
       }
     }
   }, []);
-  useEffect4(() => {
+  useEffect5(() => {
     if (!bootLog.jsonInput?.trim()) return;
     try {
       aplicarLog(parseLogInput(bootLog.jsonInput), { silent: true });
     } catch (_) {
     }
   }, []);
-  useEffect4(() => {
+  useEffect5(() => {
     const t = setTimeout(() => persistLogMeta(convId), 800);
     return () => clearTimeout(t);
   }, [convId]);
@@ -7345,7 +7451,7 @@ function LogViewer({ bootLog = {} }) {
     ),
     [convId, jsonInput, logInfo, mensajes.length, error]
   );
-  useEffect4(() => {
+  useEffect5(() => {
     if (!jsonInput.trim()) return void 0;
     const t = window.setTimeout(() => {
       try {
@@ -7385,7 +7491,7 @@ function LogViewer({ bootLog = {} }) {
       setLoading(false);
     }
   }, [convId, aplicarLog]);
-  useEffect4(() => {
+  useEffect5(() => {
     if (bootLog.jsonInput?.trim()) return;
     const id = String(bootLog.convId ?? "").trim();
     if (!id) return;
@@ -8521,12 +8627,12 @@ function resetPromptConfigToDefaults(tipo, setPrompts) {
 }
 
 // src/js/tools/promptsSql/usePromptsSqlTool.ts
-var { useState: useState5, useEffect: useEffect5, useCallback: useCallback2, useMemo: useMemo5, useRef: useRef2 } = getReact();
+var { useState: useState6, useEffect: useEffect6, useCallback: useCallback2, useMemo: useMemo5, useRef: useRef3 } = getReact();
 var EMPTY_BODIES = Object.freeze({});
 function usePromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
-  const [authTick, setAuthTick] = useState5(0);
-  const [instruccionesCanEdit, setInstruccionesCanEdit] = useState5(false);
-  useEffect5(() => {
+  const [authTick, setAuthTick] = useState6(0);
+  const [instruccionesCanEdit, setInstruccionesCanEdit] = useState6(false);
+  useEffect6(() => {
     const onAuth = () => setAuthTick((n) => n + 1);
     window.addEventListener("isa-patyia:auth", onAuth);
     window.addEventListener(Session.EVENT, onAuth);
@@ -8564,27 +8670,27 @@ function usePromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
     if (!loggedIn) return "Inicia sesi\xF3n para importar instrucciones";
     return "Sin permiso para importar instrucciones";
   }, [authTick, canPublish, loggedIn]);
-  const [extraInstructionKeys, setExtraInstructionKeys] = useState5([]);
+  const [extraInstructionKeys, setExtraInstructionKeys] = useState6([]);
   const instruccionKeys = useMemo5(
     () => allInstructionKeys(extraInstructionKeys),
     [extraInstructionKeys]
   );
-  const [importDlg, setImportDlg] = useState5({ open: false, rows: [] });
+  const [importDlg, setImportDlg] = useState6({ open: false, rows: [] });
   const urlBodies = bootPrompts.bodies ?? EMPTY_BODIES;
   const urlDraftTipos = useMemo5(() => urlDraftTipoSet(bootPrompts), [bootPrompts]);
-  const [prompts, setPrompts] = useState5(() => buildInitialPromptState(bootPrompts, urlBodies));
-  const [activeTab, setActiveTab] = useState5(
+  const [prompts, setPrompts] = useState6(() => buildInitialPromptState(bootPrompts, urlBodies));
+  const [activeTab, setActiveTab] = useState6(
     Number.isInteger(bootPrompts.activeTab) ? bootPrompts.activeTab : 0
   );
-  const [jconfigDlg, setJconfigDlg] = useState5({ open: false, tipo: null });
-  const [dragOver, setDragOver] = useState5(false);
-  const fileInputRef = useRef2(null);
-  const [mapped, setMapped] = useState5([]);
-  const [loadBusy, setLoadBusy] = useState5(true);
-  const [loadErr, setLoadErr] = useState5("");
-  const [actionBusy, setActionBusy] = useState5(false);
-  const [envRev, setEnvRev] = useState5(0);
-  const urlSyncRef = useRef2(null);
+  const [jconfigDlg, setJconfigDlg] = useState6({ open: false, tipo: null });
+  const [dragOver, setDragOver] = useState6(false);
+  const fileInputRef = useRef3(null);
+  const [mapped, setMapped] = useState6([]);
+  const [loadBusy, setLoadBusy] = useState6(true);
+  const [loadErr, setLoadErr] = useState6("");
+  const [actionBusy, setActionBusy] = useState6(false);
+  const [envRev, setEnvRev] = useState6(0);
+  const urlSyncRef = useRef3(null);
   const applyCloudRows = useCallback2((rows, options = {}) => {
     const unknownKeys = [];
     setPrompts((prev) => {
@@ -8606,7 +8712,7 @@ function usePromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
     for (const t of instruccionKeysToClear) delete bodies[t];
     mergePartial({ prompts: { activeTab, bodies, draftTipos } });
   }, [activeTab]);
-  useEffect5(() => {
+  useEffect6(() => {
     const onTarget = () => setEnvRev((n) => n + 1);
     window.addEventListener("jeff:gateway-target", onTarget);
     window.addEventListener("patyia-apptools:lab-target", onTarget);
@@ -8622,12 +8728,12 @@ function usePromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
     const { mapped: m } = analyzeFromEntries(entries);
     setMapped(m);
   }, []);
-  useEffect5(() => {
+  useEffect6(() => {
     recompute(prompts);
   }, [prompts, recompute]);
-  const applyCloudRowsRef = useRef2(applyCloudRows);
+  const applyCloudRowsRef = useRef3(applyCloudRows);
   applyCloudRowsRef.current = applyCloudRows;
-  useEffect5(() => {
+  useEffect6(() => {
     let cancelled = false;
     (async () => {
       setLoadBusy(true);
@@ -8674,10 +8780,10 @@ function usePromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
     () => instruccionKeys.filter((k) => prompts[k]?.body?.trim()).length,
     [prompts, instruccionKeys]
   );
-  useEffect5(() => {
+  useEffect6(() => {
     mergePartial({ prompts: { activeTab } });
   }, [activeTab]);
-  useEffect5(() => {
+  useEffect6(() => {
     if (urlSyncRef.current) clearTimeout(urlSyncRef.current);
     urlSyncRef.current = setTimeout(() => {
       const bodies = draftBodiesFromPrompts(prompts);
@@ -9296,7 +9402,7 @@ function insertImageNodeAtSelection(dataUrl, alt = "imagen") {
 
 // src/js/ui/PromptBodyEditor.jsx
 import { Fragment as Fragment5, jsx as jsx12, jsxs as jsxs9 } from "react/jsx-runtime";
-var { useState: useState6, useEffect: useEffect6, useLayoutEffect, useRef: useRef3, useCallback: useCallback3, useMemo: useMemo6 } = getReact();
+var { useState: useState7, useEffect: useEffect7, useLayoutEffect, useRef: useRef4, useCallback: useCallback3, useMemo: useMemo6 } = getReact();
 var {
   Box: Box5,
   Stack: Stack5,
@@ -9316,15 +9422,15 @@ var {
 } = getMaterialUI();
 var MAX_UNDO = 80;
 function useEditorUndo(initial2) {
-  const [value, setValue] = useState6(initial2);
-  const [hist, setHist] = useState6({ past: 0, future: 0 });
-  const pastRef = useRef3([]);
-  const futureRef = useRef3([]);
-  const skipSync = useRef3(false);
+  const [value, setValue] = useState7(initial2);
+  const [hist, setHist] = useState7({ past: 0, future: 0 });
+  const pastRef = useRef4([]);
+  const futureRef = useRef4([]);
+  const skipSync = useRef4(false);
   const syncHist = useCallback3(() => {
     setHist({ past: pastRef.current.length, future: futureRef.current.length });
   }, []);
-  useEffect6(() => {
+  useEffect7(() => {
     if (skipSync.current) {
       skipSync.current = false;
       return;
@@ -9584,9 +9690,9 @@ function restoreScrollAnchor(scrollEl, anchor, { plainText, surfaceEl, plainText
   scrollEl.scrollTop = ratio * maxScroll;
 }
 function RenameVarDialog({ open, name, existing, onClose, onConfirm }) {
-  const [draft, setDraft] = useState6(name || "");
-  const [err, setErr] = useState6("");
-  useEffect6(() => {
+  const [draft, setDraft] = useState7(name || "");
+  const [err, setErr] = useState7("");
+  useEffect7(() => {
     if (open) {
       setDraft(name || "");
       setErr("");
@@ -9635,21 +9741,21 @@ function RenameVarDialog({ open, name, existing, onClose, onConfirm }) {
   ] });
 }
 function PromptEditorDialog({ open, onClose, title, body, canEdit, onSave, onDraft, tipo }) {
-  const surfaceRef = useRef3(null);
-  const plainTextRef = useRef3(null);
-  const dialogContentRef = useRef3(null);
-  const pendingScrollAnchorRef = useRef3(null);
-  const syncLock = useRef3(false);
-  const pendingSurfaceValue = useRef3(null);
-  const surfaceOrigin = useRef3(false);
-  const prevOpen = useRef3(false);
+  const surfaceRef = useRef4(null);
+  const plainTextRef = useRef4(null);
+  const dialogContentRef = useRef4(null);
+  const pendingScrollAnchorRef = useRef4(null);
+  const syncLock = useRef4(false);
+  const pendingSurfaceValue = useRef4(null);
+  const surfaceOrigin = useRef4(false);
+  const prevOpen = useRef4(false);
   const { value, commit, undo, redo, canUndo, canRedo, reset } = useEditorUndo(body);
-  const [renameDlg, setRenameDlg] = useState6({ open: false, name: "" });
-  const [saving, setSaving] = useState6(false);
-  const [plainText, setPlainText] = useState6(false);
-  const savedRangeRef = useRef3(null);
-  const savedCaretRef = useRef3(null);
-  const pushSuppressRef = useRef3(false);
+  const [renameDlg, setRenameDlg] = useState7({ open: false, name: "" });
+  const [saving, setSaving] = useState7(false);
+  const [plainText, setPlainText] = useState7(false);
+  const savedRangeRef = useRef4(null);
+  const savedCaretRef = useRef4(null);
+  const pushSuppressRef = useRef4(false);
   const variables = useMemo6(() => extractPromptVariables(value), [value]);
   const captureEditorSelection = useCallback3(() => {
     const el = surfaceRef.current;
@@ -10087,15 +10193,15 @@ function PromptBodyEditor({
   loading = false,
   editorOpenSignal = 0
 }) {
-  const [editorOpen, setEditorOpen] = useState6(false);
-  const previewRef = useRef3(null);
+  const [editorOpen, setEditorOpen] = useState7(false);
+  const previewRef = useRef4(null);
   const previewHtml = useMemo6(() => {
     if (Array.isArray(bodyLines) && bodyLines.length) return bodyPreviewHtmlFromLines(bodyLines);
     const text = String(body || "").trim();
     if (!text) return "";
     return bodyPreviewHtml(body);
   }, [body, bodyLines]);
-  useEffect6(() => {
+  useEffect7(() => {
     if (!editorOpenSignal || !canEdit || loading) return;
     setEditorOpen(true);
   }, [editorOpenSignal, canEdit, loading]);
@@ -10483,10 +10589,10 @@ function JconfigDetailDialog({ open, onClose, tipo, jc, body }) {
 // src/js/tools/PromptsSqlTool.jsx
 import { jsx as jsx16, jsxs as jsxs13 } from "react/jsx-runtime";
 var { Paper, Alert: Alert5 } = getMaterialUI();
-var { useState: useState7, useCallback: useCallback4 } = getReact();
+var { useState: useState8, useCallback: useCallback4 } = getReact();
 function PromptsSqlTool({ bootPrompts = {}, onNeedLogin }) {
   const tool = usePromptsSqlTool({ bootPrompts, onNeedLogin });
-  const [editorOpenSignal, setEditorOpenSignal] = useState7(0);
+  const [editorOpenSignal, setEditorOpenSignal] = useState8(0);
   const handleMapeoRowDoubleClick = useCallback4(() => {
     if (tool.canEdit && !tool.loadBusy) {
       setEditorOpenSignal((n) => n + 1);
@@ -10809,10 +10915,10 @@ function messageSourceFromUrl(chat) {
 
 // src/js/tools/chat/threadScroll.ts
 init_platform();
-var { useEffect: useEffect7, useLayoutEffect: useLayoutEffect2, useCallback: useCallback5, useRef: useRef4, useMemo: useMemo8 } = getReact();
+var { useEffect: useEffect8, useLayoutEffect: useLayoutEffect2, useCallback: useCallback5, useRef: useRef5, useMemo: useMemo8 } = getReact();
 var THREAD_SCROLL_NEAR_BOTTOM = 72;
 function useThreadScrollAnchor(scrollRef, mensajes, { sending = false } = {}) {
-  const snapshotRef = useRef4(null);
+  const snapshotRef = useRef5(null);
   const mensajesKey = useMemo8(
     () => (mensajes || []).map((m) => m.idMsg === "stream-live" ? `${m.idMsg}:${String(m.contenido || "").length}` : m.idMsg).join("|"),
     [mensajes]
@@ -10845,7 +10951,7 @@ function useThreadScrollAnchor(scrollRef, mensajes, { sending = false } = {}) {
   useLayoutEffect2(() => {
     applyScrollAnchor();
   }, [mensajesKey, sending, applyScrollAnchor]);
-  useEffect7(() => {
+  useEffect8(() => {
     const el = scrollRef.current;
     if (!el || typeof ResizeObserver === "undefined") return void 0;
     const ro = new ResizeObserver(() => {
@@ -11470,7 +11576,7 @@ function isVoiceRecordingSupported() {
 }
 
 // src/js/tools/chat/useChatTool.ts
-var { useState: useState8, useEffect: useEffect8, useCallback: useCallback6, useRef: useRef5, useMemo: useMemo9 } = getReact();
+var { useState: useState9, useEffect: useEffect9, useCallback: useCallback6, useRef: useRef6, useMemo: useMemo9 } = getReact();
 function readBootConvId(bootChat) {
   const fromBoot = Number(bootChat?.convId);
   if (fromBoot > 0) return fromBoot;
@@ -11516,56 +11622,56 @@ async function fetchLogsModeDetail(jwt, id, { freshLog = false, minMensajes = 0 
   return { d, log: null, openAiDirect: false };
 }
 function useChatTool({ bootChat }) {
-  const [jwt, setJwt] = useState8(() => loadPatyJwt());
-  const [jwtOpen, setJwtOpen] = useState8(false);
-  const [jwtLoading, setJwtLoading] = useState8(false);
-  const [authTick, setAuthTick] = useState8(0);
-  const [rows, setRows] = useState8([]);
-  const [selectedId, setSelectedId] = useState8(() => readBootConvId(bootChat));
-  const [detail, setDetail] = useState8(null);
-  const [loadingList, setLoadingList] = useState8(false);
-  const [sending, setSending] = useState8(false);
-  const [draft, setDraft] = useState8("");
-  const [images, setImages] = useState8([]);
-  const [audios, setAudios] = useState8([]);
-  const [isRecording, setIsRecording] = useState8(false);
-  const [streamText, setStreamText] = useState8("");
-  const [logMensajes, setLogMensajes] = useState8([]);
-  const [ratingMsgId, setRatingMsgId] = useState8(null);
-  const [loadingThread, setLoadingThread] = useState8(false);
-  const [logError, setLogError] = useState8("");
-  const [metaOpen, setMetaOpen] = useState8(false);
-  const [metaMsg, setMetaMsg] = useState8(null);
-  const [payloadPreviewOpen, setPayloadPreviewOpen] = useState8(false);
-  const [auditDialogOpen, setAuditDialogOpen] = useState8(false);
-  const [auditScope, setAuditScope] = useState8(null);
-  const [sessionBrowseScope, setSessionBrowseScope] = useState8(null);
-  const [sessionScopeLoading, setSessionScopeLoading] = useState8(false);
-  const [convListPage, setConvListPage] = useState8(1);
-  const [convListPageSize, setConvListPageSize] = useState8(() => readConvListPageSize());
-  const [convListSearch, setConvListSearch] = useState8("");
-  const [convListMeta, setConvListMeta] = useState8(null);
-  const [messageSource, setMessageSource] = useState8(() => readChatMessageSource(bootChat));
-  const [chatMode, setChatMode] = useState8(() => readChatMode(bootChat));
-  const [llmProvider, setLlmProvider] = useState8(CHAT_PROVIDER_DEFAULT);
-  const inputRef = useRef5(null);
-  const attachInputRef = useRef5(null);
-  const voiceRecorderRef = useRef5(createVoiceRecorder());
-  const threadScrollRef = useRef5(null);
-  const lastLogApiCountRef = useRef5(0);
-  const skipThreadReloadRef = useRef5(null);
-  const lastOpenedConvRef = useRef5(null);
-  const openConvRef = useRef5(async () => {
+  const [jwt, setJwt] = useState9(() => loadPatyJwt());
+  const [jwtOpen, setJwtOpen] = useState9(false);
+  const [jwtLoading, setJwtLoading] = useState9(false);
+  const [authTick, setAuthTick] = useState9(0);
+  const [rows, setRows] = useState9([]);
+  const [selectedId, setSelectedId] = useState9(() => readBootConvId(bootChat));
+  const [detail, setDetail] = useState9(null);
+  const [loadingList, setLoadingList] = useState9(false);
+  const [sending, setSending] = useState9(false);
+  const [draft, setDraft] = useState9("");
+  const [images, setImages] = useState9([]);
+  const [audios, setAudios] = useState9([]);
+  const [isRecording, setIsRecording] = useState9(false);
+  const [streamText, setStreamText] = useState9("");
+  const [logMensajes, setLogMensajes] = useState9([]);
+  const [ratingMsgId, setRatingMsgId] = useState9(null);
+  const [loadingThread, setLoadingThread] = useState9(false);
+  const [logError, setLogError] = useState9("");
+  const [metaOpen, setMetaOpen] = useState9(false);
+  const [metaMsg, setMetaMsg] = useState9(null);
+  const [payloadPreviewOpen, setPayloadPreviewOpen] = useState9(false);
+  const [auditDialogOpen, setAuditDialogOpen] = useState9(false);
+  const [auditScope, setAuditScope] = useState9(null);
+  const [sessionBrowseScope, setSessionBrowseScope] = useState9(null);
+  const [sessionScopeLoading, setSessionScopeLoading] = useState9(false);
+  const [convListPage, setConvListPage] = useState9(1);
+  const [convListPageSize, setConvListPageSize] = useState9(() => readConvListPageSize());
+  const [convListSearch, setConvListSearch] = useState9("");
+  const [convListMeta, setConvListMeta] = useState9(null);
+  const [messageSource, setMessageSource] = useState9(() => readChatMessageSource(bootChat));
+  const [chatMode, setChatMode] = useState9(() => readChatMode(bootChat));
+  const [llmProvider, setLlmProvider] = useState9(CHAT_PROVIDER_DEFAULT);
+  const inputRef = useRef6(null);
+  const attachInputRef = useRef6(null);
+  const voiceRecorderRef = useRef6(createVoiceRecorder());
+  const threadScrollRef = useRef6(null);
+  const lastLogApiCountRef = useRef6(0);
+  const skipThreadReloadRef = useRef6(null);
+  const lastOpenedConvRef = useRef6(null);
+  const openConvRef = useRef6(async () => {
   });
-  const pendingListConvRef = useRef5(null);
-  const contapymeResumeLockRef = useRef5(false);
-  const sendingRef = useRef5(false);
-  const jwtRef = useRef5(jwt);
+  const pendingListConvRef = useRef6(null);
+  const contapymeResumeLockRef = useRef6(false);
+  const sendingRef = useRef6(false);
+  const jwtRef = useRef6(jwt);
   jwtRef.current = jwt;
-  const onSendRef = useRef5(async () => {
+  const onSendRef = useRef6(async () => {
   });
-  const mcpPollRef = useRef5(null);
-  const logMensajesRef = useRef5(logMensajes);
+  const mcpPollRef = useRef6(null);
+  const logMensajesRef = useRef6(logMensajes);
   logMensajesRef.current = logMensajes;
   sendingRef.current = sending;
   const MCP_POLL_MS = 5e3;
@@ -11629,10 +11735,10 @@ function useChatTool({ bootChat }) {
     }, MCP_POLL_MS);
     void tickMcpSessionPoll();
   }, [stopMcpSessionPoll, tickMcpSessionPoll]);
-  useEffect8(() => () => {
+  useEffect9(() => () => {
     stopMcpSessionPoll();
   }, [stopMcpSessionPoll]);
-  useEffect8(() => {
+  useEffect9(() => {
     const cur = mcpPollRef.current;
     if (cur && selectedId != null && cur.convId !== selectedId) stopMcpSessionPoll();
   }, [selectedId, stopMcpSessionPoll]);
@@ -11663,7 +11769,7 @@ function useChatTool({ bootChat }) {
   const viewOnly = loggedIn && !canSend;
   const needsJwt = loggedIn && !jwt?.token && !jwtLoading;
   const displayScope = activeConvOwnerScope(listScope, jwt?.claims);
-  useEffect8(() => {
+  useEffect9(() => {
     function onSessionAuth() {
       setAuthTick((n) => n + 1);
     }
@@ -11681,7 +11787,7 @@ function useChatTool({ bootChat }) {
       window.removeEventListener("patyia-apptools:caps-changed", onSessionAuth);
     };
   }, []);
-  useEffect8(() => {
+  useEffect9(() => {
     if (canAuditChat) return;
     if (auditScope) {
       setAuditScope(null);
@@ -11696,8 +11802,8 @@ function useChatTool({ bootChat }) {
     }
     if (auditDialogOpen) setAuditDialogOpen(false);
   }, [canAuditChat, auditScope, auditDialogOpen]);
-  const prevSessionUserRef = useRef5(null);
-  useEffect8(() => {
+  const prevSessionUserRef = useRef6(null);
+  useEffect9(() => {
     const prev = prevSessionUserRef.current;
     if (prev && prev !== sessionUser) {
       setAuditScope(null);
@@ -11718,7 +11824,7 @@ function useChatTool({ bootChat }) {
     }
     prevSessionUserRef.current = sessionUser;
   }, [sessionUser]);
-  useEffect8(() => {
+  useEffect9(() => {
     if (!loggedIn || !sessionUser) {
       setJwt(null);
       setJwtLoading(false);
@@ -11743,7 +11849,7 @@ function useChatTool({ bootChat }) {
       cancelled = true;
     };
   }, [loggedIn, sessionUser]);
-  useEffect8(() => {
+  useEffect9(() => {
     if (!loggedIn || !sessionUser) {
       setSessionBrowseScope(null);
       setSessionScopeLoading(false);
@@ -12118,7 +12224,7 @@ function useChatTool({ bootChat }) {
     setConvListPageSize(size);
     setConvListPage(1);
   }, [convListPageSize]);
-  useEffect8(() => subscribe((snap) => {
+  useEffect9(() => subscribe((snap) => {
     const chat = snap.chat;
     const urlId = Number(chat?.convId) || null;
     setSelectedId((prev) => prev === urlId ? prev : urlId);
@@ -12127,22 +12233,22 @@ function useChatTool({ bootChat }) {
     const urlMode = chatModeFromUrl(chat);
     if (urlMode !== null) setChatMode((prev) => prev === urlMode ? prev : urlMode);
   }), []);
-  useEffect8(() => {
+  useEffect9(() => {
     persistChatLlmProvider(CHAT_PROVIDER_OPENAI);
   }, []);
-  const prevSelectedIdRef = useRef5(selectedId);
-  useEffect8(() => {
+  const prevSelectedIdRef = useRef6(selectedId);
+  useEffect9(() => {
     const prev = prevSelectedIdRef.current;
     prevSelectedIdRef.current = selectedId;
     if (prev === selectedId) return;
     if (prev === null) return;
     setLlmProvider((p) => p === CHAT_PROVIDER_OPENAI ? p : CHAT_PROVIDER_OPENAI);
   }, [selectedId]);
-  useEffect8(() => {
+  useEffect9(() => {
     if (jwtLoading) return;
     reloadList();
   }, [reloadList, authTick, jwtLoading]);
-  useEffect8(() => {
+  useEffect9(() => {
     if (loadingList || jwtLoading || sending) return;
     if (!selectedId) return;
     if (pendingListConvRef.current === selectedId) {
@@ -12155,7 +12261,7 @@ function useChatTool({ bootChat }) {
     if (rows.some((r) => convIdsEqual(r.iconversacion, selectedId))) return;
     if (convIdsEqual(urlChatConvId(), selectedId)) return;
   }, [rows, loadingList, jwtLoading, sending, selectedId]);
-  useEffect8(() => {
+  useEffect9(() => {
     if (!selectedId) {
       lastOpenedConvRef.current = null;
       return;
@@ -12776,7 +12882,7 @@ init_platform();
 init_patyia();
 init_patyia_jwt();
 import { jsx as jsx18, jsxs as jsxs15 } from "react/jsx-runtime";
-var { useState: useState9, useEffect: useEffect9, useMemo: useMemo10 } = getReact();
+var { useState: useState10, useEffect: useEffect10, useMemo: useMemo10 } = getReact();
 var { Box: Box8, Typography: Typography8, CircularProgress: CircularProgress3, Chip: Chip7 } = getMaterialUI();
 var { Icon: Icon3 } = UI;
 var CHIP_SX = {
@@ -12831,8 +12937,8 @@ function ChatSessionPanel({ claims, displayScope, sessionUser: _sessionUser, own
   const claimsName = jwtUserDisplayName(claims) || jwtUserShortName(claims);
   const primaryLabel = String(ownerDisplayName ?? "").trim() || scopeName || claimsName || codes || "ISA PatyIA";
   const avatarUrl = useMemo10(() => buildUserAvatarUrl(primaryLabel, 72), [primaryLabel]);
-  const [avatarOk, setAvatarOk] = useState9(true);
-  useEffect9(() => {
+  const [avatarOk, setAvatarOk] = useState10(true);
+  useEffect10(() => {
     setAvatarOk(true);
   }, [avatarUrl]);
   const interactive = !!canAudit && typeof onOpenAudit === "function";
@@ -12880,7 +12986,7 @@ function ChatSessionPanel({ claims, displayScope, sessionUser: _sessionUser, own
 init_platform();
 import { Fragment as Fragment6, jsx as jsx19, jsxs as jsxs16 } from "react/jsx-runtime";
 import { createElement as createElement2 } from "react";
-var { useState: useState10, useEffect: useEffect10, useRef: useRef6, useCallback: useCallback7, useMemo: useMemo11 } = getReact();
+var { useState: useState11, useEffect: useEffect11, useRef: useRef7, useCallback: useCallback7, useMemo: useMemo11 } = getReact();
 var { Autocomplete, TextField: TextField4, Typography: Typography9, Box: Box9, IconButton: IconButton3, InputAdornment } = getMaterialUI();
 var { Icon: Icon4 } = UI;
 var DEBOUNCE_MS = 300;
@@ -12910,9 +13016,9 @@ function ConvSearchAutocomplete({
   disabled = false,
   placeholder = "Buscar por # conversaci\xF3n\u2026"
 }) {
-  const [inputValue, setInputValue] = useState10(search ?? "");
-  const debounceRef = useRef6(null);
-  useEffect10(() => {
+  const [inputValue, setInputValue] = useState11(search ?? "");
+  const debounceRef = useRef7(null);
+  useEffect11(() => {
     setInputValue(search ?? "");
   }, [search]);
   const selected = useMemo11(() => {
@@ -12935,11 +13041,11 @@ function ConvSearchAutocomplete({
     setInputValue("");
     onSearchChange?.("");
   }, [onSearchChange]);
-  useEffect10(() => () => {
+  useEffect11(() => () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
   }, []);
   const showClear = Boolean(inputValue?.trim());
-  const [menuOpen, setMenuOpen] = useState10(false);
+  const [menuOpen, setMenuOpen] = useState11(false);
   const fusedOpen = menuOpen ? " paty-chat-conv-search--open" : "";
   return /* @__PURE__ */ jsx19(
     Autocomplete,
@@ -13547,7 +13653,7 @@ function ChatPayloadPreview({ open, body, endpoint, onClose }) {
 
 // src/js/tools/chat/ChatComposer.jsx
 import { jsx as jsx22, jsxs as jsxs19 } from "react/jsx-runtime";
-var { useState: useState11, useMemo: useMemo13, useEffect: useEffect11 } = getReact();
+var { useState: useState12, useMemo: useMemo13, useEffect: useEffect12 } = getReact();
 var {
   Box: Box11,
   Button: Button5,
@@ -13578,7 +13684,7 @@ function ChatComposer({
   onRemoveImage,
   onRemoveAudio
 }) {
-  const [lightboxSrc, setLightboxSrc] = useState11(null);
+  const [lightboxSrc, setLightboxSrc] = useState12(null);
   const canRecord = isVoiceRecordingSupported();
   const hasContent = Boolean(draft.trim() || images.length || audios.length);
   const imagePreviewUrls = useMemo13(
@@ -13589,7 +13695,7 @@ function ChatComposer({
     () => audios.map((aud) => blobToPreviewUrl2(aud.blob)),
     [audios]
   );
-  useEffect11(() => () => {
+  useEffect12(() => () => {
     [...imagePreviewUrls, ...audioPreviewUrls].forEach((u) => {
       if (u) URL.revokeObjectURL(u);
     });
@@ -13860,12 +13966,12 @@ init_platform();
 init_patyia_jwt();
 init_platform();
 import { jsx as jsx24, jsxs as jsxs21 } from "react/jsx-runtime";
-var { useState: useState12, useEffect: useEffect12 } = getReact();
+var { useState: useState13, useEffect: useEffect13 } = getReact();
 var { Button: Button7, TextField: TextField6, DialogContent: DialogContent6, DialogActions: DialogActions4, CircularProgress: CircularProgress6 } = getMaterialUI();
 function JwtModal({ open, onClose, initialToken, onSave }) {
-  const [value, setValue] = useState12(initialToken || "");
-  const [saving, setSaving] = useState12(false);
-  useEffect12(() => {
+  const [value, setValue] = useState13(initialToken || "");
+  const [saving, setSaving] = useState13(false);
+  useEffect13(() => {
     if (open) setValue(initialToken || "");
   }, [open, initialToken]);
   async function submit() {
@@ -13928,7 +14034,7 @@ init_platform();
 init_patyia_jwt();
 init_apiClient();
 import { jsx as jsx25, jsxs as jsxs22 } from "react/jsx-runtime";
-var { useState: useState13, useEffect: useEffect13, useMemo: useMemo14 } = getReact();
+var { useState: useState14, useEffect: useEffect14, useMemo: useMemo14 } = getReact();
 var {
   Box: Box13,
   Typography: Typography12,
@@ -13977,22 +14083,22 @@ function rowsWithActiveFirst(rows, currentKey, currentScope) {
   return list;
 }
 function TercerosAuditDialog({ open, onClose, jwt, sessionUser, onSelect, currentScope, canAudit = true }) {
-  const [q, setQ] = useState13("");
-  const [qDebounced, setQDebounced] = useState13("");
-  const [page, setPage] = useState13(1);
-  const [loading, setLoading] = useState13(false);
-  const [error, setError] = useState13("");
-  const [data, setData] = useState13(null);
-  useEffect13(() => {
+  const [q, setQ] = useState14("");
+  const [qDebounced, setQDebounced] = useState14("");
+  const [page, setPage] = useState14(1);
+  const [loading, setLoading] = useState14(false);
+  const [error, setError] = useState14("");
+  const [data, setData] = useState14(null);
+  useEffect14(() => {
     if (!open) return void 0;
     const t = setTimeout(() => setQDebounced(q.trim()), 350);
     return () => clearTimeout(t);
   }, [q, open]);
-  useEffect13(() => {
+  useEffect14(() => {
     if (!open) return;
     setPage(1);
   }, [qDebounced, open]);
-  useEffect13(() => {
+  useEffect14(() => {
     if (!open) return void 0;
     if (!canAudit) {
       setData(null);
@@ -14172,14 +14278,14 @@ function TercerosAuditDialog({ open, onClose, jwt, sessionUser, onSelect, curren
 // src/js/tools/ChatTool.jsx
 import { Fragment as Fragment8, jsx as jsx26, jsxs as jsxs23 } from "react/jsx-runtime";
 var { Box: Box14, Drawer: Drawer2, IconButton: IconButton7, Tooltip: Tooltip6, useTheme: useTheme2, useMediaQuery: useMediaQuery2 } = getMaterialUI();
-var { useState: useState14 } = getReact();
+var { useState: useState15 } = getReact();
 var { Icon: Icon10 } = UI;
 function ChatTool({ bootChat, onNeedLogin }) {
   const chat = useChatTool({ bootChat });
   const theme2 = useTheme2();
   const isMobile = useMediaQuery2(theme2.breakpoints.down("md"));
-  const [sidebarOpen, setSidebarOpen] = useState14(false);
-  const [refreshingThread, setRefreshingThread] = useState14(false);
+  const [sidebarOpen, setSidebarOpen] = useState15(false);
+  const [refreshingThread, setRefreshingThread] = useState15(false);
   if (!chat.loggedIn) {
     return /* @__PURE__ */ jsx26(ChatLoggedOutShell, {});
   }
@@ -14745,34 +14851,34 @@ function assigneeTheme(assignedTo) {
 }
 
 // src/js/tools/todos/useTodosTool.ts
-var { useState: useState15, useEffect: useEffect14, useCallback: useCallback8, useRef: useRef7 } = getReact();
+var { useState: useState16, useEffect: useEffect15, useCallback: useCallback8, useRef: useRef8 } = getReact();
 function useTodosTool({ bootTodos }) {
-  const [loggedIn, setLoggedIn] = useState15(Session.isLoggedIn());
-  const [boards, setBoards] = useState15([]);
-  const [boardPreviews, setBoardPreviews] = useState15({});
-  const [loadingPreviews, setLoadingPreviews] = useState15(false);
-  const [boardId, setBoardId] = useState15(String(bootTodos?.boardId ?? ""));
-  const [boardData, setBoardData] = useState15(null);
-  const [loadingBoards, setLoadingBoards] = useState15(false);
-  const [loadingBoard, setLoadingBoard] = useState15(false);
-  const [error, setError] = useState15("");
-  const [selectedTask, setSelectedTask] = useState15(null);
-  const [taskLoading, setTaskLoading] = useState15(false);
-  const [newBoardOpen, setNewBoardOpen] = useState15(false);
-  const dragTaskId = useRef7(null);
-  const previewDragRef = useRef7(null);
-  const boardDataRef = useRef7(null);
-  useEffect14(() => {
+  const [loggedIn, setLoggedIn] = useState16(Session.isLoggedIn());
+  const [boards, setBoards] = useState16([]);
+  const [boardPreviews, setBoardPreviews] = useState16({});
+  const [loadingPreviews, setLoadingPreviews] = useState16(false);
+  const [boardId, setBoardId] = useState16(String(bootTodos?.boardId ?? ""));
+  const [boardData, setBoardData] = useState16(null);
+  const [loadingBoards, setLoadingBoards] = useState16(false);
+  const [loadingBoard, setLoadingBoard] = useState16(false);
+  const [error, setError] = useState16("");
+  const [selectedTask, setSelectedTask] = useState16(null);
+  const [taskLoading, setTaskLoading] = useState16(false);
+  const [newBoardOpen, setNewBoardOpen] = useState16(false);
+  const dragTaskId = useRef8(null);
+  const previewDragRef = useRef8(null);
+  const boardDataRef = useRef8(null);
+  useEffect15(() => {
     boardDataRef.current = boardData;
   }, [boardData]);
-  useEffect14(() => {
+  useEffect15(() => {
     function onAuth() {
       setLoggedIn(Session.isLoggedIn());
     }
     window.addEventListener(Session.EVENT, onAuth);
     return () => window.removeEventListener(Session.EVENT, onAuth);
   }, []);
-  useEffect14(() => subscribe((snap) => {
+  useEffect15(() => subscribe((snap) => {
     const urlBoardId = String(snap.todos?.boardId ?? "").trim();
     setBoardId((prev) => prev === urlBoardId ? prev : urlBoardId);
     if (!urlBoardId) {
@@ -14835,11 +14941,11 @@ function useTodosTool({ bootTodos }) {
       if (!opts?.silent) setLoadingBoard(false);
     }
   }, []);
-  useEffect14(() => {
+  useEffect15(() => {
     if (!loggedIn) return;
     loadBoards();
   }, [loggedIn, loadBoards]);
-  useEffect14(() => {
+  useEffect15(() => {
     if (!loggedIn || !boardId) return;
     loadBoard(boardId);
   }, [loggedIn, boardId, loadBoard]);
@@ -15212,7 +15318,7 @@ function TaskAssigneeLabel({ assignedTo }) {
 
 // src/js/tools/todos/TodosKanban.jsx
 import { Fragment as Fragment9, jsx as jsx28, jsxs as jsxs24 } from "react/jsx-runtime";
-var { useState: useState16, useMemo: useMemo15, useRef: useRef8, useEffect: useEffect15, memo: memo2 } = getReact();
+var { useState: useState17, useMemo: useMemo15, useRef: useRef9, useEffect: useEffect16, memo: memo2 } = getReact();
 var { Box: Box15, Paper: Paper2, Typography: Typography14, TextField: TextField8, Button: Button9, Stack: Stack12, Chip: Chip9 } = getMaterialUI();
 var { Icon: Icon11 } = UI;
 var DRAG_THRESHOLD_PX = 6;
@@ -15312,8 +15418,8 @@ var TaskCard = memo2(function TaskCard2({
   );
 });
 function ColumnAddForm({ onAdd }) {
-  const [open, setOpen] = useState16(false);
-  const [title, setTitle] = useState16("");
+  const [open, setOpen] = useState17(false);
+  const [title, setTitle] = useState17("");
   if (!open) {
     return /* @__PURE__ */ jsx28(
       Button9,
@@ -15374,14 +15480,14 @@ function ColumnAddForm({ onAdd }) {
   ] });
 }
 function TodosKanban({ boardData, readOnly = false, preview = false, onOpenTask, onQuickAdd, onDragStart, onDropColumn }) {
-  const [dragOverCol, setDragOverCol] = useState16(null);
-  const [draggingTaskId, setDraggingTaskId] = useState16(null);
-  const [dragGhost, setDragGhost] = useState16(null);
-  const [expandedCols, setExpandedCols] = useState16(() => /* @__PURE__ */ new Set());
-  const listRefs = useRef8({});
-  const dragRef = useRef8(null);
-  const cardElRef = useRef8(null);
-  const suppressClickRef = useRef8(false);
+  const [dragOverCol, setDragOverCol] = useState17(null);
+  const [draggingTaskId, setDraggingTaskId] = useState17(null);
+  const [dragGhost, setDragGhost] = useState17(null);
+  const [expandedCols, setExpandedCols] = useState17(() => /* @__PURE__ */ new Set());
+  const listRefs = useRef9({});
+  const dragRef = useRef9(null);
+  const cardElRef = useRef9(null);
+  const suppressClickRef = useRef9(false);
   const tasksByColumn = useMemo15(() => groupTasksByColumn(boardData), [boardData]);
   const ghostTask = useMemo15(() => {
     if (!dragGhost?.taskId) return null;
@@ -15422,7 +15528,7 @@ function TodosKanban({ boardData, readOnly = false, preview = false, onOpenTask,
     } catch {
     }
   }
-  useEffect15(() => {
+  useEffect16(() => {
     if (readOnly) return void 0;
     function onPointerMove(e) {
       const state = dragRef.current;
@@ -15623,7 +15729,7 @@ init_platform();
 init_platform();
 import { jsx as jsx29 } from "react/jsx-runtime";
 import { createElement as createElement3 } from "react";
-var { useState: useState17, useEffect: useEffect16, useRef: useRef9, useCallback: useCallback9 } = getReact();
+var { useState: useState18, useEffect: useEffect17, useRef: useRef10, useCallback: useCallback9 } = getReact();
 var { Autocomplete: Autocomplete2, TextField: TextField9, Typography: Typography15, Box: Box16 } = getMaterialUI();
 var DEBOUNCE_MS2 = 300;
 function optionLabel(row) {
@@ -15632,13 +15738,13 @@ function optionLabel(row) {
 }
 function UserAssignAutocomplete({ value, onChange, disabled = false, label = "Asignado a", compact = false }) {
   const username = value ? normalizeAssigneeUsername(value) : null;
-  const [inputValue, setInputValue] = useState17("");
-  const [options, setOptions] = useState17([]);
-  const [loading, setLoading] = useState17(false);
-  const [invalidHint, setInvalidHint] = useState17("");
-  const debounceRef = useRef9(null);
-  const requestIdRef = useRef9(0);
-  const resolveAttemptRef = useRef9("");
+  const [inputValue, setInputValue] = useState18("");
+  const [options, setOptions] = useState18([]);
+  const [loading, setLoading] = useState18(false);
+  const [invalidHint, setInvalidHint] = useState18("");
+  const debounceRef = useRef10(null);
+  const requestIdRef = useRef10(0);
+  const resolveAttemptRef = useRef10("");
   const selected = username ? options.find((o) => o.username === username) ?? null : null;
   const runSearch = useCallback9(async (query) => {
     const id = ++requestIdRef.current;
@@ -15661,7 +15767,7 @@ function UserAssignAutocomplete({ value, onChange, disabled = false, label = "As
       runSearch(query);
     }, DEBOUNCE_MS2);
   }, [runSearch]);
-  useEffect16(() => {
+  useEffect17(() => {
     if (!username) {
       resolveAttemptRef.current = "";
       setInputValue("");
@@ -15698,12 +15804,12 @@ function UserAssignAutocomplete({ value, onChange, disabled = false, label = "As
       cancelled = true;
     };
   }, [value, username, options, runSearch, onChange]);
-  useEffect16(() => {
+  useEffect17(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
-  useEffect16(() => {
+  useEffect17(() => {
     if (disabled) return;
     runSearch("");
   }, [disabled, runSearch]);
@@ -15830,7 +15936,7 @@ function pathDepth(path) {
 
 // src/js/tools/todos/TaskConvoThread.jsx
 import { jsx as jsx30, jsxs as jsxs25 } from "react/jsx-runtime";
-var { useState: useState18, useEffect: useEffect17, useCallback: useCallback10 } = getReact();
+var { useState: useState19, useEffect: useEffect18, useCallback: useCallback10 } = getReact();
 var {
   Box: Box17,
   Stack: Stack13,
@@ -15899,13 +16005,13 @@ function MessageBubble({ msg, messages, readOnly, busy, onReply, onQuote, onDele
   );
 }
 function TaskConvoThread({ contextKey, readOnly = false, appId = SCRUM_APP_ID }) {
-  const [messages, setMessages] = useState18([]);
-  const [loading, setLoading] = useState18(true);
-  const [busy, setBusy] = useState18(false);
-  const [error, setError] = useState18("");
-  const [draft, setDraft] = useState18("");
-  const [replyTo, setReplyTo] = useState18(null);
-  const [quotePath, setQuotePath] = useState18(null);
+  const [messages, setMessages] = useState19([]);
+  const [loading, setLoading] = useState19(true);
+  const [busy, setBusy] = useState19(false);
+  const [error, setError] = useState19("");
+  const [draft, setDraft] = useState19("");
+  const [replyTo, setReplyTo] = useState19(null);
+  const [quotePath, setQuotePath] = useState19(null);
   const reload = useCallback10(async () => {
     if (!contextKey) return;
     setLoading(true);
@@ -15920,7 +16026,7 @@ function TaskConvoThread({ contextKey, readOnly = false, appId = SCRUM_APP_ID })
       setLoading(false);
     }
   }, [appId, contextKey]);
-  useEffect17(() => {
+  useEffect18(() => {
     reload();
   }, [reload]);
   async function run(fn) {
@@ -16018,7 +16124,7 @@ function TaskConvoThread({ contextKey, readOnly = false, appId = SCRUM_APP_ID })
 
 // src/js/tools/todos/TaskDetailDialog.jsx
 import { jsx as jsx31, jsxs as jsxs26 } from "react/jsx-runtime";
-var { useState: useState19, useEffect: useEffect18, useRef: useRef10 } = getReact();
+var { useState: useState20, useEffect: useEffect19, useRef: useRef11 } = getReact();
 var {
   Dialog: Dialog6,
   DialogTitle: DialogTitle6,
@@ -16067,9 +16173,9 @@ function toDateInputValue(value) {
   }
 }
 function SubtaskEditor({ subtask, readOnly, busy, onSave, onDelete }) {
-  const [title, setTitle] = useState19(subtask.title);
-  const [doc, setDoc] = useState19(subtask.descriptionDoc || "");
-  useEffect18(() => {
+  const [title, setTitle] = useState20(subtask.title);
+  const [doc, setDoc] = useState20(subtask.descriptionDoc || "");
+  useEffect19(() => {
     setTitle(subtask.title);
     setDoc(subtask.descriptionDoc || "");
   }, [subtask.id, subtask.title, subtask.descriptionDoc]);
@@ -16128,9 +16234,9 @@ function SubtaskEditor({ subtask, readOnly, busy, onSave, onDelete }) {
   ] });
 }
 function MilestoneEditor({ milestone, readOnly, busy, onSave, onDelete, onToggle }) {
-  const [title, setTitle] = useState19(milestone.title);
-  const [dueDate, setDueDate] = useState19(toDateInputValue(milestone.dueDate));
-  useEffect18(() => {
+  const [title, setTitle] = useState20(milestone.title);
+  const [dueDate, setDueDate] = useState20(toDateInputValue(milestone.dueDate));
+  useEffect19(() => {
     setTitle(milestone.title);
     setDueDate(toDateInputValue(milestone.dueDate));
   }, [milestone.id, milestone.title, milestone.dueDate]);
@@ -16209,17 +16315,17 @@ function MilestoneEditor({ milestone, readOnly, busy, onSave, onDelete, onToggle
   ] });
 }
 function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSave, onSaveSubtask, onDeleteSubtask, onAddSubtask, onSaveMilestone, onDeleteMilestone, onAddMilestone, onToggleMilestone, onComment }) {
-  const [tab, setTab] = useState19(0);
-  const [title, setTitle] = useState19("");
-  const [doc, setDoc] = useState19("");
-  const [assignedTo, setAssignedTo] = useState19(null);
-  const [subtaskTitle, setSubtaskTitle] = useState19("");
-  const [msTitle, setMsTitle] = useState19("");
-  const [msDate, setMsDate] = useState19("");
-  const [comment, setComment] = useState19("");
-  const [busy, setBusy] = useState19(false);
-  const prevId = useRef10(null);
-  useEffect18(() => {
+  const [tab, setTab] = useState20(0);
+  const [title, setTitle] = useState20("");
+  const [doc, setDoc] = useState20("");
+  const [assignedTo, setAssignedTo] = useState20(null);
+  const [subtaskTitle, setSubtaskTitle] = useState20("");
+  const [msTitle, setMsTitle] = useState20("");
+  const [msDate, setMsDate] = useState20("");
+  const [comment, setComment] = useState20("");
+  const [busy, setBusy] = useState20(false);
+  const prevId = useRef11(null);
+  useEffect19(() => {
     if (!task || task.id === prevId.current) return;
     prevId.current = task.id;
     setTitle(task.title);
@@ -16489,7 +16595,7 @@ function TaskDetailDialog({ open, task, loading, readOnly = false, onClose, onSa
 // src/js/tools/todos/NewBoardDialog.jsx
 init_platform();
 import { jsx as jsx32, jsxs as jsxs27 } from "react/jsx-runtime";
-var { useState: useState20 } = getReact();
+var { useState: useState21 } = getReact();
 var {
   Dialog: Dialog7,
   DialogTitle: DialogTitle7,
@@ -16511,10 +16617,10 @@ function parseMembers(raw) {
   return raw.split(/[,;\n]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
 }
 function NewBoardDialog({ open, onClose, onCreate, busy }) {
-  const [title, setTitle] = useState20("");
-  const [description, setDescription] = useState20("");
-  const [visibility, setVisibility] = useState20("private");
-  const [membersRaw, setMembersRaw] = useState20("");
+  const [title, setTitle] = useState21("");
+  const [description, setDescription] = useState21("");
+  const [visibility, setVisibility] = useState21("private");
+  const [membersRaw, setMembersRaw] = useState21("");
   function reset() {
     setTitle("");
     setDescription("");
@@ -16617,14 +16723,14 @@ function NewBoardDialog({ open, onClose, onCreate, busy }) {
 // src/js/tools/todos/PublicScrumBoard.jsx
 init_platform();
 import { jsx as jsx33, jsxs as jsxs28 } from "react/jsx-runtime";
-var { useState: useState21, useEffect: useEffect19 } = getReact();
+var { useState: useState22, useEffect: useEffect20 } = getReact();
 var { Box: Box20, Alert: Alert10, CircularProgress: CircularProgress10 } = getMaterialUI();
 var { Icon: Icon15 } = UI;
 function PublicScrumBoard({ publicSlug }) {
-  const [boardData, setBoardData] = useState21(null);
-  const [loading, setLoading] = useState21(true);
-  const [error, setError] = useState21("");
-  useEffect19(() => {
+  const [boardData, setBoardData] = useState22(null);
+  const [loading, setLoading] = useState22(true);
+  const [error, setError] = useState22("");
+  useEffect20(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
@@ -16678,7 +16784,7 @@ function PublicScrumBoard({ publicSlug }) {
 // src/js/tools/todos/BoardsHome.jsx
 init_platform();
 import { jsx as jsx34, jsxs as jsxs29 } from "react/jsx-runtime";
-var { useState: useState22, useEffect: useEffect20, useMemo: useMemo16 } = getReact();
+var { useState: useState23, useEffect: useEffect21, useMemo: useMemo16 } = getReact();
 var { Box: Box21, Typography: Typography18, Button: Button13, Stack: Stack16, Chip: Chip12, CircularProgress: CircularProgress11, Skeleton, Accordion: Accordion2, AccordionSummary: AccordionSummary2, AccordionDetails: AccordionDetails2, IconButton: IconButton10, Tooltip: Tooltip9 } = getMaterialUI();
 var { Icon: Icon16 } = UI;
 function formatBoardDate(iso) {
@@ -16802,9 +16908,9 @@ function BoardsHomeToolbar({ loading, onNewBoard, onRefresh }) {
 }
 function BoardsHome({ boards, boardPreviews = {}, loadingPreviews = false, loading, onOpenBoard, onOpenTask, onPreviewDragStart, onPreviewDropColumn, onNewBoard, onDeleteBoard }) {
   const sortedBoards = useMemo16(() => sortBoardsByRecent(boards), [boards]);
-  const [expandState, setExpandState] = useState22(() => readBoardExpandState());
-  const [deletingId, setDeletingId] = useState22("");
-  useEffect20(() => {
+  const [expandState, setExpandState] = useState23(() => readBoardExpandState());
+  const [deletingId, setDeletingId] = useState23("");
+  useEffect21(() => {
     writeBoardExpandState(expandState);
   }, [expandState]);
   function isExpanded(boardId) {
@@ -16845,7 +16951,7 @@ function BoardsHome({ boards, boardPreviews = {}, loadingPreviews = false, loadi
 // src/js/tools/todos/BoardSettingsDialog.jsx
 init_platform();
 import { Fragment as Fragment10, jsx as jsx35, jsxs as jsxs30 } from "react/jsx-runtime";
-var { useState: useState23, useEffect: useEffect21 } = getReact();
+var { useState: useState24, useEffect: useEffect22 } = getReact();
 var {
   Dialog: Dialog8,
   DialogTitle: DialogTitle8,
@@ -16876,11 +16982,11 @@ function BoardMembersSection({
   saving,
   onMembersChange
 }) {
-  const [members, setMembers] = useState23([]);
-  const [loading, setLoading] = useState23(false);
-  const [membersSaving, setMembersSaving] = useState23(false);
-  const [addKey, setAddKey] = useState23(0);
-  useEffect21(() => {
+  const [members, setMembers] = useState24([]);
+  const [loading, setLoading] = useState24(false);
+  const [membersSaving, setMembersSaving] = useState24(false);
+  const [addKey, setAddKey] = useState24(0);
+  useEffect22(() => {
     if (!open || !boardId) return;
     let cancelled = false;
     setLoading(true);
@@ -17003,10 +17109,10 @@ function BoardSettingsDialog({
   onSave,
   onMembersChange
 }) {
-  const [title, setTitle] = useState23(board?.title ?? "");
-  const [description, setDescription] = useState23(board?.description ?? "");
-  const [visibility, setVisibility] = useState23(board?.visibility ?? "private");
-  useEffect21(() => {
+  const [title, setTitle] = useState24(board?.title ?? "");
+  const [description, setDescription] = useState24(board?.description ?? "");
+  const [visibility, setVisibility] = useState24(board?.visibility ?? "private");
+  useEffect22(() => {
     if (!open) return;
     setTitle(board?.title ?? "");
     setDescription(board?.description ?? "");
@@ -17220,7 +17326,7 @@ function TodosBoardToolbar({
 // src/js/tools/todos/TodosPublicHome.jsx
 init_platform();
 import { jsx as jsx37, jsxs as jsxs32 } from "react/jsx-runtime";
-var { useState: useState24, useEffect: useEffect22 } = getReact();
+var { useState: useState25, useEffect: useEffect23 } = getReact();
 var { Box: Box24, Typography: Typography21, Button: Button16, Stack: Stack19, Alert: Alert12, CircularProgress: CircularProgress14, Chip: Chip14 } = getMaterialUI();
 var { Icon: Icon19 } = UI;
 var PUBLIC_CARD_ACCENTS = () => {
@@ -17230,11 +17336,11 @@ var PUBLIC_CARD_ACCENTS = () => {
 function TodosPublicHome() {
   const { GlassCard } = getGlass();
   const accentColors = PUBLIC_CARD_ACCENTS();
-  const [boards, setBoards] = useState24([]);
-  const [loading, setLoading] = useState24(true);
-  const [error, setError] = useState24("");
-  const [selectedSlug, setSelectedSlug] = useState24("");
-  useEffect22(() => {
+  const [boards, setBoards] = useState25([]);
+  const [loading, setLoading] = useState25(true);
+  const [error, setError] = useState25("");
+  const [selectedSlug, setSelectedSlug] = useState25("");
+  useEffect23(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
@@ -17321,14 +17427,14 @@ function TodosPublicHome() {
 
 // src/js/tools/TodosTool.jsx
 import { Fragment as Fragment11, jsx as jsx38, jsxs as jsxs33 } from "react/jsx-runtime";
-var { useState: useState25 } = getReact();
+var { useState: useState26 } = getReact();
 var { Box: Box25, Alert: Alert13 } = getMaterialUI();
 function TodosTool({ bootTodos, onNeedLogin }) {
   if (bootTodos?.publicSlug) {
     return /* @__PURE__ */ jsx38(PublicScrumBoard, { publicSlug: String(bootTodos.publicSlug) });
   }
   const todos = useTodosTool({ bootTodos });
-  const [boardSettingsOpen, setBoardSettingsOpen] = useState25(false);
+  const [boardSettingsOpen, setBoardSettingsOpen] = useState26(false);
   if (!todos.loggedIn) {
     return /* @__PURE__ */ jsx38(TodosPublicHome, {});
   }
@@ -17829,7 +17935,7 @@ init_platform();
 init_systemConfigApi();
 import { jsx as jsx39 } from "react/jsx-runtime";
 import { createElement as createElement4 } from "react";
-var { useState: useState26, useEffect: useEffect23, useRef: useRef11, useCallback: useCallback11 } = getReact();
+var { useState: useState27, useEffect: useEffect24, useRef: useRef12, useCallback: useCallback11 } = getReact();
 var { Autocomplete: Autocomplete3, TextField: TextField13, Typography: Typography22, Box: Box26 } = getMaterialUI();
 var DEBOUNCE_MS3 = 300;
 var DEFAULT_LIMIT = 10;
@@ -17859,11 +17965,11 @@ function PermisosUserAutocomplete({
 }) {
   const toolbar = variant === "toolbar";
   const username = value ? normalizePermisosUsername(value) : null;
-  const [inputValue, setInputValue] = useState26("");
-  const [options, setOptions] = useState26([]);
-  const [loading, setLoading] = useState26(false);
-  const debounceRef = useRef11(null);
-  const requestIdRef = useRef11(0);
+  const [inputValue, setInputValue] = useState27("");
+  const [options, setOptions] = useState27([]);
+  const [loading, setLoading] = useState27(false);
+  const debounceRef = useRef12(null);
+  const requestIdRef = useRef12(0);
   const selected = username ? options.find((o) => o.username === username) ?? (username ? { username, displayName: null } : null) : null;
   const runSearch = useCallback11(async (query) => {
     const id = ++requestIdRef.current;
@@ -17889,7 +17995,7 @@ function PermisosUserAutocomplete({
       runSearch(query);
     }, DEBOUNCE_MS3);
   }, [runSearch]);
-  useEffect23(() => {
+  useEffect24(() => {
     if (!username) {
       setInputValue("");
       return;
@@ -17901,10 +18007,10 @@ function PermisosUserAutocomplete({
     const match = options.find((o) => o.username === username);
     setInputValue(match ? optionLabel2(match) : username);
   }, [value, username, options, onChange]);
-  useEffect23(() => () => {
+  useEffect24(() => () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
   }, []);
-  useEffect23(() => {
+  useEffect24(() => {
     if (disabled) return;
     runSearch("");
   }, [disabled, runSearch]);
@@ -18003,7 +18109,7 @@ var VISITANTE_DEFAULT_PERMISOS = {
 
 // src/js/tools/permisosRoleConfig.jsx
 import { Fragment as Fragment12, jsx as jsx40, jsxs as jsxs34 } from "react/jsx-runtime";
-var { useState: useState27, useEffect: useEffect24, useMemo: useMemo17 } = getReact();
+var { useState: useState28, useEffect: useEffect25, useMemo: useMemo17 } = getReact();
 var {
   Typography: Typography23,
   TextField: TextField14,
@@ -18104,8 +18210,8 @@ function RoleDragDialog({ open, pending, busy, sessionUsername, onClose, onConfi
   );
 }
 function RoleAddDialog({ open, pending, busy, onClose, onConfirm }) {
-  const [username, setUsername] = useState27(null);
-  useEffect24(() => {
+  const [username, setUsername] = useState28(null);
+  useEffect25(() => {
     if (open) setUsername(null);
   }, [open]);
   if (!pending) return null;
@@ -18200,7 +18306,7 @@ function RoleRemoveDialog({ open, pending, busy, sessionUsername, onClose, onCon
 
 // src/js/tools/PermisosKanban.jsx
 import { Fragment as Fragment13, jsx as jsx41, jsxs as jsxs35 } from "react/jsx-runtime";
-var { useState: useState28, useMemo: useMemo18, useRef: useRef12, useEffect: useEffect25, memo: memo3 } = getReact();
+var { useState: useState29, useMemo: useMemo18, useRef: useRef13, useEffect: useEffect26, memo: memo3 } = getReact();
 var { createPortal } = getReactDOM();
 var { Box: Box28, Paper: Paper3, Typography: Typography24, Stack: Stack21, Chip: Chip16, IconButton: IconButton13, Tooltip: Tooltip13, CircularProgress: CircularProgress16 } = getMaterialUI();
 var { Icon: Icon21 } = UI;
@@ -18311,26 +18417,26 @@ function DragGhost2({ card, column, x, y, width }) {
   return typeof document !== "undefined" ? createPortal(node, document.body) : node;
 }
 function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canManage, canEditRoleDescriptions, busy, sessionUsername, filterToolbarRef, onUserFilterDrop, onRoleFilterDrop, onDragOverFilterChange, onRoleDrag, onRoleRemove, onRoleAdd, onUserSummary }) {
-  const [dragOverCol, setDragOverCol] = useState28(null);
-  const [draggingId, setDraggingId] = useState28(null);
-  const [dragGhost, setDragGhost] = useState28(null);
-  const [configCol] = useState28(null);
-  const [dragPending, setDragPending] = useState28(null);
-  const [removePending, setRemovePending] = useState28(null);
-  const [addPending, setAddPending] = useState28(null);
-  const [addingRoleId, setAddingRoleId] = useState28(null);
-  const [processingUsername, setProcessingUsername] = useState28(null);
-  const [selectedUsername, setSelectedUsername] = useState28(null);
-  const [dragSourceCol, setDragSourceCol] = useState28(null);
+  const [dragOverCol, setDragOverCol] = useState29(null);
+  const [draggingId, setDraggingId] = useState29(null);
+  const [dragGhost, setDragGhost] = useState29(null);
+  const [configCol] = useState29(null);
+  const [dragPending, setDragPending] = useState29(null);
+  const [removePending, setRemovePending] = useState29(null);
+  const [addPending, setAddPending] = useState29(null);
+  const [addingRoleId, setAddingRoleId] = useState29(null);
+  const [processingUsername, setProcessingUsername] = useState29(null);
+  const [selectedUsername, setSelectedUsername] = useState29(null);
+  const [dragSourceCol, setDragSourceCol] = useState29(null);
   const columns = boardData?.columns ?? [];
-  const listRefs = useRef12({});
-  const columnRefs = useRef12({});
-  const dragRef = useRef12(null);
-  const cardElRef = useRef12(null);
-  const suppressClickRef = useRef12(false);
-  const processingUserRef = useRef12(null);
-  const kanbanWrapRef = useRef12(null);
-  const dragPendingRef = useRef12(null);
+  const listRefs = useRef13({});
+  const columnRefs = useRef13({});
+  const dragRef = useRef13(null);
+  const cardElRef = useRef13(null);
+  const suppressClickRef = useRef13(false);
+  const processingUserRef = useRef13(null);
+  const kanbanWrapRef = useRef13(null);
+  const dragPendingRef = useRef13(null);
   const filterActive = !!boardData?.filterActive;
   const assignEnabled = !!loggedIn && !!canAssignRoles;
   const filterDragEnabled = !!loggedIn && !canAssignRoles;
@@ -18350,7 +18456,7 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
   }, [dragGhost, columns]);
   const selectedUserKey = selectedUsername ? String(selectedUsername).trim().toUpperCase() : null;
   const processingUserKey = processingUsername ? String(processingUsername).trim().toUpperCase() : null;
-  useEffect25(() => {
+  useEffect26(() => {
     dragPendingRef.current = dragPending;
   }, [dragPending]);
   function userKey(username) {
@@ -18367,7 +18473,7 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
     processingUserRef.current = null;
     setProcessingUsername(null);
   }
-  useEffect25(() => {
+  useEffect26(() => {
     function onDocPointerDown(e) {
       if (e.target.closest(".paty-permisos-user-card")) return;
       if (e.target.closest(".MuiDialog-root, .isa-glass-dialog")) return;
@@ -18499,7 +18605,7 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
     } catch {
     }
   }
-  useEffect25(() => {
+  useEffect26(() => {
     function onPointerMove(e) {
       const state = dragRef.current;
       if (!state || e.pointerId !== state.pointerId) return;
@@ -18941,34 +19047,34 @@ function UserPermissionsSummaryDialog({ open, onClose, username, users, roles })
 
 // src/js/tools/PermisosPanel.jsx
 import { jsx as jsx44, jsxs as jsxs37 } from "react/jsx-runtime";
-var { useState: useState29, useEffect: useEffect26, useCallback: useCallback12, useMemo: useMemo20, useRef: useRef13 } = getReact();
+var { useState: useState30, useEffect: useEffect27, useCallback: useCallback12, useMemo: useMemo20, useRef: useRef14 } = getReact();
 var { Typography: Typography26, Stack: Stack23, Alert: Alert15, CircularProgress: CircularProgress18, Box: Box30, Chip: Chip19, DialogContent: DialogContent12, DialogActions: DialogActions10, Button: Button18, FormControlLabel: FormControlLabel4, Switch: Switch2 } = getMaterialUI();
 function PermisosPanel({ onNeedLogin }) {
-  const [loading, setLoading] = useState29(true);
-  const [busy, setBusy] = useState29(false);
-  const [canManage, setCanManage] = useState29(false);
-  const [canAssignUserRoles, setCanAssignUserRoles] = useState29(false);
-  const [canEditRoleDescriptions, setCanEditRoleDescriptions] = useState29(false);
-  const [authTick, setAuthTick] = useState29(0);
+  const [loading, setLoading] = useState30(true);
+  const [busy, setBusy] = useState30(false);
+  const [canManage, setCanManage] = useState30(false);
+  const [canAssignUserRoles, setCanAssignUserRoles] = useState30(false);
+  const [canEditRoleDescriptions, setCanEditRoleDescriptions] = useState30(false);
+  const [authTick, setAuthTick] = useState30(0);
   const loggedIn = useMemo20(() => !!Session?.isLoggedIn?.(), [authTick]);
   const sessionUsername = useMemo20(() => String(Session.username?.() ?? "").trim().toUpperCase(), [authTick]);
-  const [err, setErr] = useState29("");
-  const [data, setData] = useState29({ roles: [], users: [], contactos: {} });
-  const [userSearch, setUserSearch] = useState29("");
-  const [roleFilters, setRoleFilters] = useState29([]);
-  const [hideEmptyStacks, setHideEmptyStacks] = useState29(readPermisosHideEmptyFromUrl);
-  const [filterBusy, setFilterBusy] = useState29(false);
-  const [dragOverFilter, setDragOverFilter] = useState29(false);
-  const [actorRoles, setActorRoles] = useState29([]);
-  const [patyiaRoles, setPatyiaRoles] = useState29([]);
-  const [patyiaContactos, setPatyiaContactos] = useState29([]);
-  const [patyiaBusy, setPatyiaBusy] = useState29(false);
-  const [summaryUsername, setSummaryUsername] = useState29(null);
-  const filterToolbarRef = useRef13(null);
-  const filterFetchSkipRef = useRef13(true);
-  const filterDropFetchRef = useRef13(false);
-  const rolesRef = useRef13(data.roles);
-  const usersRef = useRef13(data.users);
+  const [err, setErr] = useState30("");
+  const [data, setData] = useState30({ roles: [], users: [], contactos: {} });
+  const [userSearch, setUserSearch] = useState30("");
+  const [roleFilters, setRoleFilters] = useState30([]);
+  const [hideEmptyStacks, setHideEmptyStacks] = useState30(readPermisosHideEmptyFromUrl);
+  const [filterBusy, setFilterBusy] = useState30(false);
+  const [dragOverFilter, setDragOverFilter] = useState30(false);
+  const [actorRoles, setActorRoles] = useState30([]);
+  const [patyiaRoles, setPatyiaRoles] = useState30([]);
+  const [patyiaContactos, setPatyiaContactos] = useState30([]);
+  const [patyiaBusy, setPatyiaBusy] = useState30(false);
+  const [summaryUsername, setSummaryUsername] = useState30(null);
+  const filterToolbarRef = useRef14(null);
+  const filterFetchSkipRef = useRef14(true);
+  const filterDropFetchRef = useRef14(false);
+  const rolesRef = useRef14(data.roles);
+  const usersRef = useRef14(data.users);
   rolesRef.current = data.roles;
   usersRef.current = data.users;
   const usersPaginated = !!data.usersTruncated;
@@ -19035,15 +19141,15 @@ function PermisosPanel({ onNeedLogin }) {
       setPatyiaBusy(false);
     }
   }, [loadPatyia, onNeedLogin]);
-  const loadRef = useRef13(load);
+  const loadRef = useRef14(load);
   loadRef.current = load;
-  useEffect26(() => {
+  useEffect27(() => {
     loadRef.current();
   }, []);
-  useEffect26(() => {
+  useEffect27(() => {
     void loadPatyia();
   }, [loadPatyia]);
-  useEffect26(() => subscribe((snap) => {
+  useEffect27(() => subscribe((snap) => {
     const hide = readPermisosHideEmptyFromUrl(snap);
     setHideEmptyStacks((prev) => prev === hide ? prev : hide);
   }), []);
@@ -19052,7 +19158,7 @@ function PermisosPanel({ onNeedLogin }) {
     persistPermisosHideEmpty(hide);
   }, []);
   const userDirectory = useMemo20(() => buildUserDirectoryFromPermisos(data.users), [data.users]);
-  useEffect26(() => {
+  useEffect27(() => {
     Assets.ensureTodosCss();
     const onAuth = () => {
       setAuthTick((t) => t + 1);
@@ -19149,7 +19255,7 @@ function PermisosPanel({ onNeedLogin }) {
       setFilterBusy(false);
     }
   }, [usersPaginated, applyFlags]);
-  useEffect26(() => {
+  useEffect27(() => {
     if (!usersPaginated) return void 0;
     if (filterFetchSkipRef.current) {
       filterFetchSkipRef.current = false;
@@ -19581,10 +19687,10 @@ function writePromptSkeletonCount(count) {
 
 // src/js/tools/configFieldPersist.ts
 init_platform();
-var { useRef: useRef14, useState: useState30 } = getReact();
+var { useRef: useRef15, useState: useState31 } = getReact();
 function useConfigFieldPersist() {
-  const saveGenRef = useRef14(0);
-  const [fieldBusy, setFieldBusy] = useState30({});
+  const saveGenRef = useRef15(0);
+  const [fieldBusy, setFieldBusy] = useState31({});
   function beginSave(fields) {
     const gen = ++saveGenRef.current;
     if (fields.length) {
@@ -19603,7 +19709,7 @@ function useConfigFieldPersist() {
 
 // src/js/tools/ConfigPromptsOperativosPanel.jsx
 import { Fragment as Fragment15, jsx as jsx45, jsxs as jsxs38 } from "react/jsx-runtime";
-var { useState: useState31, useEffect: useEffect27, useCallback: useCallback13, useRef: useRef15 } = getReact();
+var { useState: useState32, useEffect: useEffect28, useCallback: useCallback13, useRef: useRef16 } = getReact();
 var {
   Typography: Typography27,
   TextField: TextField16,
@@ -19784,9 +19890,9 @@ function ConfigPromptsSkeleton({ count, expandState }) {
   }) });
 }
 function OperativosJsonModal({ open, initial: initial2, readOnly, operativeModel, onClose, onApply }) {
-  const [json, setJson] = useState31(initial2);
-  const [errors, setErrors] = useState31([]);
-  useEffect27(() => {
+  const [json, setJson] = useState32(initial2);
+  const [errors, setErrors] = useState32([]);
+  useEffect28(() => {
     if (open) {
       setJson(initial2);
       setErrors([]);
@@ -19964,20 +20070,20 @@ function PromptDefEditor({ promptKey, def, canEdit, operativeModel, onChange }) 
   ] });
 }
 function ConfigPromptsOperativosPanel({ onNeedLogin, ConfigFormSection: ConfigFormSection2, operativeModel, conversationModel: _conversationModel }) {
-  const [loading, setLoading] = useState31(true);
-  const [canEdit, setCanEdit] = useState31(false);
-  const [config, setConfig] = useState31({});
-  const [saved, setSaved] = useState31({});
-  const savedRef = useRef15(saved);
+  const [loading, setLoading] = useState32(true);
+  const [canEdit, setCanEdit] = useState32(false);
+  const [config, setConfig] = useState32({});
+  const [saved, setSaved] = useState32({});
+  const savedRef = useRef16(saved);
   savedRef.current = saved;
   const { saveGenRef, beginSave, endSave, fieldDisabled } = useConfigFieldPersist();
-  const [jsonOpen, setJsonOpen] = useState31(false);
-  const [expandState, setExpandState] = useState31(() => readPromptAccordionExpandState());
-  const [skeletonCount, setSkeletonCount] = useState31(() => readPromptSkeletonCount());
+  const [jsonOpen, setJsonOpen] = useState32(false);
+  const [expandState, setExpandState] = useState32(() => readPromptAccordionExpandState());
+  const [skeletonCount, setSkeletonCount] = useState32(() => readPromptSkeletonCount());
   const opModel = String(operativeModel ?? DEFAULT_MODELO_OPERATIVO).trim() || DEFAULT_MODELO_OPERATIVO;
   const promptKeys = listPromptKeys(config);
   const { NEON_COLORS } = getGlass();
-  useEffect27(() => {
+  useEffect28(() => {
     writePromptAccordionExpandState(expandState);
   }, [expandState]);
   function isExpanded(key) {
@@ -20004,10 +20110,10 @@ function ConfigPromptsOperativosPanel({ onNeedLogin, ConfigFormSection: ConfigFo
       setLoading(false);
     }
   }, []);
-  useEffect27(() => {
+  useEffect28(() => {
     void load();
   }, [load]);
-  useEffect27(() => {
+  useEffect28(() => {
     const onAuth = () => {
       void load({ soft: true });
     };
@@ -20117,7 +20223,7 @@ function ConfigPromptsOperativosPanel({ onNeedLogin, ConfigFormSection: ConfigFo
 
 // src/js/tools/ConfigTool.jsx
 import { Fragment as Fragment16, jsx as jsx46, jsxs as jsxs39 } from "react/jsx-runtime";
-var { useState: useState32, useEffect: useEffect28, useCallback: useCallback14, useMemo: useMemo21, useRef: useRef16 } = getReact();
+var { useState: useState33, useEffect: useEffect29, useCallback: useCallback14, useMemo: useMemo21, useRef: useRef17 } = getReact();
 var { Paper: Paper5, Typography: Typography28, TextField: TextField17, Stack: Stack25, Alert: Alert17, Box: Box32, FormControl: FormControl8, InputLabel: InputLabel5, Select: Select8, MenuItem: MenuItem8, Tooltip: Tooltip15, DialogContent: DialogContent14, DialogActions: DialogActions12, Button: Button20, Divider: Divider7 } = getMaterialUI();
 var { Icon: Icon23 } = UI;
 function ConfigFormSection({ icon, title, description, chips, actions, footer, children, className, accent }) {
@@ -20180,9 +20286,9 @@ function ConfigFormSection({ icon, title, description, chips, actions, footer, c
   );
 }
 function OpenAiJsonModal({ open, initial: initial2, readOnly, modelOptions, onClose, onApply }) {
-  const [json, setJson] = useState32(initial2);
-  const [errors, setErrors] = useState32([]);
-  useEffect28(() => {
+  const [json, setJson] = useState33(initial2);
+  const [errors, setErrors] = useState33([]);
+  useEffect29(() => {
     if (open) {
       setJson(initial2);
       setErrors([]);
@@ -20229,7 +20335,7 @@ function ConfigTool({ onNeedLogin, pane = "sistema" }) {
   return /* @__PURE__ */ jsx46("div", { className: "tool-grid tool-grid-config isa-tool-surface", children: /* @__PURE__ */ jsx46(Paper5, { className: "tool-panel scroll-panel config-tool-panel", elevation: 0, children: pane === "permisos" ? /* @__PURE__ */ jsx46("div", { className: "panel-body config-panel-body config-panel-body--permisos custom-scrollbar", children: /* @__PURE__ */ jsx46(PermisosPanel, { onNeedLogin }) }) : /* @__PURE__ */ jsx46(SistemaConfigBody, { onNeedLogin }) }) });
 }
 function SistemaConfigBody({ onNeedLogin }) {
-  const [openAiModels, setOpenAiModels] = useState32(() => ({ modeloOperativo: buildDefaults().modeloOperativo, modeloConversacion: buildDefaults().modeloConversacion }));
+  const [openAiModels, setOpenAiModels] = useState33(() => ({ modeloOperativo: buildDefaults().modeloOperativo, modeloConversacion: buildDefaults().modeloConversacion }));
   return /* @__PURE__ */ jsx46("div", { className: "panel-body config-panel-body custom-scrollbar", children: /* @__PURE__ */ jsxs39(Box32, { className: "config-panel-inner config-panel-inner--form config-sections-stack", children: [
     /* @__PURE__ */ jsx46(OpenAiSection, { onNeedLogin, onModelsChange: setOpenAiModels }),
     /* @__PURE__ */ jsx46(Divider7, { className: "config-form-divider", role: "separator", "aria-hidden": "true" }),
@@ -20245,12 +20351,12 @@ function SistemaConfigBody({ onNeedLogin }) {
   ] }) });
 }
 function OpenAiSection({ onNeedLogin, onModelsChange }) {
-  const [loading, setLoading] = useState32(true);
-  const [canEdit, setCanEdit] = useState32(false);
-  const [jsonOpen, setJsonOpen] = useState32(false);
-  const [config, setConfig] = useState32(buildDefaults);
-  const [saved, setSaved] = useState32(buildDefaults);
-  const savedRef = useRef16(saved);
+  const [loading, setLoading] = useState33(true);
+  const [canEdit, setCanEdit] = useState33(false);
+  const [jsonOpen, setJsonOpen] = useState33(false);
+  const [config, setConfig] = useState33(buildDefaults);
+  const [saved, setSaved] = useState33(buildDefaults);
+  const savedRef = useRef17(saved);
   savedRef.current = saved;
   const { saveGenRef, beginSave, endSave, fieldDisabled } = useConfigFieldPersist();
   const modelOptions = useMemo21(() => modelSelectOptions(config.modeloOperativo, config.modeloConversacion), [config]);
@@ -20269,10 +20375,10 @@ function OpenAiSection({ onNeedLogin, onModelsChange }) {
       setLoading(false);
     }
   }, [onModelsChange]);
-  useEffect28(() => {
+  useEffect29(() => {
     void load();
   }, [load]);
-  useEffect28(() => {
+  useEffect29(() => {
     const onAuth = () => {
       void load({ soft: true });
     };
@@ -20570,8 +20676,8 @@ var TONE_COLOR = {
   loading: "var(--pw-cyan, #22d3ee)"
 };
 function useOpenAiStatus() {
-  const { useSyncExternalStore, useEffect: useEffect30 } = getReact();
-  useEffect30(() => {
+  const { useSyncExternalStore, useEffect: useEffect31 } = getReact();
+  useEffect31(() => {
     startOpenAiStatusPolling();
   }, []);
   return useSyncExternalStore(subscribeOpenAiStatus, getOpenAiStatusView, getOpenAiStatusView);
@@ -20696,9 +20802,9 @@ function OpenAiStatusRing({
   ) });
 }
 function BrandOpenAiStatus({ size = 12 }) {
-  const { useState: useState34, useEffect: useEffect30, useLayoutEffect: useLayoutEffect3 } = getReact();
+  const { useState: useState35, useEffect: useEffect31, useLayoutEffect: useLayoutEffect3 } = getReact();
   const { createPortal: createPortal2 } = getReactDOM();
-  const [host, setHost] = useState34(null);
+  const [host, setHost] = useState35(null);
   useLayoutEffect3(() => {
     const brand = document.querySelector(".isa-app-brand");
     if (!brand) return void 0;
@@ -20711,7 +20817,7 @@ function BrandOpenAiStatus({ size = 12 }) {
     setHost(mount);
     return void 0;
   }, []);
-  useEffect30(() => {
+  useEffect31(() => {
     startOpenAiStatusPolling();
   }, []);
   if (!host || !createPortal2) return null;
@@ -20962,12 +21068,12 @@ init_IssTargetSwitch();
 init_platform();
 init_sessionApi();
 import { jsx as jsx49, jsxs as jsxs42 } from "react/jsx-runtime";
-var { useState: useState33, useEffect: useEffect29 } = getReact();
+var { useState: useState34, useEffect: useEffect30 } = getReact();
 var { Box: Box33, Select: Select9, MenuItem: MenuItem9, IconButton: IconButton14 } = getMaterialUI();
 var { Icon: Icon26 } = UI;
 function useViewAsTick() {
-  const [tick, setTick] = useState33(0);
-  useEffect29(() => {
+  const [tick, setTick] = useState34(0);
+  useEffect30(() => {
     function refresh() {
       setTick((n) => n + 1);
     }
@@ -21124,26 +21230,26 @@ function LocalIssBadge() {
   return /* @__PURE__ */ jsx50(IssTargetChip, {});
 }
 function App() {
-  const { useState: useState34, useEffect: useEffect30, useMemo: useMemo22 } = getReact();
+  const { useState: useState35, useEffect: useEffect31, useMemo: useMemo22 } = getReact();
   const { LoginButton } = UI;
   const boot = bootState;
-  useEffect30(() => {
+  useEffect31(() => {
     startOpenAiStatusPolling();
     return () => {
       stopOpenAiStatusPolling();
     };
   }, []);
-  const [appBoot, setAppBoot] = useState34(boot);
-  const [tool, setTool] = useState34(() => boot.tool || "home");
-  const [chatPane, setChatPane] = useState34(() => readChatPane(boot));
-  const [configPane, setConfigPane] = useState34(() => readConfigPane(boot));
-  const [authOpen, setAuthOpen] = useState34(false);
-  const [authTick, setAuthTick] = useState34(0);
-  const [homeTick, setHomeTick] = useState34(0);
-  const [authDownReason, setAuthDownReason] = useState34(null);
-  const [authDownTarget, setAuthDownTarget] = useState34(null);
+  const [appBoot, setAppBoot] = useState35(boot);
+  const [tool, setTool] = useState35(() => boot.tool || "home");
+  const [chatPane, setChatPane] = useState35(() => readChatPane(boot));
+  const [configPane, setConfigPane] = useState35(() => readConfigPane(boot));
+  const [authOpen, setAuthOpen] = useState35(false);
+  const [authTick, setAuthTick] = useState35(0);
+  const [homeTick, setHomeTick] = useState35(0);
+  const [authDownReason, setAuthDownReason] = useState35(null);
+  const [authDownTarget, setAuthDownTarget] = useState35(null);
   const publicScrumView = isPublicScrumBoot(appBoot.todos);
-  useEffect30(() => {
+  useEffect31(() => {
     const onDown = (ev) => {
       try {
         const s = window.ISA?.AuthApi?.readSession?.() ?? window.ISA?.Session?.current;
@@ -21165,11 +21271,11 @@ function App() {
       window.removeEventListener("isa-patyia:auth-server-up", onUp);
     };
   }, []);
-  useEffect30(() => {
+  useEffect31(() => {
     Assets.ensureMarked().catch(() => {
     });
   }, []);
-  useEffect30(() => {
+  useEffect31(() => {
     return subscribe(() => {
       const snap = getSnapshot();
       setAppBoot(snap);
@@ -21178,12 +21284,12 @@ function App() {
       setConfigPane(readConfigPane(snap));
     });
   }, []);
-  useEffect30(() => {
+  useEffect31(() => {
     if (tool === "home") Assets.ensureWelcomeCss();
     if (tool === "chat") Assets.ensureChatStagingCss();
     if (tool === "todos" || publicScrumView) Assets.ensureTodosCss();
   }, [tool, publicScrumView]);
-  useEffect30(() => {
+  useEffect31(() => {
     if (publicScrumView) {
       document.documentElement.classList.add("paty-public-scrum");
     } else {
@@ -21191,7 +21297,7 @@ function App() {
     }
     return () => document.documentElement.classList.remove("paty-public-scrum");
   }, [publicScrumView]);
-  useEffect30(() => {
+  useEffect31(() => {
     if (publicScrumView && tool !== "todos") {
       setTool("todos");
     }
@@ -21203,14 +21309,14 @@ function App() {
   })), [publicScrumView]);
   const chatPanes = useMemo22(() => navTabs(CHAT_PANES), []);
   const configPanes = useMemo22(() => navTabs(CONFIG_PANES), []);
-  useEffect30(() => {
+  useEffect31(() => {
     if (publicScrumView) return;
     if (!DEVFLOW_NAV_ENABLED && tool === "todos") {
       setTool("chat");
       mergePartial({ tool: "chat" });
     }
   }, [publicScrumView, tool, authTick]);
-  useEffect30(() => {
+  useEffect31(() => {
     let alive = true;
     function onAuth() {
       if (!alive) return;
@@ -21228,7 +21334,7 @@ function App() {
       window.removeEventListener("patyia-apptools:caps-changed", onAuth);
     };
   }, []);
-  useEffect30(() => {
+  useEffect31(() => {
     function onBrandHome() {
       setAppBoot(getSnapshot());
       setTool("home");
