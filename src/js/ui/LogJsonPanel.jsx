@@ -1,38 +1,9 @@
 import { getReact, getMaterialUI, UI } from "../core/platform.ts";
+import { ensureIsCodeReady, sanitizeLogJsonForDisplay } from "../core/isCodeCdn.ts";
 
-const { useMemo } = getReact();
+const { useMemo, useEffect, useRef, useState } = getReact();
 const { Box, Typography, Stack, Chip, Tooltip, IconButton } = getMaterialUI();
 const { Icon } = UI;
-
-const URL_RE = /https?:\/\/[^\s"'<>\\]+/gi;
-
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function linkifyJson(raw) {
-  const src = String(raw ?? "");
-  const parts = [];
-  let last = 0;
-  URL_RE.lastIndex = 0;
-  let m = URL_RE.exec(src);
-  while (m) {
-    if (m.index > last) parts.push(escapeHtml(src.slice(last, m.index)));
-    const href = m[0].replace(/[),.;]+$/, "");
-    const trail = m[0].slice(href.length);
-    parts.push(
-      `<a class="log-json-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(href)}</a>${escapeHtml(trail)}`,
-    );
-    last = m.index + m[0].length;
-    m = URL_RE.exec(src);
-  }
-  if (last < src.length) parts.push(escapeHtml(src.slice(last)));
-  return parts.join("");
-}
 
 function asFileRefs(list) {
   if (!Array.isArray(list)) return [];
@@ -85,13 +56,64 @@ export function MetaFilesStrip({ files, title = "Adjuntos FILES_STORAGE" }) {
   );
 }
 
+function IsCodeJsonView({ value }) {
+  const hostRef = useRef(null);
+  const [ready, setReady] = useState(() => typeof customElements !== "undefined" && Boolean(customElements.get("is-code")));
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    ensureIsCodeReady().then((ok) => {
+      if (cancelled) return;
+      setReady(ok);
+      if (!ok) setFailed(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!ready || !hostRef.current) return;
+    const host = hostRef.current;
+    let el = host.querySelector("is-code");
+    if (!el) {
+      el = document.createElement("is-code");
+      el.setAttribute("lang", "json");
+      el.setAttribute("readonly", "");
+      el.setAttribute("wrap", "");
+      el.setAttribute("line-numbers", "false");
+      el.setAttribute("min-height", "14rem");
+      el.className = "log-json-panel__is-code";
+      host.replaceChildren(el);
+    }
+    const text = String(value ?? "");
+    if (el.value !== text) el.value = text;
+  }, [ready, value]);
+
+  if (failed) {
+    return (
+      <pre className="log-json-panel__pre custom-scrollbar">{String(value ?? "")}</pre>
+    );
+  }
+
+  return (
+    <div
+      ref={hostRef}
+      className="log-json-panel__code-host custom-scrollbar"
+      aria-label="Fragmento JSON del conv-log"
+    />
+  );
+}
+
 export function LogJsonPanel({ value, files = null, onCopy }) {
   const json = useMemo(() => {
     if (value == null) return "";
-    if (typeof value === "string") return value;
-    try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+    let raw = "";
+    if (typeof value === "string") raw = value;
+    else {
+      try { raw = JSON.stringify(value, null, 2); } catch { raw = String(value); }
+    }
+    return sanitizeLogJsonForDisplay(raw);
   }, [value]);
-  const html = useMemo(() => linkifyJson(json), [json]);
 
   return (
     <Box className="log-json-panel">
@@ -113,7 +135,7 @@ export function LogJsonPanel({ value, files = null, onCopy }) {
         </Tooltip>
       </Stack>
       <MetaFilesStrip files={files} />
-      <pre className="log-json-panel__pre custom-scrollbar" dangerouslySetInnerHTML={{ __html: html }} />
+      <IsCodeJsonView value={json} />
     </Box>
   );
 }
