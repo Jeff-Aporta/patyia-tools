@@ -531,8 +531,14 @@ function ImageLightboxDialog(props) {
 
 // src/js/ui/LogJsonPanel.jsx
 init_platform();
+
+// src/js/core/isCodeCdn.ts
+var IS_WC_SHA = "1ce1d12227f2988877b81b8f35cba2507dc16bf1";
+var IS_CODE_JS = `https://cdn.jsdelivr.net/gh/Jeff-Aporta/is-webcomponents@${IS_WC_SHA}/dist/cdn/code/code.min.js`;
+
+// src/js/ui/LogJsonPanel.jsx
 import { jsx as jsx2, jsxs } from "react/jsx-runtime";
-var { useMemo } = getReact();
+var { useMemo, useEffect: useEffect2, useRef, useState: useState2 } = getReact();
 var { Box, Typography, Stack, Chip, Tooltip, IconButton } = getMaterialUI();
 var { Icon } = UI;
 
@@ -887,7 +893,7 @@ function compactFileChipLabel(filename, maxLen = 28) {
 
 // src/js/ui/shared.jsx
 import { Fragment, jsx as jsx4, jsxs as jsxs3 } from "react/jsx-runtime";
-var { useState: useState2, useEffect: useEffect2, useMemo: useMemo2 } = getReact();
+var { useState: useState3, useEffect: useEffect3, useMemo: useMemo2 } = getReact();
 var { createTheme, Tabs, Tab, Box: Box2, Typography: Typography2, DialogContent, Stack: Stack2, Chip: Chip2 } = getMaterialUI();
 function isOpenAiPmptId(id) {
   return /^pmpt_/i.test(String(id ?? "").trim());
@@ -1025,13 +1031,13 @@ function metaWorthDialog(meta, isUser) {
 }
 function FileSearchMetaSection({ meta }) {
   const { Typography: Typography3, Box: Box3, Stack: Stack3, Chip: Chip3, IconButton: IconButton2, Tooltip: Tooltip2 } = getMaterialUI();
-  const { useState: useState4, useMemo: useMemo4 } = getReact();
+  const { useState: useState5, useMemo: useMemo4 } = getReact();
   const trace = fileSearchFromMeta(meta);
   const archivos = archivosCitadosFromMeta(meta);
   const chunks = useMemo4(() => chunksFromMeta(meta), [meta]);
   const vectorStores = useMemo4(() => vectorStoresFromMeta(meta), [meta]);
-  const [expandedKey, setExpandedKey] = useState4(null);
-  const [openChunk, setOpenChunk] = useState4(null);
+  const [expandedKey, setExpandedKey] = useState5(null);
+  const [openChunk, setOpenChunk] = useState5(null);
   if (!trace?.length && !archivos.length && !chunks.length && !vectorStores.length) return null;
   function toggleChunk(key) {
     setExpandedKey((prev) => prev === key ? null : key);
@@ -1301,18 +1307,18 @@ function MdFullPageDialog({
 // src/js/ui/ConvLogWebView.jsx
 init_platform();
 import { Fragment as Fragment2, jsx as jsx5, jsxs as jsxs4 } from "react/jsx-runtime";
-var { useMemo: useMemo3, useState: useState3, useRef, useEffect: useEffect3, memo } = getReact();
+var { useMemo: useMemo3, useState: useState4, useRef: useRef2, useEffect: useEffect4, memo } = getReact();
 function useOperativaEnterIds(mensajes, threadKey, { enabled = true } = {}) {
-  const seenIdsRef = useRef(/* @__PURE__ */ new Set());
-  const primedKeyRef = useRef(null);
-  const [enterIds, setEnterIds] = useState3(() => /* @__PURE__ */ new Set());
-  useEffect3(() => {
+  const seenIdsRef = useRef2(/* @__PURE__ */ new Set());
+  const primedKeyRef = useRef2(null);
+  const [enterIds, setEnterIds] = useState4(() => /* @__PURE__ */ new Set());
+  useEffect4(() => {
     if (primedKeyRef.current === threadKey) return;
     primedKeyRef.current = threadKey;
     seenIdsRef.current = /* @__PURE__ */ new Set();
     setEnterIds(/* @__PURE__ */ new Set());
   }, [threadKey]);
-  useEffect3(() => {
+  useEffect4(() => {
     if (!enabled) return;
     const msgs = mensajes || [];
     if (primedKeyRef.current !== threadKey) return;
@@ -1946,14 +1952,14 @@ function scheduleIframeRepaint(iframe, delaysMs = [0, 80, 200, 500, 1e3, 2e3, 4e
 function ContapymeLoginEmbed({ url, onLoginDone }) {
   const { Stack: Stack3, Button, Dialog, DialogContent: DialogContent2 } = getMaterialUI();
   const { Icon: Icon2 } = UI;
-  const [open, setOpen] = useState3(false);
-  const [hostReady, setHostReady] = useState3(false);
-  const [geomNudge, setGeomNudge] = useState3(0);
-  const iframeRef = useRef(null);
-  const contentRef = useRef(null);
-  const tabOpenedRef = useRef(false);
-  const doneOnceRef = useRef(false);
-  const cancelRepaintRef = useRef(null);
+  const [open, setOpen] = useState4(false);
+  const [hostReady, setHostReady] = useState4(false);
+  const [geomNudge, setGeomNudge] = useState4(0);
+  const iframeRef = useRef2(null);
+  const contentRef = useRef2(null);
+  const tabOpenedRef = useRef2(false);
+  const doneOnceRef = useRef2(false);
+  const cancelRepaintRef = useRef2(null);
   const signalDone = () => {
     if (doneOnceRef.current) return;
     doneOnceRef.current = true;
@@ -1967,7 +1973,7 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
     setGeomNudge(0);
     signalDone();
   };
-  useEffect3(() => {
+  useEffect4(() => {
     if (!open) {
       setHostReady(false);
       return void 0;
@@ -2004,7 +2010,7 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
       window.clearTimeout(fallback);
     };
   }, [open, url]);
-  useEffect3(() => {
+  useEffect4(() => {
     if (!open || !hostReady) return void 0;
     const host = contentRef.current;
     const iframe = iframeRef.current;
@@ -2035,7 +2041,7 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
       ro?.disconnect();
     };
   }, [open, hostReady, url]);
-  useEffect3(() => {
+  useEffect4(() => {
     if (!tabOpenedRef.current) return void 0;
     const onVis = () => {
       if (document.visibilityState === "visible") signalDone();
@@ -2446,7 +2452,7 @@ function McpToolsSection({ tools, GlassSection, GlassInner }) {
 }
 function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
   const { DialogContent: DialogContent2, Typography: Typography3, Box: Box3, Chip: Chip3, Stack: Stack3, Tooltip: Tooltip2, IconButton: IconButton2 } = getMaterialUI();
-  const { useMemo: useMemo4, useState: useState4 } = getReact();
+  const { useMemo: useMemo4, useState: useState5 } = getReact();
   let glass = null;
   try {
     glass = getGlass();
@@ -2498,7 +2504,7 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
     const tools = meta?.http_response?.tools;
     return Array.isArray(tools) ? tools : [];
   }, [meta]);
-  const [openChunk, setOpenChunk] = useState4(null);
+  const [openChunk, setOpenChunk] = useState5(null);
   const opKey = meta?.extra?.operativa_key;
   const header = resolveUsageDialogHeader(msgLabel, fecha, opKey);
   const showMetaPanel = Boolean(
@@ -2829,7 +2835,7 @@ function UsageDialogSection({ section, GlassSection, GlassInner }) {
 }
 function UsageStatsColumn({ stats, align = "right", msgLabel, fecha, meta, isUser = false }) {
   const { Box: Box3 } = getMaterialUI();
-  const [open, setOpen] = useState3(false);
+  const [open, setOpen] = useState4(false);
   const modelRaw = String(meta?.model ?? "").trim();
   const modelLabel = modelRaw ? modelBadgeLabel(modelRaw) : "";
   const latencyLabel = formatLatencySeconds(meta?.latency_ms);
@@ -3079,7 +3085,7 @@ function resolveMsgImensaje(msg) {
 }
 var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = false, chatUserDisplayName, chatUserNick, showUsageStats = false, onImageClick, streamingMsgId = null, onRateMessage = null, canRate = false, ratingMsgId = null, operativaEnter = false, onContapymeLoginDone = null }) {
   const { Alert, Box: Box3 } = getMaterialUI();
-  const [fileSearchOpen, setFileSearchOpen] = useState3(false);
+  const [fileSearchOpen, setFileSearchOpen] = useState4(false);
   const meta = roleMetaFor(msg, compactMeta);
   const title = roleTitle(msg, chatUserDisplayName, chatUserNick);
   const titleCaption = roleUserCaption(msg, chatUserNick);
@@ -3251,7 +3257,7 @@ var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = 
 }, (prev, next) => prev.msg === next.msg && prev.streamingMsgId === next.streamingMsgId && prev.compactMeta === next.compactMeta && prev.chatUserDisplayName === next.chatUserDisplayName && prev.chatUserNick === next.chatUserNick && prev.showUsageStats === next.showUsageStats && prev.ratingMsgId === next.ratingMsgId && prev.canRate === next.canRate && prev.operativaEnter === next.operativaEnter);
 function ConvLogWebView({ mensajes, onMeta, compactMeta = false, emptyHint, chatUserDisplayName, chatUserNick, showUsageStats = true, streamingMsgId = null, onRateMessage = null, canRate = false, ratingMsgId = null, threadKey = null, threadClassName = "", onContapymeLoginDone = null }) {
   const { Box: Box3, Typography: Typography3 } = getMaterialUI();
-  const [lightboxSrc, setLightboxSrc] = useState3(null);
+  const [lightboxSrc, setLightboxSrc] = useState4(null);
   const operativaEnterIds = useOperativaEnterIds(mensajes, threadKey, { enabled: !compactMeta });
   const mensajesConStats = useMemo3(
     () => attachUsageStats(mensajes || []),
