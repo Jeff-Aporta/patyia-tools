@@ -1950,6 +1950,44 @@ function isDisplayableAudioRef(ref) {
   if (!n) return false;
   return n.startsWith("data:audio/") || /^https?:\/\//i.test(n);
 }
+function extractOthersAudiosPairs(others) {
+  const o = others && typeof others === "object" ? others : {};
+  const urls = [];
+  const transcriptions = [];
+  if (Array.isArray(o.audios) && o.audios.length) {
+    for (const raw of o.audios) {
+      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+        const item = raw;
+        const url = String(item.url ?? "").trim();
+        const tr = String(item.transcrip ?? item.transcripcion ?? "").trim();
+        if (url && isDisplayableAudioRef(url)) {
+          urls.push(url);
+          transcriptions.push(tr);
+        } else if (tr) {
+        }
+      } else if (typeof raw === "string" && isDisplayableAudioRef(raw)) {
+        urls.push(raw);
+        transcriptions.push("");
+      }
+    }
+    return { urls, transcriptions };
+  }
+  const legacyUrls = Array.isArray(o.audios_adjuntas) ? o.audios_adjuntas : [];
+  const legacyTrs = Array.isArray(o.audios_transcripcion) ? o.audios_transcripcion : [];
+  for (let i = 0; i < legacyUrls.length; i++) {
+    const url = String(legacyUrls[i] ?? "").trim();
+    if (!isDisplayableAudioRef(url)) continue;
+    urls.push(url);
+    transcriptions.push(String(legacyTrs[i] ?? "").trim());
+  }
+  if (!urls.length && legacyTrs.length) {
+    for (const t of legacyTrs) {
+      const tr = String(t ?? "").trim();
+      if (tr) transcriptions.push(tr);
+    }
+  }
+  return { urls, transcriptions };
+}
 function stripOmittedVisionFromText(texto) {
   return String(texto ?? "").split("\n").filter((line) => {
     const t = line.trim();
@@ -2259,10 +2297,9 @@ function flattenConvLogMensaje(m) {
     }
     const imagenes = Array.isArray(o.imagenes_adjuntas) ? o.imagenes_adjuntas.filter(isDisplayableImageRef) : [];
     if (imagenes.length) flat.imagenes = imagenes;
-    const audios = Array.isArray(o.audios_adjuntas) ? o.audios_adjuntas.filter(isDisplayableAudioRef) : [];
-    if (audios.length) flat.audios = audios;
-    const audiosTranscripcion = Array.isArray(o.audios_transcripcion) ? o.audios_transcripcion.map((t) => String(t ?? "").trim()).filter(Boolean) : [];
-    if (audiosTranscripcion.length) flat.audios_transcripcion = audiosTranscripcion;
+    const audioPairs = extractOthersAudiosPairs(o);
+    if (audioPairs.urls.length) flat.audios = audioPairs.urls;
+    if (audioPairs.transcriptions.length) flat.audios_transcripcion = audioPairs.transcriptions;
     const prompt = s?.prompt;
     if (prompt?.id) flat.prompt_id = prompt.id;
     if (prompt?.variables) flat.prompt_variables = prompt.variables;
@@ -2567,8 +2604,9 @@ function convLogToMsgVista(m, i, userSendForTurn, userVectorStoreIds) {
     const merged = mergeUserImagenes(send, others, String(send?.text ?? m.text ?? others.prompt_text ?? ""));
     contenido = merged.text;
     imagenes = merged.imagenes;
-    audios = Array.isArray(others.audios_adjuntas) ? others.audios_adjuntas.filter(isDisplayableAudioRef) : [];
-    audiosTranscripcion = Array.isArray(others.audios_transcripcion) ? others.audios_transcripcion.map((t) => String(t ?? "").trim()).filter(Boolean) : [];
+    const audioPairs = extractOthersAudiosPairs(others);
+    audios = audioPairs.urls;
+    audiosTranscripcion = audioPairs.transcriptions;
   } else {
     contenido = resolveAssistantLogContenido(others, receive, m.text);
     if (esOperativa && !contenido.trim() && receive && typeof receive === "object") {
@@ -2702,33 +2740,54 @@ function ImageLightboxDialog(props) {
 
 // src/js/ui/LogJsonPanel.jsx
 init_platform();
+
+// src/js/core/isCodeCdn.ts
+var IS_WC_SHA = "1ce1d12227f2988877b81b8f35cba2507dc16bf1";
+var IS_CODE_JS = `https://cdn.jsdelivr.net/gh/Jeff-Aporta/is-webcomponents@${IS_WC_SHA}/dist/cdn/code/code.min.js`;
+var loadPromise2 = null;
+function isCodeElementReady() {
+  return typeof customElements !== "undefined" && Boolean(customElements.get("is-code"));
+}
+function ensureIsCodeReady() {
+  if (isCodeElementReady()) return Promise.resolve(true);
+  if (loadPromise2) return loadPromise2;
+  loadPromise2 = (async () => {
+    if (typeof document === "undefined") return false;
+    const existing = [...document.scripts].find((s) => (s.src || "").includes("/dist/cdn/code/code.min.js"));
+    if (!existing) {
+      await new Promise((resolve, reject) => {
+        const el = document.createElement("script");
+        el.type = "module";
+        el.src = IS_CODE_JS;
+        el.onload = () => resolve();
+        el.onerror = () => reject(new Error(`No se pudo cargar is-code CDN: ${IS_CODE_JS}`));
+        document.head.appendChild(el);
+      });
+    }
+    try {
+      await customElements.whenDefined("is-code");
+    } catch {
+    }
+    return isCodeElementReady();
+  })().catch((err) => {
+    loadPromise2 = null;
+    console.warn("[is-code]", err);
+    return false;
+  });
+  return loadPromise2;
+}
+function sanitizeLogJsonForDisplay(raw) {
+  return String(raw ?? "").replace(
+    /data:audio\/[a-z0-9.+-]+(?:;[^,]*)?;base64,[A-Za-z0-9+/=\s]+/gi,
+    (m) => `[audio:data-url omitido \xB7 ${m.length} chars \u2014 persiste en R2 como .mp3]`
+  );
+}
+
+// src/js/ui/LogJsonPanel.jsx
 import { jsx as jsx2, jsxs } from "react/jsx-runtime";
-var { useMemo } = getReact();
+var { useMemo, useEffect: useEffect2, useRef, useState: useState2 } = getReact();
 var { Box, Typography, Stack, Chip, Tooltip, IconButton } = getMaterialUI();
 var { Icon } = UI;
-var URL_RE = /https?:\/\/[^\s"'<>\\]+/gi;
-function escapeHtml(s) {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-function linkifyJson(raw) {
-  const src = String(raw ?? "");
-  const parts = [];
-  let last = 0;
-  URL_RE.lastIndex = 0;
-  let m = URL_RE.exec(src);
-  while (m) {
-    if (m.index > last) parts.push(escapeHtml(src.slice(last, m.index)));
-    const href = m[0].replace(/[),.;]+$/, "");
-    const trail = m[0].slice(href.length);
-    parts.push(
-      `<a class="log-json-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(href)}</a>${escapeHtml(trail)}`
-    );
-    last = m.index + m[0].length;
-    m = URL_RE.exec(src);
-  }
-  if (last < src.length) parts.push(escapeHtml(src.slice(last)));
-  return parts.join("");
-}
 function asFileRefs(list) {
   if (!Array.isArray(list)) return [];
   return list.map((item) => {
@@ -2764,17 +2823,64 @@ function MetaFilesStrip({ files, title = "Adjuntos FILES_STORAGE" }) {
     ] }) }, `${f.ifile || f.url}-${i}`)) })
   ] });
 }
+function IsCodeJsonView({ value }) {
+  const hostRef = useRef(null);
+  const [ready, setReady] = useState2(() => typeof customElements !== "undefined" && Boolean(customElements.get("is-code")));
+  const [failed, setFailed] = useState2(false);
+  useEffect2(() => {
+    let cancelled = false;
+    ensureIsCodeReady().then((ok) => {
+      if (cancelled) return;
+      setReady(ok);
+      if (!ok) setFailed(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect2(() => {
+    if (!ready || !hostRef.current) return;
+    const host = hostRef.current;
+    let el = host.querySelector("is-code");
+    if (!el) {
+      el = document.createElement("is-code");
+      el.setAttribute("lang", "json");
+      el.setAttribute("readonly", "");
+      el.setAttribute("wrap", "");
+      el.setAttribute("line-numbers", "false");
+      el.setAttribute("min-height", "14rem");
+      el.className = "log-json-panel__is-code";
+      host.replaceChildren(el);
+    }
+    const text = String(value ?? "");
+    if (el.value !== text) el.value = text;
+  }, [ready, value]);
+  if (failed) {
+    return /* @__PURE__ */ jsx2("pre", { className: "log-json-panel__pre custom-scrollbar", children: String(value ?? "") });
+  }
+  return /* @__PURE__ */ jsx2(
+    "div",
+    {
+      ref: hostRef,
+      className: "log-json-panel__code-host custom-scrollbar",
+      "aria-label": "Fragmento JSON del conv-log"
+    }
+  );
+}
 function LogJsonPanel({ value, files = null, onCopy }) {
   const json = useMemo(() => {
     if (value == null) return "";
-    if (typeof value === "string") return value;
-    try {
-      return JSON.stringify(value, null, 2);
-    } catch {
-      return String(value);
+    let raw = "";
+    if (typeof value === "string") raw = value;
+    else {
+      try {
+        raw = JSON.stringify(value, null, 2);
+      } catch {
+        raw = String(value);
+      }
     }
+    return sanitizeLogJsonForDisplay(raw);
   }, [value]);
-  const html = useMemo(() => linkifyJson(json), [json]);
   return /* @__PURE__ */ jsxs(Box, { className: "log-json-panel", children: [
     /* @__PURE__ */ jsxs(Stack, { direction: "row", alignItems: "center", spacing: 0.75, sx: { mb: 0.85 }, children: [
       /* @__PURE__ */ jsx2("iconify-icon", { icon: "mdi:code-json", width: "18", height: "18" }),
@@ -2796,7 +2902,7 @@ function LogJsonPanel({ value, files = null, onCopy }) {
       ) })
     ] }),
     /* @__PURE__ */ jsx2(MetaFilesStrip, { files }),
-    /* @__PURE__ */ jsx2("pre", { className: "log-json-panel__pre custom-scrollbar", dangerouslySetInnerHTML: { __html: html } })
+    /* @__PURE__ */ jsx2(IsCodeJsonView, { value: json })
   ] });
 }
 
@@ -3169,7 +3275,7 @@ function compactFileChipLabel(filename, maxLen = 28) {
 
 // src/js/ui/shared.jsx
 import { Fragment, jsx as jsx4, jsxs as jsxs3 } from "react/jsx-runtime";
-var { useState: useState2, useEffect: useEffect2, useMemo: useMemo2 } = getReact();
+var { useState: useState3, useEffect: useEffect3, useMemo: useMemo2 } = getReact();
 var { createTheme, Tabs, Tab, Box: Box2, Typography: Typography2, DialogContent, Stack: Stack2, Chip: Chip2 } = getMaterialUI();
 function isOpenAiPmptId(id) {
   return /^pmpt_/i.test(String(id ?? "").trim());
@@ -3390,13 +3496,13 @@ function metaWorthDialog(meta, isUser) {
 }
 function FileSearchMetaSection({ meta }) {
   const { Typography: Typography9, Box: Box12, Stack: Stack7, Chip: Chip5, IconButton: IconButton7, Tooltip: Tooltip6 } = getMaterialUI();
-  const { useState: useState11, useMemo: useMemo11 } = getReact();
+  const { useState: useState12, useMemo: useMemo11 } = getReact();
   const trace = fileSearchFromMeta(meta);
   const archivos = archivosCitadosFromMeta(meta);
   const chunks = useMemo11(() => chunksFromMeta(meta), [meta]);
   const vectorStores = useMemo11(() => vectorStoresFromMeta(meta), [meta]);
-  const [expandedKey, setExpandedKey] = useState11(null);
-  const [openChunk, setOpenChunk] = useState11(null);
+  const [expandedKey, setExpandedKey] = useState12(null);
+  const [openChunk, setOpenChunk] = useState12(null);
   if (!trace?.length && !archivos.length && !chunks.length && !vectorStores.length) return null;
   function toggleChunk(key) {
     setExpandedKey((prev) => prev === key ? null : key);
@@ -3573,8 +3679,8 @@ function MetaDialog({
   logFragment = null,
   showLog = false
 }) {
-  const [tab, setTab] = useState2(0);
-  const [lightboxSrc, setLightboxSrc] = useState2(null);
+  const [tab, setTab] = useState3(0);
+  const [lightboxSrc, setLightboxSrc] = useState3(null);
   const resolvedMeta = useMemo2(() => {
     if (!meta) return null;
     if (!isUserMessage) return meta;
@@ -3597,10 +3703,10 @@ function MetaDialog({
   const filesAdjuntos = Array.isArray(resolvedMeta?.files_adjuntos) && resolvedMeta.files_adjuntos.length ? resolvedMeta.files_adjuntos : logFragment?.others?.files_adjuntos || null;
   const canShowLog = Boolean(showLog && logFragment);
   const tabCount = (hasPrompt ? 2 : 1) + (canShowLog ? 1 : 0);
-  useEffect2(() => {
+  useEffect3(() => {
     if (open) setTab(0);
   }, [open, resolvedMeta?.ts, resolvedMeta?.prompt_id, promptMarkdown, userImagenes.length]);
-  useEffect2(() => {
+  useEffect3(() => {
     if (!open) setLightboxSrc(null);
   }, [open]);
   if (!resolvedMeta && !(showLog && logFragment)) return null;
@@ -3761,7 +3867,7 @@ function PromptPanelBody({
   dialogTitle,
   isMcpOperativa = false
 }) {
-  const [fullPage, setFullPage] = useState2(false);
+  const [fullPage, setFullPage] = useState3(false);
   const exactTitle = isUserMessage ? "Consulta \xB7 texto exacto" : isMcpOperativa ? "Payload MCP \xB7 request / respuesta" : "Prompt \xB7 texto exacto";
   const emptyCopy = isUserMessage ? "Sin texto ni im\xE1genes en el log de este mensaje." : isMcpOperativa ? "Sin payload MCP (input / session_id / tools) en el log de este turno." : "Sin texto de instrucciones en el log de este turno.";
   return /* @__PURE__ */ jsxs3("div", { className: "meta-prompt-panel custom-scrollbar", children: [
@@ -4398,10 +4504,10 @@ function messageSourceFromUrl(chat) {
 
 // src/js/tools/chat/threadScroll.ts
 init_platform();
-var { useEffect: useEffect3, useLayoutEffect, useCallback, useRef, useMemo: useMemo3 } = getReact();
+var { useEffect: useEffect4, useLayoutEffect, useCallback, useRef: useRef2, useMemo: useMemo3 } = getReact();
 var THREAD_SCROLL_NEAR_BOTTOM = 72;
 function useThreadScrollAnchor(scrollRef, mensajes, { sending = false } = {}) {
-  const snapshotRef = useRef(null);
+  const snapshotRef = useRef2(null);
   const mensajesKey = useMemo3(
     () => (mensajes || []).map((m) => m.idMsg === "stream-live" ? `${m.idMsg}:${String(m.contenido || "").length}` : m.idMsg).join("|"),
     [mensajes]
@@ -4434,7 +4540,7 @@ function useThreadScrollAnchor(scrollRef, mensajes, { sending = false } = {}) {
   useLayoutEffect(() => {
     applyScrollAnchor();
   }, [mensajesKey, sending, applyScrollAnchor]);
-  useEffect3(() => {
+  useEffect4(() => {
     const el = scrollRef.current;
     if (!el || typeof ResizeObserver === "undefined") return void 0;
     const ro = new ResizeObserver(() => {
@@ -5059,7 +5165,7 @@ function isVoiceRecordingSupported() {
 }
 
 // src/js/tools/chat/useChatTool.ts
-var { useState: useState3, useEffect: useEffect4, useCallback: useCallback2, useRef: useRef2, useMemo: useMemo4 } = getReact();
+var { useState: useState4, useEffect: useEffect5, useCallback: useCallback2, useRef: useRef3, useMemo: useMemo4 } = getReact();
 function readBootConvId(bootChat) {
   const fromBoot = Number(bootChat?.convId);
   if (fromBoot > 0) return fromBoot;
@@ -5105,56 +5211,56 @@ async function fetchLogsModeDetail(jwt, id, { freshLog = false, minMensajes = 0 
   return { d, log: null, openAiDirect: false };
 }
 function useChatTool({ bootChat }) {
-  const [jwt, setJwt] = useState3(() => loadPatyJwt());
-  const [jwtOpen, setJwtOpen] = useState3(false);
-  const [jwtLoading, setJwtLoading] = useState3(false);
-  const [authTick, setAuthTick] = useState3(0);
-  const [rows, setRows] = useState3([]);
-  const [selectedId, setSelectedId] = useState3(() => readBootConvId(bootChat));
-  const [detail, setDetail] = useState3(null);
-  const [loadingList, setLoadingList] = useState3(false);
-  const [sending, setSending] = useState3(false);
-  const [draft, setDraft] = useState3("");
-  const [images, setImages] = useState3([]);
-  const [audios, setAudios] = useState3([]);
-  const [isRecording, setIsRecording] = useState3(false);
-  const [streamText, setStreamText] = useState3("");
-  const [logMensajes, setLogMensajes] = useState3([]);
-  const [ratingMsgId, setRatingMsgId] = useState3(null);
-  const [loadingThread, setLoadingThread] = useState3(false);
-  const [logError, setLogError] = useState3("");
-  const [metaOpen, setMetaOpen] = useState3(false);
-  const [metaMsg, setMetaMsg] = useState3(null);
-  const [payloadPreviewOpen, setPayloadPreviewOpen] = useState3(false);
-  const [auditDialogOpen, setAuditDialogOpen] = useState3(false);
-  const [auditScope, setAuditScope] = useState3(null);
-  const [sessionBrowseScope, setSessionBrowseScope] = useState3(null);
-  const [sessionScopeLoading, setSessionScopeLoading] = useState3(false);
-  const [convListPage, setConvListPage] = useState3(1);
-  const [convListPageSize, setConvListPageSize] = useState3(() => readConvListPageSize());
-  const [convListSearch, setConvListSearch] = useState3("");
-  const [convListMeta, setConvListMeta] = useState3(null);
-  const [messageSource, setMessageSource] = useState3(() => readChatMessageSource(bootChat));
-  const [chatMode, setChatMode] = useState3(() => readChatMode(bootChat));
-  const [llmProvider, setLlmProvider] = useState3(CHAT_PROVIDER_DEFAULT);
-  const inputRef = useRef2(null);
-  const attachInputRef = useRef2(null);
-  const voiceRecorderRef = useRef2(createVoiceRecorder());
-  const threadScrollRef = useRef2(null);
-  const lastLogApiCountRef = useRef2(0);
-  const skipThreadReloadRef = useRef2(null);
-  const lastOpenedConvRef = useRef2(null);
-  const openConvRef = useRef2(async () => {
+  const [jwt, setJwt] = useState4(() => loadPatyJwt());
+  const [jwtOpen, setJwtOpen] = useState4(false);
+  const [jwtLoading, setJwtLoading] = useState4(false);
+  const [authTick, setAuthTick] = useState4(0);
+  const [rows, setRows] = useState4([]);
+  const [selectedId, setSelectedId] = useState4(() => readBootConvId(bootChat));
+  const [detail, setDetail] = useState4(null);
+  const [loadingList, setLoadingList] = useState4(false);
+  const [sending, setSending] = useState4(false);
+  const [draft, setDraft] = useState4("");
+  const [images, setImages] = useState4([]);
+  const [audios, setAudios] = useState4([]);
+  const [isRecording, setIsRecording] = useState4(false);
+  const [streamText, setStreamText] = useState4("");
+  const [logMensajes, setLogMensajes] = useState4([]);
+  const [ratingMsgId, setRatingMsgId] = useState4(null);
+  const [loadingThread, setLoadingThread] = useState4(false);
+  const [logError, setLogError] = useState4("");
+  const [metaOpen, setMetaOpen] = useState4(false);
+  const [metaMsg, setMetaMsg] = useState4(null);
+  const [payloadPreviewOpen, setPayloadPreviewOpen] = useState4(false);
+  const [auditDialogOpen, setAuditDialogOpen] = useState4(false);
+  const [auditScope, setAuditScope] = useState4(null);
+  const [sessionBrowseScope, setSessionBrowseScope] = useState4(null);
+  const [sessionScopeLoading, setSessionScopeLoading] = useState4(false);
+  const [convListPage, setConvListPage] = useState4(1);
+  const [convListPageSize, setConvListPageSize] = useState4(() => readConvListPageSize());
+  const [convListSearch, setConvListSearch] = useState4("");
+  const [convListMeta, setConvListMeta] = useState4(null);
+  const [messageSource, setMessageSource] = useState4(() => readChatMessageSource(bootChat));
+  const [chatMode, setChatMode] = useState4(() => readChatMode(bootChat));
+  const [llmProvider, setLlmProvider] = useState4(CHAT_PROVIDER_DEFAULT);
+  const inputRef = useRef3(null);
+  const attachInputRef = useRef3(null);
+  const voiceRecorderRef = useRef3(createVoiceRecorder());
+  const threadScrollRef = useRef3(null);
+  const lastLogApiCountRef = useRef3(0);
+  const skipThreadReloadRef = useRef3(null);
+  const lastOpenedConvRef = useRef3(null);
+  const openConvRef = useRef3(async () => {
   });
-  const pendingListConvRef = useRef2(null);
-  const contapymeResumeLockRef = useRef2(false);
-  const sendingRef = useRef2(false);
-  const jwtRef = useRef2(jwt);
+  const pendingListConvRef = useRef3(null);
+  const contapymeResumeLockRef = useRef3(false);
+  const sendingRef = useRef3(false);
+  const jwtRef = useRef3(jwt);
   jwtRef.current = jwt;
-  const onSendRef = useRef2(async () => {
+  const onSendRef = useRef3(async () => {
   });
-  const mcpPollRef = useRef2(null);
-  const logMensajesRef = useRef2(logMensajes);
+  const mcpPollRef = useRef3(null);
+  const logMensajesRef = useRef3(logMensajes);
   logMensajesRef.current = logMensajes;
   sendingRef.current = sending;
   const MCP_POLL_MS = 5e3;
@@ -5218,10 +5324,10 @@ function useChatTool({ bootChat }) {
     }, MCP_POLL_MS);
     void tickMcpSessionPoll();
   }, [stopMcpSessionPoll, tickMcpSessionPoll]);
-  useEffect4(() => () => {
+  useEffect5(() => () => {
     stopMcpSessionPoll();
   }, [stopMcpSessionPoll]);
-  useEffect4(() => {
+  useEffect5(() => {
     const cur = mcpPollRef.current;
     if (cur && selectedId != null && cur.convId !== selectedId) stopMcpSessionPoll();
   }, [selectedId, stopMcpSessionPoll]);
@@ -5252,7 +5358,7 @@ function useChatTool({ bootChat }) {
   const viewOnly = loggedIn && !canSend;
   const needsJwt = loggedIn && !jwt?.token && !jwtLoading;
   const displayScope = activeConvOwnerScope(listScope, jwt?.claims);
-  useEffect4(() => {
+  useEffect5(() => {
     function onSessionAuth() {
       setAuthTick((n) => n + 1);
     }
@@ -5270,7 +5376,7 @@ function useChatTool({ bootChat }) {
       window.removeEventListener("patyia-apptools:caps-changed", onSessionAuth);
     };
   }, []);
-  useEffect4(() => {
+  useEffect5(() => {
     if (canAuditChat) return;
     if (auditScope) {
       setAuditScope(null);
@@ -5285,8 +5391,8 @@ function useChatTool({ bootChat }) {
     }
     if (auditDialogOpen) setAuditDialogOpen(false);
   }, [canAuditChat, auditScope, auditDialogOpen]);
-  const prevSessionUserRef = useRef2(null);
-  useEffect4(() => {
+  const prevSessionUserRef = useRef3(null);
+  useEffect5(() => {
     const prev = prevSessionUserRef.current;
     if (prev && prev !== sessionUser) {
       setAuditScope(null);
@@ -5307,7 +5413,7 @@ function useChatTool({ bootChat }) {
     }
     prevSessionUserRef.current = sessionUser;
   }, [sessionUser]);
-  useEffect4(() => {
+  useEffect5(() => {
     if (!loggedIn || !sessionUser) {
       setJwt(null);
       setJwtLoading(false);
@@ -5332,7 +5438,7 @@ function useChatTool({ bootChat }) {
       cancelled = true;
     };
   }, [loggedIn, sessionUser]);
-  useEffect4(() => {
+  useEffect5(() => {
     if (!loggedIn || !sessionUser) {
       setSessionBrowseScope(null);
       setSessionScopeLoading(false);
@@ -5707,7 +5813,7 @@ function useChatTool({ bootChat }) {
     setConvListPageSize(size);
     setConvListPage(1);
   }, [convListPageSize]);
-  useEffect4(() => subscribe((snap) => {
+  useEffect5(() => subscribe((snap) => {
     const chat = snap.chat;
     const urlId = Number(chat?.convId) || null;
     setSelectedId((prev) => prev === urlId ? prev : urlId);
@@ -5716,22 +5822,22 @@ function useChatTool({ bootChat }) {
     const urlMode = chatModeFromUrl(chat);
     if (urlMode !== null) setChatMode((prev) => prev === urlMode ? prev : urlMode);
   }), []);
-  useEffect4(() => {
+  useEffect5(() => {
     persistChatLlmProvider(CHAT_PROVIDER_OPENAI);
   }, []);
-  const prevSelectedIdRef = useRef2(selectedId);
-  useEffect4(() => {
+  const prevSelectedIdRef = useRef3(selectedId);
+  useEffect5(() => {
     const prev = prevSelectedIdRef.current;
     prevSelectedIdRef.current = selectedId;
     if (prev === selectedId) return;
     if (prev === null) return;
     setLlmProvider((p) => p === CHAT_PROVIDER_OPENAI ? p : CHAT_PROVIDER_OPENAI);
   }, [selectedId]);
-  useEffect4(() => {
+  useEffect5(() => {
     if (jwtLoading) return;
     reloadList();
   }, [reloadList, authTick, jwtLoading]);
-  useEffect4(() => {
+  useEffect5(() => {
     if (loadingList || jwtLoading || sending) return;
     if (!selectedId) return;
     if (pendingListConvRef.current === selectedId) {
@@ -5744,7 +5850,7 @@ function useChatTool({ bootChat }) {
     if (rows.some((r) => convIdsEqual(r.iconversacion, selectedId))) return;
     if (convIdsEqual(urlChatConvId(), selectedId)) return;
   }, [rows, loadingList, jwtLoading, sending, selectedId]);
-  useEffect4(() => {
+  useEffect5(() => {
     if (!selectedId) {
       lastOpenedConvRef.current = null;
       return;
@@ -6365,7 +6471,7 @@ init_platform();
 init_patyia();
 init_patyia_jwt();
 import { jsx as jsx6, jsxs as jsxs5 } from "react/jsx-runtime";
-var { useState: useState4, useEffect: useEffect5, useMemo: useMemo5 } = getReact();
+var { useState: useState5, useEffect: useEffect6, useMemo: useMemo5 } = getReact();
 var { Box: Box4, Typography: Typography4, CircularProgress, Chip: Chip3 } = getMaterialUI();
 var { Icon: Icon3 } = UI;
 var CHIP_SX = {
@@ -6420,8 +6526,8 @@ function ChatSessionPanel({ claims, displayScope, sessionUser: _sessionUser, own
   const claimsName = jwtUserDisplayName(claims) || jwtUserShortName(claims);
   const primaryLabel = String(ownerDisplayName ?? "").trim() || scopeName || claimsName || codes || "ISA PatyIA";
   const avatarUrl = useMemo5(() => buildUserAvatarUrl(primaryLabel, 72), [primaryLabel]);
-  const [avatarOk, setAvatarOk] = useState4(true);
-  useEffect5(() => {
+  const [avatarOk, setAvatarOk] = useState5(true);
+  useEffect6(() => {
     setAvatarOk(true);
   }, [avatarUrl]);
   const interactive = !!canAudit && typeof onOpenAudit === "function";
@@ -6469,7 +6575,7 @@ function ChatSessionPanel({ claims, displayScope, sessionUser: _sessionUser, own
 init_platform();
 import { Fragment as Fragment2, jsx as jsx7, jsxs as jsxs6 } from "react/jsx-runtime";
 import { createElement } from "react";
-var { useState: useState5, useEffect: useEffect6, useRef: useRef3, useCallback: useCallback3, useMemo: useMemo6 } = getReact();
+var { useState: useState6, useEffect: useEffect7, useRef: useRef4, useCallback: useCallback3, useMemo: useMemo6 } = getReact();
 var { Autocomplete, TextField, Typography: Typography5, Box: Box5, IconButton: IconButton2, InputAdornment } = getMaterialUI();
 var { Icon: Icon4 } = UI;
 var DEBOUNCE_MS = 300;
@@ -6499,9 +6605,9 @@ function ConvSearchAutocomplete({
   disabled = false,
   placeholder = "Buscar por # conversaci\xF3n\u2026"
 }) {
-  const [inputValue, setInputValue] = useState5(search ?? "");
-  const debounceRef = useRef3(null);
-  useEffect6(() => {
+  const [inputValue, setInputValue] = useState6(search ?? "");
+  const debounceRef = useRef4(null);
+  useEffect7(() => {
     setInputValue(search ?? "");
   }, [search]);
   const selected = useMemo6(() => {
@@ -6524,11 +6630,11 @@ function ConvSearchAutocomplete({
     setInputValue("");
     onSearchChange?.("");
   }, [onSearchChange]);
-  useEffect6(() => () => {
+  useEffect7(() => () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
   }, []);
   const showClear = Boolean(inputValue?.trim());
-  const [menuOpen, setMenuOpen] = useState5(false);
+  const [menuOpen, setMenuOpen] = useState6(false);
   const fusedOpen = menuOpen ? " paty-chat-conv-search--open" : "";
   return /* @__PURE__ */ jsx7(
     Autocomplete,
@@ -7054,18 +7160,18 @@ init_platform();
 init_platform();
 init_platform();
 import { Fragment as Fragment4, jsx as jsx9, jsxs as jsxs8 } from "react/jsx-runtime";
-var { useMemo: useMemo7, useState: useState6, useRef: useRef4, useEffect: useEffect7, memo } = getReact();
+var { useMemo: useMemo7, useState: useState7, useRef: useRef5, useEffect: useEffect8, memo } = getReact();
 function useOperativaEnterIds(mensajes, threadKey, { enabled = true } = {}) {
-  const seenIdsRef = useRef4(/* @__PURE__ */ new Set());
-  const primedKeyRef = useRef4(null);
-  const [enterIds, setEnterIds] = useState6(() => /* @__PURE__ */ new Set());
-  useEffect7(() => {
+  const seenIdsRef = useRef5(/* @__PURE__ */ new Set());
+  const primedKeyRef = useRef5(null);
+  const [enterIds, setEnterIds] = useState7(() => /* @__PURE__ */ new Set());
+  useEffect8(() => {
     if (primedKeyRef.current === threadKey) return;
     primedKeyRef.current = threadKey;
     seenIdsRef.current = /* @__PURE__ */ new Set();
     setEnterIds(/* @__PURE__ */ new Set());
   }, [threadKey]);
-  useEffect7(() => {
+  useEffect8(() => {
     if (!enabled) return;
     const msgs = mensajes || [];
     if (primedKeyRef.current !== threadKey) return;
@@ -7699,14 +7805,14 @@ function scheduleIframeRepaint(iframe, delaysMs = [0, 80, 200, 500, 1e3, 2e3, 4e
 function ContapymeLoginEmbed({ url, onLoginDone }) {
   const { Stack: Stack7, Button: Button6, Dialog: Dialog2, DialogContent: DialogContent4 } = getMaterialUI();
   const { Icon: Icon11 } = UI;
-  const [open, setOpen] = useState6(false);
-  const [hostReady, setHostReady] = useState6(false);
-  const [geomNudge, setGeomNudge] = useState6(0);
-  const iframeRef = useRef4(null);
-  const contentRef = useRef4(null);
-  const tabOpenedRef = useRef4(false);
-  const doneOnceRef = useRef4(false);
-  const cancelRepaintRef = useRef4(null);
+  const [open, setOpen] = useState7(false);
+  const [hostReady, setHostReady] = useState7(false);
+  const [geomNudge, setGeomNudge] = useState7(0);
+  const iframeRef = useRef5(null);
+  const contentRef = useRef5(null);
+  const tabOpenedRef = useRef5(false);
+  const doneOnceRef = useRef5(false);
+  const cancelRepaintRef = useRef5(null);
   const signalDone = () => {
     if (doneOnceRef.current) return;
     doneOnceRef.current = true;
@@ -7720,7 +7826,7 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
     setGeomNudge(0);
     signalDone();
   };
-  useEffect7(() => {
+  useEffect8(() => {
     if (!open) {
       setHostReady(false);
       return void 0;
@@ -7757,7 +7863,7 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
       window.clearTimeout(fallback);
     };
   }, [open, url]);
-  useEffect7(() => {
+  useEffect8(() => {
     if (!open || !hostReady) return void 0;
     const host = contentRef.current;
     const iframe = iframeRef.current;
@@ -7788,7 +7894,7 @@ function ContapymeLoginEmbed({ url, onLoginDone }) {
       ro?.disconnect();
     };
   }, [open, hostReady, url]);
-  useEffect7(() => {
+  useEffect8(() => {
     if (!tabOpenedRef.current) return void 0;
     const onVis = () => {
       if (document.visibilityState === "visible") signalDone();
@@ -8199,7 +8305,7 @@ function McpToolsSection({ tools, GlassSection, GlassInner }) {
 }
 function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
   const { DialogContent: DialogContent4, Typography: Typography9, Box: Box12, Chip: Chip5, Stack: Stack7, Tooltip: Tooltip6, IconButton: IconButton7 } = getMaterialUI();
-  const { useMemo: useMemo11, useState: useState11 } = getReact();
+  const { useMemo: useMemo11, useState: useState12 } = getReact();
   let glass = null;
   try {
     glass = getGlass();
@@ -8251,7 +8357,7 @@ function UsageStatsDialog({ open, onClose, stats, msgLabel, fecha, meta }) {
     const tools = meta?.http_response?.tools;
     return Array.isArray(tools) ? tools : [];
   }, [meta]);
-  const [openChunk, setOpenChunk] = useState11(null);
+  const [openChunk, setOpenChunk] = useState12(null);
   const opKey = meta?.extra?.operativa_key;
   const header = resolveUsageDialogHeader(msgLabel, fecha, opKey);
   const showMetaPanel = Boolean(
@@ -8582,7 +8688,7 @@ function UsageDialogSection({ section, GlassSection, GlassInner }) {
 }
 function UsageStatsColumn({ stats, align = "right", msgLabel, fecha, meta, isUser = false }) {
   const { Box: Box12 } = getMaterialUI();
-  const [open, setOpen] = useState6(false);
+  const [open, setOpen] = useState7(false);
   const modelRaw = String(meta?.model ?? "").trim();
   const modelLabel = modelRaw ? modelBadgeLabel(modelRaw) : "";
   const latencyLabel = formatLatencySeconds(meta?.latency_ms);
@@ -8832,7 +8938,7 @@ function resolveMsgImensaje(msg) {
 }
 var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = false, chatUserDisplayName, chatUserNick, showUsageStats = false, onImageClick, streamingMsgId = null, onRateMessage = null, canRate = false, ratingMsgId = null, operativaEnter = false, onContapymeLoginDone = null }) {
   const { Alert: Alert5, Box: Box12 } = getMaterialUI();
-  const [fileSearchOpen, setFileSearchOpen] = useState6(false);
+  const [fileSearchOpen, setFileSearchOpen] = useState7(false);
   const meta = roleMetaFor(msg, compactMeta);
   const title = roleTitle(msg, chatUserDisplayName, chatUserNick);
   const titleCaption = roleUserCaption(msg, chatUserNick);
@@ -9004,7 +9110,7 @@ var MensajeSection = memo(function MensajeSection2({ msg, onMeta, compactMeta = 
 }, (prev, next) => prev.msg === next.msg && prev.streamingMsgId === next.streamingMsgId && prev.compactMeta === next.compactMeta && prev.chatUserDisplayName === next.chatUserDisplayName && prev.chatUserNick === next.chatUserNick && prev.showUsageStats === next.showUsageStats && prev.ratingMsgId === next.ratingMsgId && prev.canRate === next.canRate && prev.operativaEnter === next.operativaEnter);
 function ConvLogWebView({ mensajes, onMeta, compactMeta = false, emptyHint, chatUserDisplayName, chatUserNick, showUsageStats = true, streamingMsgId = null, onRateMessage = null, canRate = false, ratingMsgId = null, threadKey = null, threadClassName = "", onContapymeLoginDone = null }) {
   const { Box: Box12, Typography: Typography9 } = getMaterialUI();
-  const [lightboxSrc, setLightboxSrc] = useState6(null);
+  const [lightboxSrc, setLightboxSrc] = useState7(null);
   const operativaEnterIds = useOperativaEnterIds(mensajes, threadKey, { enabled: !compactMeta });
   const mensajesConStats = useMemo7(
     () => attachUsageStats(mensajes || []),
@@ -9202,7 +9308,7 @@ function ChatPayloadPreview({ open, body, endpoint, onClose }) {
 
 // src/js/tools/chat/ChatComposer.jsx
 import { jsx as jsx12, jsxs as jsxs11 } from "react/jsx-runtime";
-var { useState: useState7, useMemo: useMemo9, useEffect: useEffect8 } = getReact();
+var { useState: useState8, useMemo: useMemo9, useEffect: useEffect9 } = getReact();
 var {
   Box: Box8,
   Button: Button2,
@@ -9233,7 +9339,7 @@ function ChatComposer({
   onRemoveImage,
   onRemoveAudio
 }) {
-  const [lightboxSrc, setLightboxSrc] = useState7(null);
+  const [lightboxSrc, setLightboxSrc] = useState8(null);
   const canRecord = isVoiceRecordingSupported();
   const hasContent = Boolean(draft.trim() || images.length || audios.length);
   const imagePreviewUrls = useMemo9(
@@ -9244,7 +9350,7 @@ function ChatComposer({
     () => audios.map((aud) => blobToPreviewUrl2(aud.blob)),
     [audios]
   );
-  useEffect8(() => () => {
+  useEffect9(() => () => {
     [...imagePreviewUrls, ...audioPreviewUrls].forEach((u) => {
       if (u) URL.revokeObjectURL(u);
     });
@@ -9515,12 +9621,12 @@ init_platform();
 init_patyia_jwt();
 init_platform();
 import { jsx as jsx14, jsxs as jsxs13 } from "react/jsx-runtime";
-var { useState: useState8, useEffect: useEffect9 } = getReact();
+var { useState: useState9, useEffect: useEffect10 } = getReact();
 var { Button: Button4, TextField: TextField3, DialogContent: DialogContent2, DialogActions, CircularProgress: CircularProgress4 } = getMaterialUI();
 function JwtModal({ open, onClose, initialToken, onSave }) {
-  const [value, setValue] = useState8(initialToken || "");
-  const [saving, setSaving] = useState8(false);
-  useEffect9(() => {
+  const [value, setValue] = useState9(initialToken || "");
+  const [saving, setSaving] = useState9(false);
+  useEffect10(() => {
     if (open) setValue(initialToken || "");
   }, [open, initialToken]);
   async function submit() {
@@ -9583,7 +9689,7 @@ init_platform();
 init_patyia_jwt();
 init_apiClient();
 import { jsx as jsx15, jsxs as jsxs14 } from "react/jsx-runtime";
-var { useState: useState9, useEffect: useEffect10, useMemo: useMemo10 } = getReact();
+var { useState: useState10, useEffect: useEffect11, useMemo: useMemo10 } = getReact();
 var {
   Box: Box10,
   Typography: Typography8,
@@ -9632,22 +9738,22 @@ function rowsWithActiveFirst(rows, currentKey, currentScope) {
   return list;
 }
 function TercerosAuditDialog({ open, onClose, jwt, sessionUser, onSelect, currentScope, canAudit = true }) {
-  const [q, setQ] = useState9("");
-  const [qDebounced, setQDebounced] = useState9("");
-  const [page, setPage] = useState9(1);
-  const [loading, setLoading] = useState9(false);
-  const [error, setError] = useState9("");
-  const [data, setData] = useState9(null);
-  useEffect10(() => {
+  const [q, setQ] = useState10("");
+  const [qDebounced, setQDebounced] = useState10("");
+  const [page, setPage] = useState10(1);
+  const [loading, setLoading] = useState10(false);
+  const [error, setError] = useState10("");
+  const [data, setData] = useState10(null);
+  useEffect11(() => {
     if (!open) return void 0;
     const t = setTimeout(() => setQDebounced(q.trim()), 350);
     return () => clearTimeout(t);
   }, [q, open]);
-  useEffect10(() => {
+  useEffect11(() => {
     if (!open) return;
     setPage(1);
   }, [qDebounced, open]);
-  useEffect10(() => {
+  useEffect11(() => {
     if (!open) return void 0;
     if (!canAudit) {
       setData(null);
@@ -9845,14 +9951,14 @@ function mobileDrawerPaperProps(className) {
 // src/js/tools/ChatTool.jsx
 import { Fragment as Fragment5, jsx as jsx16, jsxs as jsxs15 } from "react/jsx-runtime";
 var { Box: Box11, Drawer, IconButton: IconButton6, Tooltip: Tooltip5, useTheme, useMediaQuery } = getMaterialUI();
-var { useState: useState10 } = getReact();
+var { useState: useState11 } = getReact();
 var { Icon: Icon10 } = UI;
 function ChatTool({ bootChat, onNeedLogin }) {
   const chat = useChatTool({ bootChat });
   const theme2 = useTheme();
   const isMobile = useMediaQuery(theme2.breakpoints.down("md"));
-  const [sidebarOpen, setSidebarOpen] = useState10(false);
-  const [refreshingThread, setRefreshingThread] = useState10(false);
+  const [sidebarOpen, setSidebarOpen] = useState11(false);
+  const [refreshingThread, setRefreshingThread] = useState11(false);
   if (!chat.loggedIn) {
     return /* @__PURE__ */ jsx16(ChatLoggedOutShell, {});
   }
