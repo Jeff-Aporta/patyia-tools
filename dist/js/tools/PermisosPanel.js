@@ -1223,8 +1223,14 @@ var { useEffect, useState } = getReact();
 
 // src/js/ui/LogJsonPanel.jsx
 init_platform();
+
+// src/js/core/isCodeCdn.ts
+var IS_WC_SHA = "1ce1d12227f2988877b81b8f35cba2507dc16bf1";
+var IS_CODE_JS = `https://cdn.jsdelivr.net/gh/Jeff-Aporta/is-webcomponents@${IS_WC_SHA}/dist/cdn/code/code.min.js`;
+
+// src/js/ui/LogJsonPanel.jsx
 import { jsx as jsx2, jsxs } from "react/jsx-runtime";
-var { useMemo } = getReact();
+var { useMemo, useEffect: useEffect2, useRef, useState: useState2 } = getReact();
 var { Box, Typography, Stack, Chip, Tooltip, IconButton } = getMaterialUI();
 var { Icon } = UI;
 
@@ -1414,7 +1420,7 @@ function ButtonIconify({ icon, title = "", label = "", onClick, disabled = false
     }
   );
 }
-var { useState: useState2, useEffect: useEffect2, useMemo: useMemo2 } = getReact();
+var { useState: useState3, useEffect: useEffect3, useMemo: useMemo2 } = getReact();
 var { createTheme, Tabs, Tab, Box: Box2, Typography: Typography2, DialogContent, Stack: Stack2, Chip: Chip2 } = getMaterialUI();
 var theme = createTheme({
   palette: {
@@ -1763,7 +1769,7 @@ init_platform();
 init_systemConfigApi();
 import { jsx as jsx6 } from "react/jsx-runtime";
 import { createElement } from "react";
-var { useState: useState3, useEffect: useEffect3, useRef, useCallback } = getReact();
+var { useState: useState4, useEffect: useEffect4, useRef: useRef2, useCallback } = getReact();
 var { Autocomplete, TextField, Typography: Typography3, Box: Box3 } = getMaterialUI();
 var DEBOUNCE_MS = 300;
 var DEFAULT_LIMIT = 10;
@@ -1793,11 +1799,11 @@ function PermisosUserAutocomplete({
 }) {
   const toolbar = variant === "toolbar";
   const username = value ? normalizePermisosUsername(value) : null;
-  const [inputValue, setInputValue] = useState3("");
-  const [options, setOptions] = useState3([]);
-  const [loading, setLoading] = useState3(false);
-  const debounceRef = useRef(null);
-  const requestIdRef = useRef(0);
+  const [inputValue, setInputValue] = useState4("");
+  const [options, setOptions] = useState4([]);
+  const [loading, setLoading] = useState4(false);
+  const debounceRef = useRef2(null);
+  const requestIdRef = useRef2(0);
   const selected = username ? options.find((o) => o.username === username) ?? (username ? { username, displayName: null } : null) : null;
   const runSearch = useCallback(async (query) => {
     const id = ++requestIdRef.current;
@@ -1823,7 +1829,7 @@ function PermisosUserAutocomplete({
       runSearch(query);
     }, DEBOUNCE_MS);
   }, [runSearch]);
-  useEffect3(() => {
+  useEffect4(() => {
     if (!username) {
       setInputValue("");
       return;
@@ -1835,10 +1841,10 @@ function PermisosUserAutocomplete({
     const match = options.find((o) => o.username === username);
     setInputValue(match ? optionLabel(match) : username);
   }, [value, username, options, onChange]);
-  useEffect3(() => () => {
+  useEffect4(() => () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
   }, []);
-  useEffect3(() => {
+  useEffect4(() => {
     if (disabled) return;
     runSearch("");
   }, [disabled, runSearch]);
@@ -1937,7 +1943,7 @@ var VISITANTE_DEFAULT_PERMISOS = {
 
 // src/js/tools/permisosRoleConfig.jsx
 import { Fragment as Fragment2, jsx as jsx7, jsxs as jsxs4 } from "react/jsx-runtime";
-var { useState: useState4, useEffect: useEffect4, useMemo: useMemo3 } = getReact();
+var { useState: useState5, useEffect: useEffect5, useMemo: useMemo3 } = getReact();
 var {
   Typography: Typography4,
   TextField: TextField2,
@@ -2038,8 +2044,8 @@ function RoleDragDialog({ open, pending, busy, sessionUsername, onClose, onConfi
   );
 }
 function RoleAddDialog({ open, pending, busy, onClose, onConfirm }) {
-  const [username, setUsername] = useState4(null);
-  useEffect4(() => {
+  const [username, setUsername] = useState5(null);
+  useEffect5(() => {
     if (open) setUsername(null);
   }, [open]);
   if (!pending) return null;
@@ -2134,7 +2140,7 @@ function RoleRemoveDialog({ open, pending, busy, sessionUsername, onClose, onCon
 
 // src/js/tools/PermisosKanban.jsx
 import { Fragment as Fragment3, jsx as jsx8, jsxs as jsxs5 } from "react/jsx-runtime";
-var { useState: useState5, useMemo: useMemo4, useRef: useRef2, useEffect: useEffect5, memo } = getReact();
+var { useState: useState6, useMemo: useMemo4, useRef: useRef3, useEffect: useEffect6, memo } = getReact();
 var { createPortal } = getReactDOM();
 var { Box: Box5, Paper, Typography: Typography5, Stack: Stack4, Chip: Chip4, IconButton: IconButton2, Tooltip: Tooltip3, CircularProgress: CircularProgress2 } = getMaterialUI();
 var { Icon: Icon3 } = UI;
@@ -2245,26 +2251,26 @@ function DragGhost({ card, column, x, y, width }) {
   return typeof document !== "undefined" ? createPortal(node, document.body) : node;
 }
 function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canManage, canEditRoleDescriptions, busy, sessionUsername, filterToolbarRef, onUserFilterDrop, onRoleFilterDrop, onDragOverFilterChange, onRoleDrag, onRoleRemove, onRoleAdd, onUserSummary }) {
-  const [dragOverCol, setDragOverCol] = useState5(null);
-  const [draggingId, setDraggingId] = useState5(null);
-  const [dragGhost, setDragGhost] = useState5(null);
-  const [configCol] = useState5(null);
-  const [dragPending, setDragPending] = useState5(null);
-  const [removePending, setRemovePending] = useState5(null);
-  const [addPending, setAddPending] = useState5(null);
-  const [addingRoleId, setAddingRoleId] = useState5(null);
-  const [processingUsername, setProcessingUsername] = useState5(null);
-  const [selectedUsername, setSelectedUsername] = useState5(null);
-  const [dragSourceCol, setDragSourceCol] = useState5(null);
+  const [dragOverCol, setDragOverCol] = useState6(null);
+  const [draggingId, setDraggingId] = useState6(null);
+  const [dragGhost, setDragGhost] = useState6(null);
+  const [configCol] = useState6(null);
+  const [dragPending, setDragPending] = useState6(null);
+  const [removePending, setRemovePending] = useState6(null);
+  const [addPending, setAddPending] = useState6(null);
+  const [addingRoleId, setAddingRoleId] = useState6(null);
+  const [processingUsername, setProcessingUsername] = useState6(null);
+  const [selectedUsername, setSelectedUsername] = useState6(null);
+  const [dragSourceCol, setDragSourceCol] = useState6(null);
   const columns = boardData?.columns ?? [];
-  const listRefs = useRef2({});
-  const columnRefs = useRef2({});
-  const dragRef = useRef2(null);
-  const cardElRef = useRef2(null);
-  const suppressClickRef = useRef2(false);
-  const processingUserRef = useRef2(null);
-  const kanbanWrapRef = useRef2(null);
-  const dragPendingRef = useRef2(null);
+  const listRefs = useRef3({});
+  const columnRefs = useRef3({});
+  const dragRef = useRef3(null);
+  const cardElRef = useRef3(null);
+  const suppressClickRef = useRef3(false);
+  const processingUserRef = useRef3(null);
+  const kanbanWrapRef = useRef3(null);
+  const dragPendingRef = useRef3(null);
   const filterActive = !!boardData?.filterActive;
   const assignEnabled = !!loggedIn && !!canAssignRoles;
   const filterDragEnabled = !!loggedIn && !canAssignRoles;
@@ -2284,7 +2290,7 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
   }, [dragGhost, columns]);
   const selectedUserKey = selectedUsername ? String(selectedUsername).trim().toUpperCase() : null;
   const processingUserKey = processingUsername ? String(processingUsername).trim().toUpperCase() : null;
-  useEffect5(() => {
+  useEffect6(() => {
     dragPendingRef.current = dragPending;
   }, [dragPending]);
   function userKey(username) {
@@ -2301,7 +2307,7 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
     processingUserRef.current = null;
     setProcessingUsername(null);
   }
-  useEffect5(() => {
+  useEffect6(() => {
     function onDocPointerDown(e) {
       if (e.target.closest(".paty-permisos-user-card")) return;
       if (e.target.closest(".MuiDialog-root, .isa-glass-dialog")) return;
@@ -2433,7 +2439,7 @@ function PermisosKanban({ boardData, loggedIn, canAssignRoles, readOnly, canMana
     } catch {
     }
   }
-  useEffect5(() => {
+  useEffect6(() => {
     function onPointerMove(e) {
       const state = dragRef.current;
       if (!state || e.pointerId !== state.pointerId) return;
@@ -3118,34 +3124,34 @@ function persistPermisosHideEmpty(hide) {
 
 // src/js/tools/PermisosPanel.jsx
 import { jsx as jsx11, jsxs as jsxs7 } from "react/jsx-runtime";
-var { useState: useState6, useEffect: useEffect6, useCallback: useCallback2, useMemo: useMemo6, useRef: useRef3 } = getReact();
+var { useState: useState7, useEffect: useEffect7, useCallback: useCallback2, useMemo: useMemo6, useRef: useRef4 } = getReact();
 var { Typography: Typography7, Stack: Stack6, Alert: Alert2, CircularProgress: CircularProgress4, Box: Box7, Chip: Chip7, DialogContent: DialogContent3, DialogActions: DialogActions2, Button: Button2, FormControlLabel: FormControlLabel2, Switch } = getMaterialUI();
 function PermisosPanel({ onNeedLogin }) {
-  const [loading, setLoading] = useState6(true);
-  const [busy, setBusy] = useState6(false);
-  const [canManage, setCanManage] = useState6(false);
-  const [canAssignUserRoles, setCanAssignUserRoles] = useState6(false);
-  const [canEditRoleDescriptions, setCanEditRoleDescriptions] = useState6(false);
-  const [authTick, setAuthTick] = useState6(0);
+  const [loading, setLoading] = useState7(true);
+  const [busy, setBusy] = useState7(false);
+  const [canManage, setCanManage] = useState7(false);
+  const [canAssignUserRoles, setCanAssignUserRoles] = useState7(false);
+  const [canEditRoleDescriptions, setCanEditRoleDescriptions] = useState7(false);
+  const [authTick, setAuthTick] = useState7(0);
   const loggedIn = useMemo6(() => !!Session?.isLoggedIn?.(), [authTick]);
   const sessionUsername = useMemo6(() => String(Session.username?.() ?? "").trim().toUpperCase(), [authTick]);
-  const [err, setErr] = useState6("");
-  const [data, setData] = useState6({ roles: [], users: [], contactos: {} });
-  const [userSearch, setUserSearch] = useState6("");
-  const [roleFilters, setRoleFilters] = useState6([]);
-  const [hideEmptyStacks, setHideEmptyStacks] = useState6(readPermisosHideEmptyFromUrl);
-  const [filterBusy, setFilterBusy] = useState6(false);
-  const [dragOverFilter, setDragOverFilter] = useState6(false);
-  const [actorRoles, setActorRoles] = useState6([]);
-  const [patyiaRoles, setPatyiaRoles] = useState6([]);
-  const [patyiaContactos, setPatyiaContactos] = useState6([]);
-  const [patyiaBusy, setPatyiaBusy] = useState6(false);
-  const [summaryUsername, setSummaryUsername] = useState6(null);
-  const filterToolbarRef = useRef3(null);
-  const filterFetchSkipRef = useRef3(true);
-  const filterDropFetchRef = useRef3(false);
-  const rolesRef = useRef3(data.roles);
-  const usersRef = useRef3(data.users);
+  const [err, setErr] = useState7("");
+  const [data, setData] = useState7({ roles: [], users: [], contactos: {} });
+  const [userSearch, setUserSearch] = useState7("");
+  const [roleFilters, setRoleFilters] = useState7([]);
+  const [hideEmptyStacks, setHideEmptyStacks] = useState7(readPermisosHideEmptyFromUrl);
+  const [filterBusy, setFilterBusy] = useState7(false);
+  const [dragOverFilter, setDragOverFilter] = useState7(false);
+  const [actorRoles, setActorRoles] = useState7([]);
+  const [patyiaRoles, setPatyiaRoles] = useState7([]);
+  const [patyiaContactos, setPatyiaContactos] = useState7([]);
+  const [patyiaBusy, setPatyiaBusy] = useState7(false);
+  const [summaryUsername, setSummaryUsername] = useState7(null);
+  const filterToolbarRef = useRef4(null);
+  const filterFetchSkipRef = useRef4(true);
+  const filterDropFetchRef = useRef4(false);
+  const rolesRef = useRef4(data.roles);
+  const usersRef = useRef4(data.users);
   rolesRef.current = data.roles;
   usersRef.current = data.users;
   const usersPaginated = !!data.usersTruncated;
@@ -3212,15 +3218,15 @@ function PermisosPanel({ onNeedLogin }) {
       setPatyiaBusy(false);
     }
   }, [loadPatyia, onNeedLogin]);
-  const loadRef = useRef3(load);
+  const loadRef = useRef4(load);
   loadRef.current = load;
-  useEffect6(() => {
+  useEffect7(() => {
     loadRef.current();
   }, []);
-  useEffect6(() => {
+  useEffect7(() => {
     void loadPatyia();
   }, [loadPatyia]);
-  useEffect6(() => subscribe((snap) => {
+  useEffect7(() => subscribe((snap) => {
     const hide = readPermisosHideEmptyFromUrl(snap);
     setHideEmptyStacks((prev) => prev === hide ? prev : hide);
   }), []);
@@ -3229,7 +3235,7 @@ function PermisosPanel({ onNeedLogin }) {
     persistPermisosHideEmpty(hide);
   }, []);
   const userDirectory = useMemo6(() => buildUserDirectoryFromPermisos(data.users), [data.users]);
-  useEffect6(() => {
+  useEffect7(() => {
     Assets.ensureTodosCss();
     const onAuth = () => {
       setAuthTick((t) => t + 1);
@@ -3326,7 +3332,7 @@ function PermisosPanel({ onNeedLogin }) {
       setFilterBusy(false);
     }
   }, [usersPaginated, applyFlags]);
-  useEffect6(() => {
+  useEffect7(() => {
     if (!usersPaginated) return void 0;
     if (filterFetchSkipRef.current) {
       filterFetchSkipRef.current = false;
