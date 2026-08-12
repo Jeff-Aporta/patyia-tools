@@ -85,8 +85,49 @@ function IsCodeJsonView({ value }) {
       el.className = "log-json-panel__is-code";
       host.replaceChildren(el);
     }
+
+    const refreshCm = () => {
+      try {
+        requestAnimationFrame(() => {
+          try { el.cm?.refresh?.(); } catch { /* ignore */ }
+        });
+      } catch { /* ignore */ }
+    };
+
+    const onReady = () => {
+      setFailed(false);
+      refreshCm();
+    };
+    const onError = () => setFailed(true);
+
+    el.addEventListener("is-ready", onReady);
+    el.addEventListener("is-error", onError);
+
     const text = String(value ?? "");
     if (el.value !== text) el.value = text;
+    else if (el.ready) refreshCm();
+
+    // Modal/tabs: CM mide mal si el host estaba oculto al montar.
+    const ro = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(() => refreshCm())
+      : null;
+    ro?.observe(host);
+    const io = typeof IntersectionObserver !== "undefined"
+      ? new IntersectionObserver((entries) => {
+        if (entries.some((e) => e.isIntersecting && e.intersectionRatio > 0)) refreshCm();
+      }, { threshold: [0, 0.01, 0.1] })
+      : null;
+    io?.observe(host);
+
+    const t = window.setTimeout(refreshCm, 120);
+
+    return () => {
+      window.clearTimeout(t);
+      ro?.disconnect();
+      io?.disconnect();
+      el.removeEventListener("is-ready", onReady);
+      el.removeEventListener("is-error", onError);
+    };
   }, [ready, value]);
 
   if (failed) {

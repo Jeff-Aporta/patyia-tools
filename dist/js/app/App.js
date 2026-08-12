@@ -2867,20 +2867,52 @@ function extractOthersAudiosPairs(others) {
   const o = others && typeof others === "object" ? others : {};
   const urls = [];
   const transcriptions = [];
+  const seen = /* @__PURE__ */ new Set();
+  const pushUrl = (ref) => {
+    const url = String(ref ?? "").trim();
+    if (!isDisplayableAudioRef(url) || seen.has(url)) return false;
+    seen.add(url);
+    urls.push(url);
+    return true;
+  };
+  const fileAudioUrls = () => {
+    const files = Array.isArray(o.files_adjuntos) ? o.files_adjuntos : [];
+    const out = [];
+    for (const raw of files) {
+      if (!raw || typeof raw !== "object") continue;
+      const f = raw;
+      const kind = String(f.kind ?? "").toLowerCase();
+      if (kind && kind !== "audio" && !kind.startsWith("audio/")) continue;
+      const variants = f.variants && typeof f.variants === "object" ? f.variants : {};
+      const u = String(f.url ?? variants.original ?? "").trim();
+      if (isDisplayableAudioRef(u)) out.push(u);
+    }
+    return out;
+  };
   if (Array.isArray(o.audios) && o.audios.length) {
+    const spareFiles = fileAudioUrls();
+    let spareIdx = 0;
     for (const raw of o.audios) {
       if (raw && typeof raw === "object" && !Array.isArray(raw)) {
         const item = raw;
-        const url = String(item.url ?? "").trim();
+        let url = String(item.url ?? "").trim();
         const tr = String(item.transcrip ?? item.transcripcion ?? "").trim();
+        if (!isDisplayableAudioRef(url) && spareIdx < spareFiles.length) {
+          url = spareFiles[spareIdx++];
+        }
         if (url && isDisplayableAudioRef(url)) {
-          urls.push(url);
+          pushUrl(url);
           transcriptions.push(tr);
         } else if (tr) {
         }
       } else if (typeof raw === "string" && isDisplayableAudioRef(raw)) {
-        urls.push(raw);
+        pushUrl(raw);
         transcriptions.push("");
+      }
+    }
+    if (!urls.length) {
+      for (const u of spareFiles) {
+        if (pushUrl(u)) transcriptions.push("");
       }
     }
     return { urls, transcriptions };
@@ -2889,9 +2921,13 @@ function extractOthersAudiosPairs(others) {
   const legacyTrs = Array.isArray(o.audios_transcripcion) ? o.audios_transcripcion : [];
   for (let i = 0; i < legacyUrls.length; i++) {
     const url = String(legacyUrls[i] ?? "").trim();
-    if (!isDisplayableAudioRef(url)) continue;
-    urls.push(url);
+    if (!pushUrl(url)) continue;
     transcriptions.push(String(legacyTrs[i] ?? "").trim());
+  }
+  if (!urls.length) {
+    for (const u of fileAudioUrls()) {
+      if (pushUrl(u)) transcriptions.push("");
+    }
   }
   if (!urls.length && legacyTrs.length) {
     for (const t of legacyTrs) {
@@ -3785,8 +3821,41 @@ function IsCodeJsonView({ value }) {
       el.className = "log-json-panel__is-code";
       host.replaceChildren(el);
     }
+    const refreshCm = () => {
+      try {
+        requestAnimationFrame(() => {
+          try {
+            el.cm?.refresh?.();
+          } catch {
+          }
+        });
+      } catch {
+      }
+    };
+    const onReady = () => {
+      setFailed(false);
+      refreshCm();
+    };
+    const onError = () => setFailed(true);
+    el.addEventListener("is-ready", onReady);
+    el.addEventListener("is-error", onError);
     const text = String(value ?? "");
     if (el.value !== text) el.value = text;
+    else if (el.ready) refreshCm();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => refreshCm()) : null;
+    ro?.observe(host);
+    const io = typeof IntersectionObserver !== "undefined" ? new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting && e.intersectionRatio > 0)) refreshCm();
+    }, { threshold: [0, 0.01, 0.1] }) : null;
+    io?.observe(host);
+    const t = window.setTimeout(refreshCm, 120);
+    return () => {
+      window.clearTimeout(t);
+      ro?.disconnect();
+      io?.disconnect();
+      el.removeEventListener("is-ready", onReady);
+      el.removeEventListener("is-error", onError);
+    };
   }, [ready, value]);
   if (failed) {
     return /* @__PURE__ */ jsx2("pre", { className: "log-json-panel__pre custom-scrollbar", children: String(value ?? "") });
