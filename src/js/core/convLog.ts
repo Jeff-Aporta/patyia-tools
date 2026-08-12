@@ -76,6 +76,47 @@ function pushImage(images: string[], ref: unknown) {
     return n.startsWith("data:audio/") || /^https?:\/\//i.test(n);
   }
 
+  /** others.audios[{url,transcrip}] o legacy audios_adjuntas + audios_transcripcion → pares alineados. */
+  function extractOthersAudiosPairs(others: Record<string, unknown> | null | undefined): { urls: string[]; transcriptions: string[] } {
+    const o = others && typeof others === "object" ? others : {};
+    const urls: string[] = [];
+    const transcriptions: string[] = [];
+    if (Array.isArray(o.audios) && o.audios.length) {
+      for (const raw of o.audios) {
+        if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+          const item = raw as Record<string, unknown>;
+          const url = String(item.url ?? "").trim();
+          const tr = String(item.transcrip ?? item.transcripcion ?? "").trim();
+          if (url && isDisplayableAudioRef(url)) {
+            urls.push(url);
+            transcriptions.push(tr);
+          } else if (tr) {
+            // sin URL reproducible: la transcripción ya suele ir en el prompt; no romper índices del player
+          }
+        } else if (typeof raw === "string" && isDisplayableAudioRef(raw)) {
+          urls.push(raw);
+          transcriptions.push("");
+        }
+      }
+      return { urls, transcriptions };
+    }
+    const legacyUrls = Array.isArray(o.audios_adjuntas) ? o.audios_adjuntas : [];
+    const legacyTrs = Array.isArray(o.audios_transcripcion) ? o.audios_transcripcion : [];
+    for (let i = 0; i < legacyUrls.length; i++) {
+      const url = String(legacyUrls[i] ?? "").trim();
+      if (!isDisplayableAudioRef(url)) continue;
+      urls.push(url);
+      transcriptions.push(String(legacyTrs[i] ?? "").trim());
+    }
+    if (!urls.length && legacyTrs.length) {
+      for (const t of legacyTrs) {
+        const tr = String(t ?? "").trim();
+        if (tr) transcriptions.push(tr);
+      }
+    }
+    return { urls, transcriptions };
+  }
+
   function stripOmittedVisionFromText(texto) {
     return String(texto ?? "")
       .split("\n")
@@ -415,14 +456,9 @@ function pushImage(images: string[], ref: unknown) {
         ? o.imagenes_adjuntas.filter(isDisplayableImageRef)
         : [];
       if (imagenes.length) flat.imagenes = imagenes;
-      const audios = Array.isArray(o.audios_adjuntas)
-        ? o.audios_adjuntas.filter(isDisplayableAudioRef)
-        : [];
-      if (audios.length) flat.audios = audios;
-      const audiosTranscripcion = Array.isArray(o.audios_transcripcion)
-        ? o.audios_transcripcion.map((t) => String(t ?? "").trim()).filter(Boolean)
-        : [];
-      if (audiosTranscripcion.length) flat.audios_transcripcion = audiosTranscripcion;
+      const audioPairs = extractOthersAudiosPairs(o as Record<string, unknown>);
+      if (audioPairs.urls.length) flat.audios = audioPairs.urls;
+      if (audioPairs.transcriptions.length) flat.audios_transcripcion = audioPairs.transcriptions;
       const prompt = s?.prompt;
       if (prompt?.id) flat.prompt_id = prompt.id;
       if (prompt?.variables) flat.prompt_variables = prompt.variables;
@@ -791,12 +827,9 @@ function pushImage(images: string[], ref: unknown) {
       const merged = mergeUserImagenes(send, others, String(send?.text ?? m.text ?? others.prompt_text ?? ""));
       contenido = merged.text;
       imagenes = merged.imagenes;
-      audios = Array.isArray(others.audios_adjuntas)
-        ? others.audios_adjuntas.filter(isDisplayableAudioRef)
-        : [];
-      audiosTranscripcion = Array.isArray(others.audios_transcripcion)
-        ? others.audios_transcripcion.map((t) => String(t ?? "").trim()).filter(Boolean)
-        : [];
+      const audioPairs = extractOthersAudiosPairs(others as Record<string, unknown>);
+      audios = audioPairs.urls;
+      audiosTranscripcion = audioPairs.transcriptions;
     } else {
       contenido = resolveAssistantLogContenido(others as Record<string, unknown>, receive, m.text);
       if (esOperativa && !contenido.trim() && receive && typeof receive === "object") {

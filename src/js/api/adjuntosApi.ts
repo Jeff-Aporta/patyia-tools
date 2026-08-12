@@ -1,7 +1,7 @@
 /**
  * Subida de audios e imágenes a R2 vía ISS `POST /api/file/upload`.
  * Audio → ffmpeg mp3 128k en servidor; imagen → variantes thumb/med/original.
- * Devuelve URL reproducible para el chat / auditoría (others.audios_adjuntas).
+ * Devuelve URL reproducible para el chat / auditoría (others.audios[].url).
  */
 import { resolveIssApiBase } from "../core/patyia.ts";
 import type { PatyJwtRecord } from "../core/patyia-jwt.ts";

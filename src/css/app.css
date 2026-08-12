@@ -2356,10 +2356,13 @@ html:not([data-mui-color-scheme="light"]) .isa-layout-root .iss-target-chip--pro
 }
 
 .meta-dialog-panel {
-  padding: 1rem 1.25rem 1.25rem;
+  padding: 1rem 1.25rem 1.35rem;
   box-sizing: border-box;
   max-height: none;
   overflow: visible;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
 }
 
 .isa-glass-dialog {
@@ -2436,7 +2439,20 @@ html:not([data-mui-color-scheme="light"]) .isa-layout-root .iss-target-chip--pro
     background-image: radial-gradient(ellipse 80% 50% at 50% -8%, rgba(30, 144, 255, 0.08), transparent 62%);
   }
   & .meta-dialog-panel {
-    background-image: radial-gradient(ellipse 80% 50% at 50% -8%, rgba(30, 144, 255, 0.08), transparent 62%);
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -8%, rgba(30, 144, 255, 0.1), transparent 62%),
+      radial-gradient(ellipse 55% 40% at 100% 100%, rgba(99, 102, 241, 0.06), transparent 58%);
+  }
+  & .meta-dialog-panel .meta-row {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+  & .meta-dialog-panel .meta-vs-card {
+    border-radius: 12px;
+    border: 1px solid rgba(56, 189, 248, 0.22);
+    background:
+      linear-gradient(135deg, rgba(14, 165, 233, 0.08), transparent 55%),
+      rgba(15, 23, 42, 0.4);
+    padding: 0.75rem 0.9rem;
   }
   & .meta-prompt-summary {
     margin-bottom: 1rem;
@@ -2542,6 +2558,24 @@ html:not([data-mui-color-scheme="light"]) .isa-layout-root .iss-target-chip--pro
     white-space: pre-wrap;
     word-break: break-word;
   }
+  &__code-host {
+    display: block;
+    min-height: 14rem;
+    max-height: min(58dvh, 32rem);
+    overflow: auto;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background:
+      radial-gradient(ellipse 70% 40% at 0% 0%, rgba(56, 189, 248, 0.08), transparent 55%),
+      rgba(2, 6, 23, 0.62);
+  }
+  &__is-code {
+    display: block;
+    width: 100%;
+    --is-code-min-height: 14rem;
+    --is-code-radius: 12px;
+    font-size: 0.78rem;
+  }
 }
 
 .log-json-link {
@@ -2565,6 +2599,12 @@ html[data-mui-color-scheme="light"] {
   & .log-json-panel__pre {
     background: rgba(248, 250, 252, 0.95);
     color: #0f172a;
+  }
+  & .log-json-panel__code-host {
+    background:
+      radial-gradient(ellipse 70% 40% at 0% 0%, rgba(14, 165, 233, 0.08), transparent 55%),
+      rgba(248, 250, 252, 0.96);
+    border-color: rgba(14, 165, 233, 0.22);
   }
   & .log-json-link { color: #0369a1; }
 }
